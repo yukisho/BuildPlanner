@@ -23,10 +23,11 @@ copied when a build or setup is duplicated.
 Equipment requirement
 ---------------------
 
-Each populated slot may store set and item identity, armor or weapon type, trait,
-enchantment, quality, level, Champion Points, and a note. Missing fields are
-allowed while the player is still entering a guide. Fields that contradict the
-slot family are rejected.
+Each populated slot may store set and resolved item identity, armor or weapon
+type, trait, enchantment category, quality, level, Champion Points, and a note.
+Missing fields are allowed while the player is still entering a guide. Fields
+that contradict the slot family are rejected. Older free-text enchantments are
+kept as custom choices until the player selects a structured category.
 
 A two-handed weapon is stored only in frontMain or backMain with
 occupiesOffHand=true. Its paired off-hand entry is cleared and cannot be filled

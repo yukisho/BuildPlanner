@@ -33,6 +33,7 @@ local numberFields = {
     "weaponType",
     "traitType",
     "enchantmentId",
+    "enchantmentCategory",
     "quality",
     "level",
     "championPoints",

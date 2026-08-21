@@ -7,6 +7,7 @@ local addon = GravvyBuildPlanner
 function addon:Initialize()
     self.data = GravvyBuildPlannerData:New()
     self.setCatalog = GravvyBuildPlannerSetCatalog:New(self.data)
+    self.itemResolver = GravvyBuildPlannerItemResolver:New()
     self.ui = GravvyBuildPlannerUI:New(self)
     self.ui:Initialize()
     GravvyBuildPlannerMainMenu:Initialize(self)

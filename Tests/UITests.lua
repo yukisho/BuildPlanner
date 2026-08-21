@@ -28,6 +28,38 @@ ITEM_QUALITY_NORMAL = 1
 ITEM_QUALITY_MAGIC = 2
 ITEM_QUALITY_ARCANE = 3
 ITEM_QUALITY_ARTIFACT = 4
+ITEM_TRAIT_TYPE_ARMOR_DIVINES = 21
+ITEM_TRAIT_TYPE_WEAPON_PRECISE = 22
+ITEM_TRAIT_TYPE_JEWELRY_ARCANE = 23
+LINK_STYLE_DEFAULT = 0
+
+EQUIP_TYPE_HEAD = 1
+EQUIP_TYPE_SHOULDERS = 2
+EQUIP_TYPE_CHEST = 3
+EQUIP_TYPE_HAND = 4
+EQUIP_TYPE_WAIST = 5
+EQUIP_TYPE_LEGS = 6
+EQUIP_TYPE_FEET = 7
+EQUIP_TYPE_NECK = 8
+EQUIP_TYPE_RING = 9
+EQUIP_TYPE_TWO_HAND = 10
+
+local enchantmentNames = {
+    "ABSORB_HEALTH", "ABSORB_MAGICKA", "ABSORB_STAMINA", "BEFOULED_WEAPON",
+    "BERSERKER", "CHARGED_WEAPON", "DAMAGE_HEALTH", "DAMAGE_SHIELD",
+    "DECREASE_PHYSICAL_DAMAGE", "DECREASE_SPELL_DAMAGE", "DISEASE_RESISTANT",
+    "FIERY_WEAPON", "FIRE_RESISTANT", "FROST_RESISTANT", "FROZEN_WEAPON",
+    "HEALTH", "HEALTH_REGEN", "INCREASE_BASH_DAMAGE", "INCREASE_PHYSICAL_DAMAGE",
+    "INCREASE_POTION_EFFECTIVENESS", "INCREASE_SPELL_DAMAGE", "MAGICKA",
+    "MAGICKA_REGEN", "POISONED_WEAPON", "POISON_RESISTANT", "PRISMATIC_DEFENSE",
+    "PRISMATIC_ONSLAUGHT", "PRISMATIC_REGEN", "REDUCE_ARMOR",
+    "REDUCE_BLOCK_AND_BASH", "REDUCE_FEAT_COST", "REDUCE_POTION_COOLDOWN",
+    "REDUCE_POWER", "REDUCE_SPELL_COST", "SHOCK_RESISTANT", "STAMINA",
+    "STAMINA_REGEN",
+}
+for index, name in ipairs(enchantmentNames) do
+    _G["ENCHANTMENT_SEARCH_CATEGORY_" .. name] = 100 + index
+end
 
 function GetItemTraitTypeCategory(traitType)
     return traitType - 20
@@ -39,6 +71,7 @@ BOTTOMLEFT = "BOTTOMLEFT"
 BOTTOMRIGHT = "BOTTOMRIGHT"
 LEFT = "LEFT"
 RIGHT = "RIGHT"
+LEFT = "LEFT"
 CENTER = "CENTER"
 CT_LABEL = 1
 CT_BUTTON = 2
@@ -98,6 +131,7 @@ local function newControl(name, parent)
     function control:SetHandler(event, callback) self.handlers[event] = callback end
     function control:SetText(value) self.text = value or "" end
     function control:GetText() return self.text end
+    function control:SetTexture(value) self.texture = value end
     function control:GetLeft() return self.left end
     function control:GetTop() return self.top end
     function control:StartMoving() end
@@ -132,14 +166,134 @@ end
 
 GuiRoot = newControl("GuiRoot")
 
+local itemLinks = {}
+function GetNumItemSetCollectionPieces(setId)
+    return (setId == 12 or setId == 34) and 3 or 0
+end
+function GetItemSetCollectionPieceInfo(setId, index)
+    if index >= 1 and index <= 3 then
+        return (setId * 100) + index
+    end
+end
+function GetItemSetCollectionPieceItemLink(pieceId)
+    local link = "item:" .. tostring(pieceId)
+    local suffix = pieceId % 100
+    if suffix == 1 then
+        itemLinks[link] = {
+            itemId = pieceId,
+            name = pieceId == 3401 and "Helm of Pillar of Nirn" or "Helm of Order's Wrath",
+            equipType = EQUIP_TYPE_HEAD,
+            armorType = pieceId == 3401 and ARMORTYPE_MEDIUM or ARMORTYPE_LIGHT,
+            weaponType = WEAPONTYPE_NONE,
+            enchantId = 501,
+        }
+    elseif suffix == 2 then
+        itemLinks[link] = {
+            itemId = pieceId,
+            name = "Ring of Pillar of Nirn",
+            equipType = EQUIP_TYPE_RING,
+            armorType = ARMORTYPE_NONE,
+            weaponType = WEAPONTYPE_NONE,
+            enchantId = 502,
+        }
+    else
+        itemLinks[link] = {
+            itemId = pieceId,
+            name = "Greatsword of Pillar of Nirn",
+            equipType = EQUIP_TYPE_TWO_HAND,
+            armorType = ARMORTYPE_NONE,
+            weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+            enchantId = 503,
+        }
+    end
+    return link
+end
+function GetItemLinkEquipType(link) return itemLinks[link].equipType end
+function GetItemLinkArmorType(link) return itemLinks[link].armorType end
+function GetItemLinkWeaponType(link) return itemLinks[link].weaponType end
+function GetItemLinkItemId(link) return itemLinks[link].itemId end
+function GetItemLinkName(link) return itemLinks[link].name end
+function GetItemLinkIcon(link) return "icon:" .. link end
+local function getLinkedGlyphId(link)
+    local data = link:match("^|H%d+:item:([^|]+)|h")
+    if not data then
+        return nil
+    end
+    local fields = {}
+    for value in data:gmatch("([^:]+)") do
+        fields[#fields + 1] = value
+    end
+    return tonumber(fields[4])
+end
+function GetItemLinkAppliedEnchantId(link)
+    return getLinkedGlyphId(link) or 0
+end
+function GetItemLinkFinalEnchantId(link)
+    return getLinkedGlyphId(link) or itemLinks[link].enchantId
+end
+function GetEnchantSearchCategoryType(enchantId)
+    if enchantId == 501 then
+        return ENCHANTMENT_SEARCH_CATEGORY_HEALTH
+    elseif enchantId == 502 then
+        return ENCHANTMENT_SEARCH_CATEGORY_HEALTH_REGEN
+    elseif enchantId == 503 then
+        return ENCHANTMENT_SEARCH_CATEGORY_BERSERKER
+    elseif enchantId == 26588 then
+        return ENCHANTMENT_SEARCH_CATEGORY_STAMINA
+    end
+end
+
+ItemTooltip = newControl("ItemTooltip")
+function ItemTooltip:SetLink(link) self.link = link end
+function ItemTooltip:AddLine(text) self.extraLine = text end
+function InitializeTooltip() end
+function ClearTooltip(tooltip) tooltip.link = nil end
+
+dofile("Enchantments.lua")
+dofile("ItemResolver.lua")
 dofile("UI.lua")
 
 local owner = {
     data = BuildPlannerTestData,
     setCatalog = BuildPlannerTestCatalog,
+    itemResolver = GravvyBuildPlannerItemResolver:New(),
 }
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
+
+local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
+local matchingEnchant = owner.itemResolver:Resolve("head", {
+    setId = 34,
+    armorType = ARMORTYPE_MEDIUM,
+    enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_HEALTH,
+}, resolverSetup)
+expect(matchingEnchant.enchantmentMatches, "resolver should recognize a matching default enchantment")
+local plannedEnchantLink = owner.itemResolver:ApplyPlannedEnchantment(
+    "|H1:item:3401:370:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
+    ENCHANTMENT_SEARCH_CATEGORY_STAMINA
+)
+expect(plannedEnchantLink, "resolver should build a validated planned enchantment link")
+expect(plannedEnchantLink:find(":26588:370:50:", 1, true), "planned link should carry the stamina glyph")
+expect(owner.itemResolver:Resolve("ring1", { setId = 34 }, resolverSetup), "resolver should find jewelry pieces")
+expect(owner.itemResolver:Resolve("frontMain", {
+    setId = 34,
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+}, resolverSetup), "resolver should find matching two-handed weapons")
+expectEqual(owner.itemResolver:Resolve("frontOff", {
+    setId = 34,
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+}, resolverSetup), nil, "resolver should reject two-handed off-hand weapons")
+
+ui:EditSlot("frontOff")
+ui.typeCombo.selectedValue = WEAPONTYPE_SHIELD
+ui:OnEquipmentTypeChanged()
+expectEqual(#ui.traitCombo.items, 2, "shields should use armor traits")
+expectEqual(#ui.enchantmentCombo.items, 5, "shields should use armor enchantments")
+
+ui:EditSlot("waist")
+expectEqual(ui.enchantmentCombo.selectedValue, GravvyBuildPlannerEnchantments.CUSTOM, "older free-text enchantments should remain selectable")
+ui:SaveSlot()
+expectEqual(BuildPlannerTestData:GetCurrentSetup().equipment.waist.enchantmentName, "Magicka", "saving should preserve a legacy enchantment")
 
 expectEqual(#GravvyBuildPlannerSlots.ORDER, 14, "planner should expose all canonical slots")
 expect(ui.window:IsHidden(), "planner should start hidden")
@@ -147,6 +301,7 @@ ui:Toggle()
 expect(not ui.window:IsHidden(), "toggle should show planner")
 
 ui:EditSlot("head")
+expect(#ui.enchantmentCombo.items >= 5, "armor slots should offer contextual enchantments")
 ui.setEdit:SetText("or")
 ui:OnSetTextChanged()
 expectEqual(#ui.suggestionData, 2, "autocomplete should include prefix and substring matches")
@@ -162,13 +317,20 @@ ui.typeCombo.selectedValue = ARMORTYPE_MEDIUM
 ui.traitCombo.selectedValue = 21
 ui.qualityCombo.selectedValue = ITEM_QUALITY_LEGENDARY
 ui.cpEdit:SetText("160")
-ui.enchantmentEdit:SetText("Maximum Stamina")
+ui.enchantmentCombo.selectedValue = ENCHANTMENT_SEARCH_CATEGORY_STAMINA
+ui:RefreshEditorPreview()
+expect(ui.previewIcon.texture, "resolved previews should use the item's icon")
 ui:SaveSlot()
 
 local setup = BuildPlannerTestData:GetCurrentSetup()
 expectEqual(setup.equipment.head.setId, 34, "selected set id should be saved")
 expectEqual(setup.equipment.head.armorType, ARMORTYPE_MEDIUM, "selected armor type should be saved")
 expectEqual(setup.equipment.head.championPoints, 160, "numeric editor values should be saved")
+expectEqual(setup.equipment.head.enchantmentCategory, ENCHANTMENT_SEARCH_CATEGORY_STAMINA, "enchantment category should be saved")
+expect(setup.equipment.head.itemLink, "matching collection piece should be resolved")
+ui:ShowSlotTooltip("head", ui.rows.head)
+expectEqual(ItemTooltip.link, setup.equipment.head.itemLink, "slot hover should show the native item tooltip")
+expect(ItemTooltip.extraLine, "tooltip should identify a planned enchantment that differs from the preview")
 
 ui:ClearSlot()
 expectEqual(setup.equipment.head, nil, "clear button should remove the requirement")

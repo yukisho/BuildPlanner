@@ -98,7 +98,7 @@ local function makeCombo(parent, name, x, y, width)
     return combo, container
 end
 
-local function setComboChoices(combo, choices, selectedValue)
+local function setComboChoices(combo, choices, selectedValue, onChanged)
     combo:ClearItems()
     combo.selectedValue = selectedValue
     local selectedLabel
@@ -107,6 +107,9 @@ local function setComboChoices(combo, choices, selectedValue)
         local value = choice.value
         combo:AddItem(combo:CreateItemEntry(label, function()
             combo.selectedValue = value
+            if onChanged then
+                onChanged(value)
+            end
         end))
         if value == selectedValue then
             selectedLabel = label
@@ -362,6 +365,8 @@ function UI:CreateSlotRows()
         button:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
         button:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137 + ((index - 1) * SLOT_ROW_HEIGHT))
         button:SetHandler("OnClicked", function() self:EditSlot(slotKey) end)
+        button:SetHandler("OnMouseEnter", function(control) self:ShowSlotTooltip(slotKey, control) end)
+        button:SetHandler("OnMouseExit", function() self:HideItemTooltip() end)
         self.rows[slotKey] = button
     end
 end
@@ -391,7 +396,7 @@ function UI:CreateEditor()
     self.traitCombo = makeCombo(panel, "GravvyBuildPlannerTraitCombo", 122, 125, 290)
 
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_ENCHANTMENT), 14, 165, 105)
-    self.enchantmentEdit = makeEdit(panel, "GravvyBuildPlannerEnchantmentEdit", 122, 165, 290)
+    self.enchantmentCombo = makeCombo(panel, "GravvyBuildPlannerEnchantmentCombo", 122, 165, 290)
 
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_QUALITY), 14, 205, 105)
     self.qualityCombo = makeCombo(panel, "GravvyBuildPlannerQualityCombo", 122, 205, 290)
@@ -402,7 +407,42 @@ function UI:CreateEditor()
     self.cpEdit = makeEdit(panel, "GravvyBuildPlannerCPEdit", 340, 245, 72, true, 4)
 
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_NOTES), 14, 285, 105)
-    self.noteEdit = makeNoteEdit(panel, "GravvyBuildPlannerNoteEdit", 122, 285, 290, 108)
+    self.noteEdit = makeNoteEdit(panel, "GravvyBuildPlannerNoteEdit", 122, 285, 290, 82)
+
+    self.previewButton = WINDOW_MANAGER:CreateControl(
+        "GravvyBuildPlannerPreviewButton",
+        panel,
+        CT_BUTTON
+    )
+    self.previewButton:SetDimensions(48, 48)
+    self.previewButton:SetAnchor(TOPLEFT, panel, TOPLEFT, 14, 370)
+    self.previewButton:SetHandler("OnMouseEnter", function(control)
+        if self.previewLink then
+            self:ShowItemTooltip(control, self.previewLink, self.previewRequirement)
+        end
+    end)
+    self.previewButton:SetHandler("OnMouseExit", function() self:HideItemTooltip() end)
+
+    local previewBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
+        nil,
+        self.previewButton,
+        "ZO_DefaultBackdrop"
+    )
+    previewBackdrop:SetAnchorFill(self.previewButton)
+    previewBackdrop:SetCenterColor(0.025, 0.025, 0.035, 0.95)
+    previewBackdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+
+    self.previewIcon = WINDOW_MANAGER:CreateControl(nil, self.previewButton, CT_TEXTURE)
+    self.previewIcon:SetAnchorFill(self.previewButton)
+
+    self.previewUnavailable = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_PREVIEW_UNAVAILABLE),
+        72,
+        382,
+        344,
+        "ZoFontGameSmall"
+    )
 
     local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE), 120)
     save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -14, -14)
@@ -595,21 +635,73 @@ function UI:LoadEditor()
         local selectedType = definition.family == "armor"
             and (requirement.armorType or 0)
             or (requirement.weaponType or 0)
-        setComboChoices(self.typeCombo, getTypeChoices(self.selectedSlot), selectedType)
+        setComboChoices(self.typeCombo, getTypeChoices(self.selectedSlot), selectedType, function()
+            self:OnEquipmentTypeChanged()
+        end)
     end
-    setComboChoices(self.traitCombo, getTraitChoices(definition.family), requirement.traitType or ITEM_TRAIT_TYPE_NONE)
-    setComboChoices(self.qualityCombo, getQualityChoices(), requirement.quality or DEFAULT_VALUE)
-    self.enchantmentEdit:SetText(requirement.enchantmentName or "")
+    local requirementFamily = self:GetEditorRequirementFamily()
+    setComboChoices(
+        self.traitCombo,
+        getTraitChoices(requirementFamily),
+        requirement.traitType or ITEM_TRAIT_TYPE_NONE,
+        function() self:RefreshEditorPreview() end
+    )
+    setComboChoices(
+        self.qualityCombo,
+        getQualityChoices(),
+        requirement.quality or DEFAULT_VALUE,
+        function() self:RefreshEditorPreview() end
+    )
+    self.legacyEnchantmentName = requirement.enchantmentCategory == nil
+        and requirement.enchantmentName
+        or nil
+    local selectedEnchantment = requirement.enchantmentCategory
+        or (self.legacyEnchantmentName and GravvyBuildPlannerEnchantments.CUSTOM)
+        or GravvyBuildPlannerEnchantments.DEFAULT
+    setComboChoices(
+        self.enchantmentCombo,
+        GravvyBuildPlannerEnchantments:GetChoices(
+            requirementFamily,
+            self.legacyEnchantmentName
+        ),
+        selectedEnchantment,
+        function() self:RefreshEditorPreview() end
+    )
     self.levelEdit:SetText(requirement.level and tostring(requirement.level) or "")
     self.cpEdit:SetText(requirement.championPoints and tostring(requirement.championPoints) or "")
     self.noteEdit:SetText(requirement.note or "")
+    self:RefreshEditorPreview(requirement)
 end
 
-function UI:SaveSlot()
-    local setup, build = self.owner.data:GetCurrentSetup()
+function UI:GetEditorRequirementFamily()
+    local definition = Slots:Get(self.selectedSlot)
+    if definition.family == "weapon"
+        and self.typeCombo.selectedValue == WEAPONTYPE_SHIELD then
+        return "armor"
+    end
+    return definition.family
+end
+
+function UI:OnEquipmentTypeChanged()
+    local family = self:GetEditorRequirementFamily()
+    setComboChoices(
+        self.traitCombo,
+        getTraitChoices(family),
+        self.traitCombo.selectedValue or ITEM_TRAIT_TYPE_NONE,
+        function() self:RefreshEditorPreview() end
+    )
+    setComboChoices(
+        self.enchantmentCombo,
+        GravvyBuildPlannerEnchantments:GetChoices(family, self.legacyEnchantmentName),
+        self.enchantmentCombo.selectedValue or GravvyBuildPlannerEnchantments.DEFAULT,
+        function() self:RefreshEditorPreview() end
+    )
+    self:RefreshEditorPreview()
+end
+
+function UI:ReadEditorRequirement()
     local definition = Slots:Get(self.selectedSlot)
     local setName = zo_strtrim(self.setEdit:GetText())
-    local enchantmentName = zo_strtrim(self.enchantmentEdit:GetText())
     local level = zo_strtrim(self.levelEdit:GetText())
     local championPoints = zo_strtrim(self.cpEdit:GetText())
     local requirement = {
@@ -635,8 +727,14 @@ function UI:SaveSlot()
     if self.traitCombo.selectedValue ~= ITEM_TRAIT_TYPE_NONE then
         requirement.traitType = self.traitCombo.selectedValue
     end
-    if enchantmentName ~= "" then
-        requirement.enchantmentName = enchantmentName
+    local enchantmentCategory = self.enchantmentCombo.selectedValue
+    if enchantmentCategory == GravvyBuildPlannerEnchantments.CUSTOM then
+        requirement.enchantmentName = self.legacyEnchantmentName
+    elseif enchantmentCategory ~= GravvyBuildPlannerEnchantments.DEFAULT then
+        requirement.enchantmentCategory = enchantmentCategory
+        requirement.enchantmentName = GravvyBuildPlannerEnchantments:GetName(
+            enchantmentCategory
+        )
     end
     if self.qualityCombo.selectedValue ~= DEFAULT_VALUE then
         requirement.quality = self.qualityCombo.selectedValue
@@ -646,6 +744,77 @@ function UI:SaveSlot()
     end
     if championPoints ~= "" then
         requirement.championPoints = championPoints
+    end
+    return requirement
+end
+
+function UI:RefreshEditorPreview(requirement)
+    local setup = self.owner.data:GetCurrentSetup()
+    requirement = requirement or self:ReadEditorRequirement()
+    local resolved = self.owner.itemResolver:Resolve(self.selectedSlot, requirement, setup)
+    self.previewLink = resolved and resolved.itemLink or requirement.itemLink
+    self.previewRequirement = requirement
+
+    if self.previewLink and self.previewLink ~= "" then
+        self.previewIcon:SetTexture(GetItemLinkIcon(self.previewLink))
+        self.previewButton:SetHidden(false)
+        self.previewUnavailable:SetHidden(true)
+    else
+        self.previewIcon:SetTexture(nil)
+        self.previewButton:SetHidden(true)
+        self.previewUnavailable:SetHidden(false)
+    end
+end
+
+function UI:ShowItemTooltip(control, itemLink, requirement)
+    if not ItemTooltip or not InitializeTooltip then
+        return
+    end
+    InitializeTooltip(ItemTooltip, control, LEFT, -8, 0, RIGHT)
+    ItemTooltip:SetLink(itemLink)
+
+    if requirement and requirement.enchantmentCategory then
+        local _, previewCategory = self.owner.itemResolver:GetEnchantInfo(itemLink)
+        if previewCategory ~= requirement.enchantmentCategory and ItemTooltip.AddLine then
+            ItemTooltip:AddLine(
+                zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_PREVIEW_ENCHANTMENT_NOTE,
+                    requirement.enchantmentName
+                ),
+                "ZoFontGameSmall",
+                0.95,
+                0.72,
+                0.35
+            )
+        end
+    end
+end
+
+function UI:HideItemTooltip()
+    if ItemTooltip and ClearTooltip then
+        ClearTooltip(ItemTooltip)
+    end
+end
+
+function UI:ShowSlotTooltip(slotKey, control)
+    local setup = self.owner.data:GetCurrentSetup()
+    local requirement = setup.equipment[slotKey]
+    if requirement and requirement.itemLink and requirement.itemLink ~= "" then
+        self:ShowItemTooltip(control, requirement.itemLink, requirement)
+    end
+end
+
+function UI:SaveSlot()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local requirement = self:ReadEditorRequirement()
+    local resolved = self.owner.itemResolver:Resolve(self.selectedSlot, requirement, setup)
+    if resolved then
+        requirement.itemLink = resolved.itemLink
+        requirement.itemId = resolved.itemId
+        requirement.itemName = resolved.itemName
+        if resolved.enchantmentMatches and requirement.enchantmentCategory then
+            requirement.enchantmentId = resolved.enchantmentId
+        end
     end
 
     local ok, message = self.owner.data:SetEquipment(build.id, setup.id, self.selectedSlot, requirement)
@@ -681,12 +850,14 @@ function UI:OnSetTextChanged()
     self.suggestionOffset = 0
     self.suggestionIndex = 1
     self:RenderSuggestions()
+    self:RefreshEditorPreview()
 end
 
 function UI:ResolveTypedSet()
     local entry = self.owner.setCatalog:FindExact(self.setEdit:GetText())
     self.selectedSetId = entry and entry.setId or nil
     self.selectedSetName = entry and entry.name or nil
+    self:RefreshEditorPreview()
 end
 
 function UI:RenderSuggestions()
@@ -721,6 +892,7 @@ function UI:ChooseSuggestion(index)
     self.selectedSetId = entry.setId
     self.selectedSetName = entry.name
     self.suggestionPanel:SetHidden(true)
+    self:RefreshEditorPreview()
 end
 
 function UI:ScrollSuggestions(delta)

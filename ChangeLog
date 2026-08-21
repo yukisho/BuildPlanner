@@ -1,3 +1,13 @@
+0.3.0
+- Replaced free-text enchantments with armor, jewelry, and weapon dropdowns.
+- Added collection-piece resolution for matching armor, jewelry, and weapon slots.
+- Added live representative item previews and native item tooltips on hover.
+- Preserved older free-text enchantments as custom choices.
+- Added a tooltip note when ESO's representative link uses a different default
+  enchantment than the one planned.
+- Replaced the preview text with the resolved item's icon.
+- Added validated preview links for selected standard glyph enchantments.
+
 0.2.0
 - Added the first keyboard and mouse planner window with fixed equipment slots.
 - Added build and setup selectors, naming actions, deletion confirmation, and undo.

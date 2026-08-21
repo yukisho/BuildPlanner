@@ -33,7 +33,7 @@ function zo_strlower(value)
 end
 
 function zo_strformat(id, value)
-    return GetString(id):gsub("<<1>>", value)
+    return (GetString(id) or "<<1>>"):gsub("<<1>>", value)
 end
 
 function zo_clamp(value, minimum, maximum)
