@@ -10,13 +10,18 @@ function addon:Initialize()
     self.itemResolver = GravvyBuildPlannerItemResolver:New()
     self.acquisition = GravvyBuildPlannerAcquisition:New(self.itemResolver)
     self.inventory = GravvyBuildPlannerInventory:New(self)
+    self.shopping = GravvyBuildPlannerShoppingIntegration:New(self)
+    self.accessibility = GravvyBuildPlannerAccessibility
+    self.accessibility:Initialize(self)
     self.ui = GravvyBuildPlannerUI:New(self)
     self.ui:Initialize()
     self.inventory:Initialize()
+    GravvyBuildPlannerSettings:Initialize(self)
     GravvyBuildPlannerMainMenu:Initialize(self)
 
     SLASH_COMMANDS["/buildplanner"] = function() self:ToggleWindow() end
     SLASH_COMMANDS["/gbp"] = function() self:ToggleWindow() end
+    SLASH_COMMANDS["/buildplannerhelp"] = function() self.ui:ShowHelp() end
 end
 
 function addon:ToggleWindow()

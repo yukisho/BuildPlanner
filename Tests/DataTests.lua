@@ -114,6 +114,9 @@ local firstSetup = data:GetCurrentSetup()
 expectEqual(#data:GetBuilds(), 1, "clean install should create one build")
 expectEqual(firstSetup.defaultChampionPoints, 160, "default CP")
 expectEqual(firstSetup.defaultQuality, ITEM_QUALITY_LEGENDARY, "default quality")
+expectEqual(data:GetSettings().fontScale, 1, "default font scale")
+expectEqual(data:GetSettings().highContrast, false, "high contrast should be opt-in")
+expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes should be opt-in")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -134,12 +137,17 @@ local ok = data:SetEquipment(build.id, setup.id, "waist", {
     enchantmentName = "Magicka",
 })
 expect(ok, "armor requirement should be accepted")
+ok = data:SetPreferredRoute(build.id, setup.id, "waist", "buy")
+expect(ok, "a supported acquisition route should be saved")
+expectEqual(setup.acquisition.waist.preferredRoute, "buy", "the preferred route should remain separate from equipment")
+expect(not data:SetPreferredRoute(build.id, setup.id, "waist", "teleport"), "unknown acquisition routes should be rejected")
 
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
 
 ok = data:SetEquipment(build.id, setup.id, "frontOff", { weaponType = WEAPONTYPE_AXE })
 expect(ok, "one-handed off-hand should be accepted")
+data:SetPreferredRoute(build.id, setup.id, "frontOff", "buy")
 local _, twoHanded, clearedSlot = data:SetEquipment(build.id, setup.id, "frontMain", {
     setName = "Perfected Merciless Charge",
     weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
@@ -147,6 +155,7 @@ local _, twoHanded, clearedSlot = data:SetEquipment(build.id, setup.id, "frontMa
 expect(twoHanded, "two-handed main weapon should be accepted")
 expectEqual(clearedSlot, "frontOff", "two-handed weapon should clear off-hand")
 expectEqual(setup.equipment.frontOff, nil, "off-hand should be empty")
+expectEqual(setup.acquisition.frontOff, nil, "clearing an occupied off-hand should clear its route")
 ok = data:SetEquipment(build.id, setup.id, "frontOff", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "occupied off-hand should reject requirements")
 ok = data:SetEquipment(build.id, setup.id, "frontMain", { weaponType = WEAPONTYPE_AXE })
@@ -173,10 +182,13 @@ expectEqual(setup.equipment.head.itemLink, nil, "copy should discard a slot-spec
 expectEqual(setup.equipment.head.itemId, nil, "copy should discard a slot-specific item id")
 expectEqual(setup.equipment.head.itemName, nil, "copy should let the destination item name resolve")
 expectEqual(setup.equipment.head.enchantmentId, nil, "copy should let the destination enchant resolve")
+data:SetPreferredRoute(build.id, setup.id, "head", "craft")
 ok = data:MoveEquipment(build.id, setup.id, "head", "chest")
 expect(ok, "armor requirements should move to other armor slots")
 expectEqual(setup.equipment.head, nil, "move should clear the source slot")
 expect(setup.equipment.chest, "move should fill the destination slot")
+expectEqual(setup.acquisition.head, nil, "moving a requirement should clear its source route")
+expectEqual(setup.acquisition.chest.preferredRoute, "craft", "moving a requirement should carry its route")
 
 ok = data:SetEquipment(build.id, setup.id, "ring1", { setName = "Pillar of Nirn" })
 expect(ok, "jewelry requirement should be accepted")

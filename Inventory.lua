@@ -14,6 +14,7 @@ function Inventory:New(owner)
         owner = owner,
         items = {},
         matches = {},
+        progress = {},
         refreshSerial = 0,
     }, { __index = self })
     inventory.bags = {}
@@ -159,14 +160,36 @@ end
 function Inventory:Refresh()
     self.items = self:ReadItems()
     self.matches = {}
+    self.progress = {}
     for _, build in ipairs(self.owner.data:GetBuilds()) do
         for _, setup in ipairs(build.setups) do
-            self.matches[setup.id] = self:MatchSetup(setup)
+            local matches = self:MatchSetup(setup)
+            self.matches[setup.id] = matches
+            local progress = { planned = 0, ready = 0, adjustable = 0, missing = 0 }
+            for _, slotKey in ipairs(Slots.ORDER) do
+                if setup.equipment[slotKey] then
+                    progress.planned = progress.planned + 1
+                    local match = matches[slotKey]
+                    if match and match.exact then
+                        progress.ready = progress.ready + 1
+                    elseif match then
+                        progress.adjustable = progress.adjustable + 1
+                    else
+                        progress.missing = progress.missing + 1
+                    end
+                end
+            end
+            self.progress[setup.id] = progress
         end
     end
     if self.owner.ui then
         self.owner.ui:RefreshOwnedStatus()
     end
+end
+
+function Inventory:GetProgress(setupId)
+    return self.progress[setupId]
+        or { planned = 0, ready = 0, adjustable = 0, missing = 0 }
 end
 
 function Inventory:GetMatch(setupId, slotKey, requirement, setup)

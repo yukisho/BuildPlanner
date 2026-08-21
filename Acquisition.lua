@@ -2,6 +2,26 @@ GravvyBuildPlannerAcquisition = {}
 
 local Acquisition = GravvyBuildPlannerAcquisition
 
+Acquisition.ROUTES = {
+    OWNED = "owned",
+    BUY = "buy",
+    CRAFT = "craft",
+    FARM = "farm",
+    RECONSTRUCT = "reconstruct",
+    TRANSMUTE = "transmute",
+    UNKNOWN = "unknown",
+}
+
+local routeStringIds = {
+    owned = SI_GRAVVY_BUILD_PLANNER_ROUTE_OWNED,
+    buy = SI_GRAVVY_BUILD_PLANNER_ROUTE_BUY,
+    craft = SI_GRAVVY_BUILD_PLANNER_ROUTE_CRAFT,
+    farm = SI_GRAVVY_BUILD_PLANNER_ROUTE_FARM,
+    reconstruct = SI_GRAVVY_BUILD_PLANNER_ROUTE_RECONSTRUCT,
+    transmute = SI_GRAVVY_BUILD_PLANNER_ROUTE_TRANSMUTE,
+    unknown = SI_GRAVVY_BUILD_PLANNER_ROUTE_UNKNOWN,
+}
+
 local function normalize(value)
     value = zo_strtrim(type(value) == "string" and value or "")
     return zo_strlower(value)
@@ -69,24 +89,92 @@ function Acquisition:Classify(slotKey, requirement, setup, resolved)
     return state
 end
 
-function Acquisition:GetSummary(state)
-    local labels = {}
+function Acquisition:GetAvailableRoutes(state, match)
+    if match then
+        if not match.exact then
+            for _, difference in ipairs(match.differences) do
+                if difference == "trait" then
+                    return { self.ROUTES.TRANSMUTE }
+                end
+            end
+        end
+        return { self.ROUTES.OWNED }
+    end
+
+    local routes = {}
     if state.crafted then
-        labels[#labels + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_CRAFT)
+        routes[#routes + 1] = self.ROUTES.CRAFT
     end
     if state.tradeable then
-        labels[#labels + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_GUILD_STORE)
+        routes[#routes + 1] = self.ROUTES.BUY
     end
     if state.reconstructable then
-        labels[#labels + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_RECONSTRUCT)
+        routes[#routes + 1] = self.ROUTES.RECONSTRUCT
     end
     if state.bindOnPickup then
-        labels[#labels + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_BIND_ON_PICKUP)
+        routes[#routes + 1] = self.ROUTES.FARM
     end
-    if #labels == 0 then
-        return GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_UNKNOWN)
+    if #routes == 0 then
+        routes[1] = self.ROUTES.UNKNOWN
     end
-    return table.concat(labels, " / ")
+    return routes
+end
+
+function Acquisition:GetRouteLabel(route)
+    return GetString(routeStringIds[route] or SI_GRAVVY_BUILD_PLANNER_ROUTE_UNKNOWN)
+end
+
+function Acquisition:ChooseRoute(routes, preferredRoute)
+    if preferredRoute then
+        for _, route in ipairs(routes) do
+            if route == preferredRoute then
+                return route
+            end
+        end
+    end
+    return routes[1] or self.ROUTES.UNKNOWN
+end
+
+function Acquisition:GetStatus(state, match, preferredRoute)
+    if match then
+        if match.exact then
+            return self:GetOwnedSummary(match)
+        end
+        for _, difference in ipairs(match.differences) do
+            if difference == "trait" then
+                local otherDifferences = {}
+                for _, other in ipairs(match.differences) do
+                    if other ~= "trait" then
+                        otherDifferences[#otherDifferences + 1] = GetString(({
+                            enchantment = SI_GRAVVY_BUILD_PLANNER_NEEDS_ENCHANTMENT,
+                            quality = SI_GRAVVY_BUILD_PLANNER_NEEDS_QUALITY,
+                        })[other])
+                    end
+                end
+                local location = match.location == "equipped"
+                    and GetString(SI_GRAVVY_BUILD_PLANNER_OWNED_EQUIPPED)
+                    or match.location == "backpack"
+                        and GetString(SI_GRAVVY_BUILD_PLANNER_OWNED_BACKPACK)
+                        or GetString(SI_GRAVVY_BUILD_PLANNER_OWNED_BANK)
+                if #otherDifferences > 0 then
+                    return zo_strformat(
+                        SI_GRAVVY_BUILD_PLANNER_TRANSMUTE_NEEDS_WORK,
+                        location,
+                        table.concat(otherDifferences, ", ")
+                    )
+                end
+                return zo_strformat(SI_GRAVVY_BUILD_PLANNER_TRANSMUTE, location)
+            end
+        end
+        return self:GetOwnedSummary(match)
+    end
+
+    local routes = self:GetAvailableRoutes(state, nil)
+    local route = self:ChooseRoute(routes, preferredRoute)
+    return zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_ACQUISITION,
+        self:GetRouteLabel(route)
+    )
 end
 
 function Acquisition:CompareItem(slotKey, requirement, setup, itemLink)

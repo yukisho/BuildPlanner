@@ -101,6 +101,26 @@ KEY_UP = 1
 KEY_DOWN = 2
 KEY_ENTER = 3
 KEY_ESCAPE = 4
+EVENT_GAME_FOCUS_CHANGED = 7
+
+local cameraUIMode = false
+function IsGameCameraUIModeActive() return cameraUIMode end
+function SetGameCameraUIMode(active) cameraUIMode = active end
+function zo_callLater(callback) callback() end
+EVENT_MANAGER = {
+    callbacks = {},
+    RegisterForEvent = function(self, name, eventId, callback)
+        self.callbacks[eventId] = callback
+    end,
+}
+
+local testFont = {
+    GetFontInfo = function() return "test-font", 18, "soft-shadow-thin" end,
+}
+ZoFontGame = testFont
+ZoFontGameSmall = testFont
+ZoFontWinH2 = testFont
+ZoFontWinH3 = testFont
 
 local controlIndex = 0
 local function newControl(name, parent)
@@ -125,9 +145,9 @@ local function newControl(name, parent)
     function control:SetMouseEnabled() end
     function control:SetMovable() end
     function control:SetDrawTier() end
-    function control:SetCenterColor() end
-    function control:SetEdgeColor() end
-    function control:SetFont() end
+    function control:SetCenterColor(...) self.centerColor = { ... } end
+    function control:SetEdgeColor(...) self.edgeColor = { ... } end
+    function control:SetFont(value) self.font = value end
     function control:SetColor() end
     function control:SetVerticalAlignment() end
     function control:SetHorizontalAlignment() end
@@ -195,7 +215,8 @@ local function getLinkFields(link)
 end
 
 function GetNumItemSetCollectionPieces(setId)
-    return (setId == 12 or setId == 34 or setId == 56) and 3 or 0
+    return ({ [12] = true, [34] = true, [56] = true, [78] = true,
+        [90] = true, [91] = true, [92] = true, [93] = true })[setId] and 3 or 0
 end
 function GetItemSetCollectionPieceInfo(setId, index)
     if index >= 1 and index <= 3 then
@@ -245,9 +266,16 @@ function GetItemSetCollectionPieceItemLink(pieceId, _, traitType, quality)
     end
     local item = itemLinks[link]
     item.setId = setId
-    item.setName = setId == 12 and "Order's Wrath"
-        or setId == 34 and "Pillar of Nirn"
-        or "Monster Set"
+    item.setName = ({
+        [12] = "Overland Test Set",
+        [34] = "Pillar of Nirn",
+        [56] = "Monster Test Set",
+        [78] = "Crafted Test Set",
+        [90] = "Trial Test Set",
+        [91] = "Mythic Test Set",
+        [92] = "Arena Test Set",
+        [93] = "Perfected Arena Test Set",
+    })[setId]
     item.traitType = traitType or ITEM_TRAIT_TYPE_NONE
     item.quality = quality or ITEM_QUALITY_NORMAL
     item.level = 50
@@ -258,7 +286,16 @@ function GetItemLinkEquipType(link) return itemLinks[link].equipType end
 function GetItemLinkArmorType(link) return itemLinks[link].armorType end
 function GetItemLinkWeaponType(link) return itemLinks[link].weaponType end
 function GetItemLinkItemId(link) return itemLinks[link].itemId end
-function GetItemLinkName(link) return itemLinks[link].name end
+function GetItemLinkName(link)
+    if itemLinks[link] then
+        return itemLinks[link].name
+    end
+    local fields = getLinkFields(link)
+    if fields and tonumber(fields[1]) == 26588 then
+        return "Truly Superb Glyph of Stamina"
+    end
+    return ""
+end
 function GetItemLinkIcon(link) return "icon:" .. link end
 function GetItemLinkTraitInfo(link) return itemLinks[link].traitType end
 function GetItemLinkDisplayQuality(link) return itemLinks[link].quality end
@@ -275,7 +312,8 @@ function GetItemLinkBindType(link)
         return BIND_TYPE_NONE
     end
     local item = itemLinks[link]
-    if item and item.itemId >= 1200 and item.itemId < 1300 then
+    if item and ((item.itemId >= 1200 and item.itemId < 1300)
+        or (item.itemId >= 7800 and item.itemId < 7900)) then
         return BIND_TYPE_ON_EQUIP
     end
     return BIND_TYPE_ON_PICKUP
@@ -283,6 +321,8 @@ end
 function GetItemSetType(setId)
     if setId == 12 then
         return ITEM_SET_TYPE_WORLD
+    elseif setId == 78 then
+        return ITEM_SET_TYPE_CRAFTED
     elseif setId == 34 then
         return ITEM_SET_TYPE_DUNGEON
     elseif setId == 56 then
@@ -363,7 +403,10 @@ dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
+dofile("ShoppingIntegration.lua")
+dofile("Accessibility.lua")
 dofile("UI.lua")
+dofile("Settings.lua")
 
 local owner = {
     data = BuildPlannerTestData,
@@ -372,8 +415,12 @@ local owner = {
 }
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
+owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
+owner.accessibility = GravvyBuildPlannerAccessibility
+owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
+owner.ui = ui
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {
@@ -403,6 +450,14 @@ local craftedState = owner.acquisition:Classify("head", {
 }, resolverSetup)
 expect(craftedState.crafted, "crafted links should be recognized")
 expect(craftedState.tradeable, "unbound crafted links should be guild-store eligible")
+local craftedRoutes = owner.acquisition:GetAvailableRoutes(craftedState)
+expectEqual(craftedRoutes[1], "craft", "crafted gear should prefer crafting automatically")
+expectEqual(craftedRoutes[2], "buy", "tradeable crafted gear should also offer buying")
+expectEqual(
+    owner.acquisition:ChooseRoute(craftedRoutes, "buy"),
+    "buy",
+    "a compatible preferred route should override the automatic route"
+)
 local unknownState = owner.acquisition:Classify("head", {}, resolverSetup)
 expect(unknownState.unknown, "unresolved requirements should remain unknown")
 local monsterArmorTypes = owner.itemResolver:GetAvailableArmorTypes("head", 56)
@@ -447,6 +502,28 @@ expectEqual(owner.itemResolver:Resolve("frontOff", {
     weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
 }, resolverSetup), nil, "resolver should reject two-handed off-hand weapons")
 
+local representativeGear = {
+    { name = "overland", setId = 12, slotKey = "head", armorType = ARMORTYPE_LIGHT },
+    { name = "dungeon", setId = 34, slotKey = "head", armorType = ARMORTYPE_MEDIUM },
+    { name = "crafted", setId = 78, slotKey = "head", armorType = ARMORTYPE_LIGHT },
+    { name = "monster", setId = 56, slotKey = "head", armorType = ARMORTYPE_LIGHT },
+    { name = "trial", setId = 90, slotKey = "head", armorType = ARMORTYPE_LIGHT },
+    { name = "mythic", setId = 91, slotKey = "ring1" },
+    { name = "arena", setId = 92, slotKey = "frontMain", weaponType = WEAPONTYPE_TWO_HANDED_SWORD },
+    { name = "perfected", setId = 93, slotKey = "frontMain", weaponType = WEAPONTYPE_TWO_HANDED_SWORD },
+}
+for _, sample in ipairs(representativeGear) do
+    local requirement = {
+        setId = sample.setId,
+        armorType = sample.armorType,
+        weaponType = sample.weaponType,
+    }
+    local resolved = owner.itemResolver:Resolve(sample.slotKey, requirement, resolverSetup)
+    expect(resolved and resolved.itemLink, sample.name .. " gear should produce a representative link")
+    ui:ShowItemTooltip(ui.rows[sample.slotKey], resolved.itemLink, requirement)
+    expectEqual(ItemTooltip.link, resolved.itemLink, sample.name .. " gear should use ESO's item tooltip")
+end
+
 ui:EditSlot("frontOff")
 ui.typeCombo.selectedValue = WEAPONTYPE_SHIELD
 ui:OnEquipmentTypeChanged()
@@ -460,8 +537,45 @@ expectEqual(BuildPlannerTestData:GetCurrentSetup().equipment.waist.enchantmentNa
 
 expectEqual(#GravvyBuildPlannerSlots.ORDER, 14, "planner should expose all canonical slots")
 expect(ui.window:IsHidden(), "planner should start hidden")
+ui:ShowHelp()
+expect(not ui.helpDialog:IsHidden(), "in-game help should be available from the planner")
+expect(cameraUIMode, "standalone help should request ESO UI mode")
+ui:CloseHelp()
+expect(not cameraUIMode, "closing standalone help should release its UI mode")
+BuildPlannerTestData:GetSettings().fontScale = 1.2
+owner.accessibility:Refresh()
+expect(ui.status.font:find("test%-font|22"), "font scaling should reapply registered control fonts")
+BuildPlannerTestData:GetSettings().highContrast = true
+owner.accessibility:Refresh()
+local highContrastBackdrops = 0
+for backdrop in pairs(owner.accessibility.backdrops) do
+    if backdrop.centerColor and backdrop.centerColor[1] == 0
+        and backdrop.edgeColor and backdrop.edgeColor[1] == 1 then
+        highContrastBackdrops = highContrastBackdrops + 1
+    end
+end
+expect(highContrastBackdrops > 0, "high contrast should update registered backdrops")
+BuildPlannerTestData:GetSettings().nonColorIndicators = true
+ui:SetStatus("Test failure", true)
+expect(ui.status.text:find(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_PREFIX):gsub("<<1>>", ""), 1, true), "errors should support a non-color text prefix")
+BuildPlannerTestData:GetSettings().fontScale = 1
+BuildPlannerTestData:GetSettings().highContrast = false
+BuildPlannerTestData:GetSettings().nonColorIndicators = false
+owner.accessibility:Refresh()
 ui:Toggle()
 expect(not ui.window:IsHidden(), "toggle should show planner")
+expect(cameraUIMode, "opening the planner should make the mouse cursor available")
+cameraUIMode = false
+EVENT_MANAGER.callbacks[EVENT_GAME_FOCUS_CHANGED](nil, true)
+expect(cameraUIMode, "the planner should restore its cursor after ESO regains focus")
+ui:Hide()
+expect(not cameraUIMode, "closing the planner should release the UI mode it requested")
+cameraUIMode = true
+ui:Show()
+ui:Hide()
+expect(cameraUIMode, "the planner should not release UI mode opened by another window")
+cameraUIMode = false
+ui:Show()
 
 ui:EditSlot("head")
 expect(#ui.enchantmentCombo.items >= 5, "armor slots should offer contextual enchantments")
@@ -625,6 +739,15 @@ expectEqual(waistMatch.location, "bank", "bank matches should retain their locat
 local ringMatches = (owner.inventory:GetMatch(setup.id, "ring1") and 1 or 0)
     + (owner.inventory:GetMatch(setup.id, "ring2") and 1 or 0)
 expectEqual(ringMatches, 1, "one owned ring should not satisfy two planned slots")
+local setupProgress = owner.inventory:GetProgress(setup.id)
+expectEqual(
+    setupProgress.ready + setupProgress.adjustable + setupProgress.missing,
+    setupProgress.planned,
+    "setup progress should account for every planned slot"
+)
+expect(setupProgress.ready >= 2, "setup progress should count exact owned gear")
+expect(setupProgress.adjustable >= 1, "setup progress should count adjustable gear")
+expect(ui.progressLabel.text:find(tostring(setupProgress.missing), 1, true), "the window should show the live missing count")
 
 ui:EditSlot("hands")
 expect(ui.acquisitionLabel.text:find(
@@ -640,6 +763,113 @@ expect(ui.acquisitionLabel.text:find(
     true
 ) == nil, "unsaved edits should not show ownership for the previously saved requirement")
 
+itemLinks["crafted:item"] = {
+    itemId = 777,
+    name = "Crafted Test Cuirass",
+    equipType = EQUIP_TYPE_CHEST,
+    armorType = ARMORTYPE_LIGHT,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_NONE,
+    quality = ITEM_QUALITY_ARTIFACT,
+    level = 50,
+    championPoints = 160,
+    enchantId = 501,
+}
+BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "chest", {
+    setName = "Crafted Test",
+    itemLink = "crafted:item",
+    armorType = ARMORTYPE_LIGHT,
+})
+BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "head", {
+    setId = 12,
+    setName = "Order's Wrath",
+    armorType = ARMORTYPE_LIGHT,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+    quality = ITEM_QUALITY_ARTIFACT,
+    enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_STAMINA,
+    enchantmentName = "Stamina",
+})
+owner.inventory:Refresh()
+
+ui:EditSlot("chest")
+expectEqual(#ui.routeCombo.items, 3, "automatic, craft, and buy routes should be selectable")
+for _, entry in ipairs(ui.routeCombo.items) do
+    if entry.label == GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE_BUY) then
+        entry.callback()
+    end
+end
+expectEqual(
+    setup.acquisition.chest.preferredRoute,
+    "buy",
+    "choosing an acquisition route should persist it without resaving the gear"
+)
+
+local review = owner.shopping:BuildReview(false, false)
+expectEqual(review.included, 2, "only missing tradeable equipment should be included")
+expect(review.owned >= 1, "owned requirements should be reported separately")
+expectEqual(review.glyphs, 0, "glyphs should be opt-in")
+expectEqual(#review.items, 2, "each eligible gear requirement should create one entry")
+expectEqual(review.items[1].match.qualityMode, "any", "lower-quality gear should remain eligible for upgrading")
+local hasUnrestrictedTrait = false
+for _, item in ipairs(review.items) do
+    hasUnrestrictedTrait = hasUnrestrictedTrait
+        or item.match.traitType == ITEM_TRAIT_TYPE_NONE
+end
+expect(hasUnrestrictedTrait, "an unspecified trait should remain unrestricted")
+
+local glyphReview = owner.shopping:BuildReview(false, true)
+expectEqual(glyphReview.glyphs, 2, "missing enchantments should be exported even when owned gear is skipped")
+expectEqual(#glyphReview.items, 4, "glyph entries should be added to the equipment batch")
+local shareCode = owner.shopping:Encode(glyphReview)
+expect(shareCode and shareCode:find("SL2:", 1, true) == 1, "fallback exports should use the SL2 format")
+ITEM_LINK_TYPE = "item"
+function ZO_LinkHandler_ParseLink(link)
+    if link and link ~= "" then
+        return nil, nil, ITEM_LINK_TYPE
+    end
+end
+ShoppingListData = {
+    NormalizeName = function(value) return zo_strlower(zo_strtrim(value)) end,
+}
+dofile("F:/laragon/www/ShoppingList/Share.lua")
+local decodedShare = ShoppingListShare.DecodeCode(shareCode)
+expect(decodedShare, "Shopping List should decode Build Planner's fallback code")
+expectEqual(#decodedShare.items, 4, "the decoded SL2 list should retain every exported entry")
+expectEqual(decodedShare.items[1].match.qualityMode, "any", "SL2 should retain upgradeable gear quality matching")
+
+GravvyShoppingList = { API = { GetVersion = function() return 1 end } }
+local _, oldApiState = owner.shopping:GetAPI()
+expectEqual(oldApiState, "old", "API v1 should use the fallback export")
+GravvyShoppingList = nil
+ui:OpenExportDialog()
+ui:ExecuteExport()
+expect(not ui.codeDialog:IsHidden(), "a missing Shopping List should show the selectable code window")
+expect(ui.codeEdit:GetText():find("SL2:", 1, true) == 1, "the fallback field should contain the SL2 code")
+
+local openedUrl
+RequestOpenUnsafeURL = function(url) openedUrl = url end
+ui:OpenAddonPage()
+expectEqual(
+    openedUrl,
+    "https://www.esoui.com/downloads/info4775-ShoppingList.html",
+    "the add-on button should use the published Shopping List page"
+)
+
+local createdSpec
+GravvyShoppingList = { API = {
+    GetVersion = function() return 2 end,
+    CreateList = function(_, spec)
+        createdSpec = spec
+        return true, { id = 8, name = spec.name, itemIds = {} }
+    end,
+} }
+ui:OpenExportDialog()
+ui:ExecuteExport()
+expect(createdSpec, "API v2 should receive a transactional list specification")
+expectEqual(createdSpec.onNameConflict, "unique", "exports should not overwrite an existing list")
+expectEqual(#createdSpec.items, 2, "the API batch should contain eligible equipment")
+GravvyShoppingList = nil
+
 ui:EditSlot("head")
 ui:ClearSlot()
 expectEqual(setup.equipment.head, nil, "clear button should remove the requirement")
@@ -653,9 +883,20 @@ LibMainMenu2 = {
         self.definition = definition
     end,
 }
+LibAddonMenu2 = {
+    RegisterAddonPanel = function(self, name, panel)
+        self.panelName, self.panel = name, panel
+    end,
+    RegisterOptionControls = function(self, name, options)
+        self.optionPanelName, self.options = name, options
+    end,
+}
 GravvyBuildPlannerMainMenu:Initialize(owner)
 expect(LibMainMenu2.initialized, "main menu library should be initialized when available")
 expectEqual(LibMainMenu2.definition.binding, "GRAVVY_BUILD_PLANNER_TOGGLE", "main menu should use the addon keybind")
+GravvyBuildPlannerSettings:Initialize(owner)
+expectEqual(LibAddonMenu2.panelName, "GravvyBuildPlannerOptions", "accessibility settings should register when LibAddonMenu is available")
+expectEqual(#LibAddonMenu2.options, 4, "the settings panel should expose the accessibility controls")
 
 SLASH_COMMANDS = {}
 EVENT_ADD_ON_LOADED = 1
@@ -664,14 +905,21 @@ EVENT_INVENTORY_FULL_UPDATE = 3
 EVENT_OPEN_BANK = 4
 EVENT_PLAYER_ACTIVATED = 5
 EVENT_ITEM_SET_COLLECTION_UPDATED = 6
-function zo_callLater(callback) callback() end
 EVENT_MANAGER = {
-    RegisterForEvent = function(self, _, _, callback) self.addOnLoaded = callback end,
+    callbacks = {},
+    RegisterForEvent = function(self, _, eventId, callback)
+        if eventId == EVENT_ADD_ON_LOADED then
+            self.addOnLoaded = callback
+        else
+            self.callbacks[eventId] = callback
+        end
+    end,
     UnregisterForEvent = function() end,
 }
 dofile("GravvyBuildPlanner.lua")
 EVENT_MANAGER.addOnLoaded(nil, "GravvyBuildPlanner")
 expect(SLASH_COMMANDS["/buildplanner"], "long slash command should be registered")
 expect(SLASH_COMMANDS["/gbp"], "short slash command should be registered")
+expect(SLASH_COMMANDS["/buildplannerhelp"], "help slash command should be registered")
 
 print("Build Planner UI tests passed")

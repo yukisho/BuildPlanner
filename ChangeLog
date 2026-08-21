@@ -17,6 +17,22 @@
   bind-on-pickup, and unresolved equipment requirements.
 - Added equipped, backpack, and bank matching with separate exact and adjustable
   results for trait, enchantment, and quality differences.
+- Added readable acquisition routes with a saved preference when several routes
+  are available.
+- Added live setup totals for ready, adjustable, and missing equipment.
+- Added Shopping List API v2 exports with a review of eligible, unavailable,
+  and already-owned gear.
+- Added optional separate glyph entries and upgrade-friendly quality matching.
+- Added a selectable SL2 fallback code and a confirmed link to the Shopping
+  List add-on page when the companion add-on is missing or outdated.
+- Added in-game help for entering guide equipment, reading acquisition states,
+  and exporting Shopping List entries.
+- Added font scaling, high-contrast backdrops, standard control focus states,
+  and optional text prefixes for status messages.
+- Added resolver and native-tooltip coverage for representative overland,
+  dungeon, trial, crafted, monster, mythic, arena, and perfected gear.
+- Made Build Planner request ESO UI mode when opened, release only the cursor it
+  requested, and restore that cursor after the game regains focus.
 
 0.2.0
 - Added the first keyboard and mouse planner window with fixed equipment slots.

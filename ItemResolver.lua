@@ -292,6 +292,31 @@ function Resolver:ApplyPlannedEnchantment(itemLink, category)
     return enchantedLink, enchantId
 end
 
+function Resolver:CreateGlyphLink(category, requirement, setup, quality)
+    local glyphItemId = glyphItemIds[category]
+    if not glyphItemId then
+        return nil
+    end
+
+    local level, championPoints = self:GetRequestedLevel(requirement, setup)
+    local itemSubType = self:CreateSubTypes(
+        level,
+        championPoints,
+        quality or requirement.quality or setup.defaultQuality
+    )
+    local itemLink = string.format(
+        "|H1:item:%d:%d:%d:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
+        glyphItemId,
+        itemSubType,
+        level
+    )
+    local name = zo_strformat(SI_TOOLTIP_ITEM_NAME, GetItemLinkName(itemLink) or "")
+    if name == "" then
+        return nil
+    end
+    return itemLink, name
+end
+
 function Resolver:Resolve(slotKey, requirement, setup)
     if not requirement.setId
         or not GetNumItemSetCollectionPieces

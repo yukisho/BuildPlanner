@@ -7,6 +7,7 @@ local WINDOW_HEIGHT = 700
 local SLOT_ROW_HEIGHT = 35
 local SUGGESTION_ROWS = 6
 local DEFAULT_VALUE = -1
+local AUTOMATIC_ROUTE = "automatic"
 
 local slotStringIds = {
     head = SI_GRAVVY_BUILD_PLANNER_SLOT_HEAD,
@@ -31,7 +32,7 @@ end
 
 local function makeLabel(parent, text, x, y, width, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont(font or "ZoFontGame")
+    GravvyBuildPlannerAccessibility:SetFont(label, font or "ZoFontGame")
     label:SetColor(0.88, 0.86, 0.8, 1)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
@@ -43,7 +44,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
-    button:SetFont("ZoFontGame")
+    GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -60,7 +61,7 @@ local function makeEdit(parent, name, x, y, width, numeric, maxChars)
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 3, 2)
     edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -3, -2)
-    edit:SetFont("ZoFontGame")
+    GravvyBuildPlannerAccessibility:SetFont(edit, "ZoFontGame")
     edit:SetMaxInputChars(maxChars or 100)
     edit:SetNewLineEnabled(false)
     edit:SetSelectAllOnFocus(true)
@@ -70,7 +71,7 @@ local function makeEdit(parent, name, x, y, width, numeric, maxChars)
     return edit, backdrop
 end
 
-local function makeNoteEdit(parent, name, x, y, width, height)
+local function makeNoteEdit(parent, name, x, y, width, height, maxChars)
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(name .. "Backdrop", parent, "ZO_EditBackdrop")
     backdrop:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     backdrop:SetDimensions(width, height)
@@ -83,8 +84,8 @@ local function makeNoteEdit(parent, name, x, y, width, height)
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 5, 4)
     edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -5, -4)
-    edit:SetFont("ZoFontGame")
-    edit:SetMaxInputChars(4000)
+    GravvyBuildPlannerAccessibility:SetFont(edit, "ZoFontGame")
+    edit:SetMaxInputChars(maxChars or 4000)
     edit:SetNewLineEnabled(true)
     return edit
 end
@@ -248,8 +249,11 @@ function UI:Initialize()
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(window)
-    backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
-    backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.035, 0.035, 0.045, 0.98 },
+        { 0.5, 0.42, 0.28, 0.95 }
+    )
 
     local title = makeLabel(window, GetString(SI_GRAVVY_BUILD_PLANNER_TITLE), 18, 8, 280, "ZoFontWinH2")
     title:SetMouseEnabled(true)
@@ -273,14 +277,25 @@ function UI:Initialize()
     undo:SetAnchor(TOPRIGHT, close, TOPLEFT, -8, 0)
     undo:SetHandler("OnClicked", function() self:UndoDeletion() end)
 
+    local export = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT), 135)
+    export:SetAnchor(TOPRIGHT, undo, TOPLEFT, -8, 0)
+    export:SetHandler("OnClicked", function() self:OpenExportDialog() end)
+    local help = makeButton(window, "?", 34)
+    help:SetAnchor(TOPRIGHT, export, TOPLEFT, -8, 0)
+    help:SetHandler("OnClicked", function() self:ShowHelp() end)
+
     self:CreateBuildControls()
     self:CreateSlotRows()
     self:CreateEditor()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
+    self:CreateExportDialog()
+    self:CreateCodeDialog()
+    self:CreateHelpDialog()
+    self:RegisterFocusEvent()
 
-    self.status = makeLabel(window, "", 18, 661, WINDOW_WIDTH - 36, "ZoFontGameSmall")
+    self.status = makeLabel(window, "", 18, 668, WINDOW_WIDTH - 36, "ZoFontGameSmall")
     self:Refresh()
 end
 
@@ -361,6 +376,9 @@ function UI:CreateBuildControls()
         end)
     end)
 
+    self.progressLabel = makeLabel(window, "", 660, 84, 300, "ZoFontGameSmall")
+    self.progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
     divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 124)
     divider:SetDimensions(WINDOW_WIDTH - 28, 1)
@@ -383,13 +401,16 @@ end
 function UI:CreateEditor()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerEditor", self.window, CT_CONTROL)
     panel:SetAnchor(TOPRIGHT, self.window, TOPRIGHT, -18, 137)
-    panel:SetDimensions(430, 490)
+    panel:SetDimensions(430, 530)
     self.editor = panel
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(panel)
-    backdrop:SetCenterColor(0.025, 0.025, 0.035, 0.92)
-    backdrop:SetEdgeColor(0.32, 0.28, 0.2, 0.9)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.025, 0.025, 0.035, 0.92 },
+        { 0.32, 0.28, 0.2, 0.9 }
+    )
 
     self.editorTitle = makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SLOT_EDITOR), 14, 5, 402, "ZoFontWinH3")
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SET), 14, 45, 105)
@@ -462,8 +483,11 @@ function UI:CreateEditor()
         "ZO_DefaultBackdrop"
     )
     previewBackdrop:SetAnchorFill(self.previewButton)
-    previewBackdrop:SetCenterColor(0.025, 0.025, 0.035, 0.95)
-    previewBackdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        previewBackdrop,
+        { 0.025, 0.025, 0.035, 0.95 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
 
     self.previewIcon = WINDOW_MANAGER:CreateControl(nil, self.previewButton, CT_TEXTURE)
     self.previewIcon:SetAnchorFill(self.previewButton)
@@ -477,6 +501,14 @@ function UI:CreateEditor()
         "ZoFontGameSmall"
     )
     self.acquisitionLabel = makeLabel(panel, "", 14, 418, 402, "ZoFontGameSmall")
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE), 14, 450, 105)
+    self.routeCombo, self.routeContainer = makeCombo(
+        panel,
+        "GravvyBuildPlannerRouteCombo",
+        122,
+        450,
+        290
+    )
 
     local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE), 120)
     save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -14, -14)
@@ -507,8 +539,11 @@ function UI:CreateSuggestions()
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(panel)
-    backdrop:SetCenterColor(0.02, 0.02, 0.03, 1)
-    backdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.02, 0.02, 0.03, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
 
     self.suggestionButtons = {}
     for index = 1, SUGGESTION_ROWS do
@@ -534,8 +569,11 @@ function UI:CreateNameDialog()
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(dialog)
-    backdrop:SetCenterColor(0.035, 0.035, 0.045, 1)
-    backdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.035, 0.035, 0.045, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
     makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME), 18, 10, 350, "ZoFontWinH3")
     self.nameEdit = makeEdit(dialog, "GravvyBuildPlannerNameEdit", 18, 49, 354)
 
@@ -561,8 +599,11 @@ function UI:CreateConfirmDialog()
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(dialog)
-    backdrop:SetCenterColor(0.035, 0.035, 0.045, 1)
-    backdrop:SetEdgeColor(0.55, 0.25, 0.2, 1)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.035, 0.035, 0.045, 1 },
+        { 0.55, 0.25, 0.2, 1 }
+    )
     self.confirmText = makeLabel(dialog, "", 20, 16, 390, "ZoFontWinH3")
     self.confirmText:SetHeight(70)
     self.confirmText:SetVerticalAlignment(TEXT_ALIGN_TOP)
@@ -587,8 +628,11 @@ function UI:CreateSlotActionDialog()
 
     local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
     backdrop:SetAnchorFill(dialog)
-    backdrop:SetCenterColor(0.035, 0.035, 0.045, 1)
-    backdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.035, 0.035, 0.045, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
     makeLabel(
         dialog,
         GetString(SI_GRAVVY_BUILD_PLANNER_COPY_MOVE_TITLE),
@@ -615,6 +659,284 @@ function UI:CreateSlotActionDialog()
     local cancel = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CANCEL), 100)
     cancel:SetAnchor(RIGHT, copy, LEFT, -8, 0)
     cancel:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
+end
+
+function UI:CreateExportDialog()
+    local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerExportDialog")
+    dialog:SetDimensions(570, 335)
+    dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
+    dialog:SetHidden(true)
+    dialog:SetDrawTier(DT_HIGH)
+    dialog:SetMouseEnabled(true)
+    self.exportDialog = dialog
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(dialog)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.025, 0.025, 0.035, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
+
+    makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_TITLE),
+        18,
+        10,
+        534,
+        "ZoFontWinH2"
+    )
+    self.exportSummary = makeLabel(dialog, "", 18, 49, 534, "ZoFontGame")
+
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_OWNED), 18, 92, 220)
+    self.exportOwnedCombo = makeCombo(
+        dialog,
+        "GravvyBuildPlannerExportOwnedCombo",
+        248,
+        92,
+        304
+    )
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_GLYPHS), 18, 132, 220)
+    self.exportGlyphCombo = makeCombo(
+        dialog,
+        "GravvyBuildPlannerExportGlyphCombo",
+        248,
+        132,
+        304
+    )
+
+    self.exportHelp = makeLabel(dialog, "", 18, 174, 534, "ZoFontGameSmall")
+    self.exportHelp:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    self.exportHelp:SetHeight(92)
+
+    self.exportAccept = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_CREATE), 145)
+    self.exportAccept:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
+    self.exportAccept:SetHandler("OnClicked", function() self:ExecuteExport() end)
+    local cancel = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CANCEL), 100)
+    cancel:SetAnchor(RIGHT, self.exportAccept, LEFT, -8, 0)
+    cancel:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
+end
+
+function UI:CreateCodeDialog()
+    local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerCodeDialog")
+    dialog:SetDimensions(680, 430)
+    dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
+    dialog:SetHidden(true)
+    dialog:SetDrawTier(DT_HIGH)
+    dialog:SetMouseEnabled(true)
+    self.codeDialog = dialog
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(dialog)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.025, 0.025, 0.035, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
+
+    makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_CODE_TITLE),
+        18,
+        10,
+        644,
+        "ZoFontWinH2"
+    )
+    local help = makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_CODE_HELP),
+        18,
+        48,
+        644,
+        "ZoFontGameSmall"
+    )
+    help:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    help:SetHeight(70)
+    self.codeEdit = makeNoteEdit(
+        dialog,
+        "GravvyBuildPlannerCodeEdit",
+        18,
+        120,
+        644,
+        240,
+        20000
+    )
+
+    local close = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 100)
+    close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
+    close:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
+    local page = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_OPEN_ADDON_PAGE), 190)
+    page:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -14)
+    page:SetHandler("OnClicked", function() self:OpenAddonPage() end)
+end
+
+function UI:OpenAddonPage()
+    if RequestOpenUnsafeURL then
+        RequestOpenUnsafeURL(self.owner.shopping:GetAddonURL())
+    else
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_URL_UNAVAILABLE), true)
+    end
+end
+
+function UI:CreateHelpDialog()
+    local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerHelpDialog")
+    dialog:SetDimensions(700, 625)
+    dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
+    dialog:SetHidden(true)
+    dialog:SetDrawTier(DT_HIGH)
+    dialog:SetMouseEnabled(true)
+    self.helpDialog = dialog
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(dialog)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.025, 0.025, 0.035, 1 },
+        { 0.5, 0.42, 0.28, 1 }
+    )
+    makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_HELP_TITLE),
+        18,
+        10,
+        664,
+        "ZoFontWinH2"
+    )
+    local content = makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT),
+        22,
+        52,
+        656,
+        "ZoFontGameSmall"
+    )
+    content:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    content:SetHeight(505)
+
+    local close = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 100)
+    close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
+    close:SetHandler("OnClicked", function() self:CloseHelp() end)
+end
+
+function UI:ShowHelp()
+    self.helpDialog:SetHidden(false)
+    if self.window:IsHidden() then
+        self.helpRequestedMouse = true
+        self:AcquireMouse()
+    end
+end
+
+function UI:CloseHelp()
+    self.helpDialog:SetHidden(true)
+    if self.helpRequestedMouse and self.window:IsHidden() then
+        self:ReleaseMouse()
+    end
+    self.helpRequestedMouse = false
+end
+
+function UI:OpenExportDialog()
+    self.exportIncludeOwned = false
+    self.exportIncludeGlyphs = false
+    setComboChoices(
+        self.exportOwnedCombo,
+        {
+            { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_EXCLUDE), value = false },
+            { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_INCLUDE), value = true },
+        },
+        false,
+        function(value)
+            self.exportIncludeOwned = value
+            self:RefreshExportReview()
+        end
+    )
+    setComboChoices(
+        self.exportGlyphCombo,
+        {
+            { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_NO_GLYPHS), value = false },
+            { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_ADD_GLYPHS), value = true },
+        },
+        false,
+        function(value)
+            self.exportIncludeGlyphs = value
+            self:RefreshExportReview()
+        end
+    )
+    self:RefreshExportReview()
+    self.exportDialog:SetHidden(false)
+end
+
+function UI:RefreshExportReview()
+    self.exportReview = self.owner.shopping:BuildReview(
+        self.exportIncludeOwned,
+        self.exportIncludeGlyphs
+    )
+    local review = self.exportReview
+    self.exportSummary:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_EXPORT_SUMMARY,
+        review.included,
+        review.glyphs,
+        review.excluded,
+        review.owned
+    ))
+
+    local _, apiState = self.owner.shopping:GetAPI()
+    if apiState == "ready" then
+        self.exportHelp:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_API_READY))
+        self.exportAccept:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_CREATE))
+    elseif apiState == "old" then
+        self.exportHelp:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_API_OLD))
+        self.exportAccept:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_SHOW_CODE))
+    else
+        self.exportHelp:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_API_MISSING))
+        self.exportAccept:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_SHOW_CODE))
+    end
+    local hasItems = #review.items > 0
+    self.exportAccept:SetEnabled(hasItems)
+    self.exportAccept:SetAlpha(hasItems and 1 or 0.55)
+end
+
+function UI:ExecuteExport()
+    local review = self.exportReview
+    if not review or #review.items == 0 then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_NOTHING), true)
+        return
+    end
+
+    local api = self.owner.shopping:GetAPI()
+    if api then
+        local ok, result, itemIndex = self.owner.shopping:CreateList(review)
+        if ok then
+            self.exportDialog:SetHidden(true)
+            self:SetStatus(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_CREATED,
+                result.name,
+                #review.items
+            ))
+            return
+        elseif result ~= "NOT_READY" then
+            local detail = itemIndex and (tostring(result) .. " #" .. tostring(itemIndex))
+                or tostring(result)
+            self:SetStatus(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_FAILED,
+                detail
+            ), true)
+            return
+        end
+    end
+    self:ShowExportCode(review)
+end
+
+function UI:ShowExportCode(review)
+    local code = self.owner.shopping:Encode(review)
+    if not code then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_CODE_FAILED), true)
+        return
+    end
+    self.exportDialog:SetHidden(true)
+    self.codeEdit:SetText(code)
+    self.codeDialog:SetHidden(false)
+    self.codeEdit:TakeFocus()
+    self.codeEdit:SelectAll()
 end
 
 function UI:RefreshBuildCombo()
@@ -690,6 +1012,7 @@ function UI:Refresh()
     self:RefreshBuildCombo()
     self:RefreshSetupCombo()
     self:RefreshRows()
+    self:RefreshProgress()
     self:LoadEditor()
 end
 
@@ -755,6 +1078,8 @@ function UI:LoadEditor()
         setup.defaultChampionPoints
     ))
     self.noteEdit:SetText(requirement.note or "")
+    local acquisition = setup.acquisition[self.selectedSlot]
+    self.editorPreferredRoute = acquisition and acquisition.preferredRoute or nil
     self.slotActionButton:SetEnabled(setup.equipment[self.selectedSlot] ~= nil)
     self.slotActionButton:SetAlpha(setup.equipment[self.selectedSlot] and 1 or 0.55)
     self.loadingEditor = false
@@ -830,6 +1155,7 @@ end
 
 function UI:ReadEditorRequirement()
     local definition = Slots:Get(self.selectedSlot)
+    local setup = self.owner.data:GetCurrentSetup()
     local setName = zo_strtrim(self.setEdit:GetText())
     local level = zo_strtrim(self.levelEdit:GetText())
     local championPoints = zo_strtrim(self.cpEdit:GetText())
@@ -881,6 +1207,14 @@ function UI:ReadEditorRequirement()
             gearCap
         )
     end
+    local saved = setup.equipment[self.selectedSlot]
+    if saved
+        and zo_strlower(zo_strtrim(saved.setName or ""))
+            == zo_strlower(zo_strtrim(requirement.setName or "")) then
+        requirement.itemLink = saved.itemLink
+        requirement.itemId = saved.itemId
+        requirement.itemName = saved.itemName
+    end
     return requirement
 end
 
@@ -904,15 +1238,50 @@ function UI:RefreshEditorPreview(requirement)
             requirement,
             setup
         )
-    local ownedSummary = self.owner.acquisition:GetOwnedSummary(owned)
-    if ownedSummary then
-        self.acquisitionLabel:SetText(ownedSummary)
-    else
-        self.acquisitionLabel:SetText(zo_strformat(
-            SI_GRAVVY_BUILD_PLANNER_ACQUISITION,
-            self.owner.acquisition:GetSummary(acquisition)
-        ))
+    local routes = self.owner.acquisition:GetAvailableRoutes(acquisition, owned)
+    local routeChoices = {}
+    if #routes > 1 then
+        routeChoices[1] = {
+            label = GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE_AUTOMATIC),
+            value = AUTOMATIC_ROUTE,
+        }
     end
+    local preferredAvailable = false
+    for _, route in ipairs(routes) do
+        routeChoices[#routeChoices + 1] = {
+            label = self.owner.acquisition:GetRouteLabel(route),
+            value = route,
+        }
+        preferredAvailable = preferredAvailable or route == self.editorPreferredRoute
+    end
+    if not preferredAvailable then
+        self.editorPreferredRoute = nil
+    end
+    setComboChoices(
+        self.routeCombo,
+        routeChoices,
+        #routes > 1 and (self.editorPreferredRoute or AUTOMATIC_ROUTE) or routes[1],
+        function(route)
+            self.editorPreferredRoute = route ~= AUTOMATIC_ROUTE and route or nil
+            local currentSetup, currentBuild = self.owner.data:GetCurrentSetup()
+            if currentSetup.equipment[self.selectedSlot] then
+                self.owner.data:SetPreferredRoute(
+                    currentBuild.id,
+                    currentSetup.id,
+                    self.selectedSlot,
+                    self.editorPreferredRoute
+                )
+            end
+            self:RefreshEditorPreview()
+        end
+    )
+    self.routeCombo:SetEnabled(#routes > 1)
+    self.routeContainer:SetAlpha(#routes > 1 and 1 or 0.65)
+    self.acquisitionLabel:SetText(self.owner.acquisition:GetStatus(
+        acquisition,
+        owned,
+        self.editorPreferredRoute
+    ))
 
     if self.previewLink and self.previewLink ~= "" then
         self.previewIcon:SetTexture(GetItemLinkIcon(self.previewLink))
@@ -977,8 +1346,25 @@ end
 
 function UI:RefreshOwnedStatus()
     if self.window and not self.window:IsHidden() then
+        self:RefreshProgress()
         self:RefreshEditorPreview()
     end
+end
+
+function UI:RefreshProgress()
+    if not self.progressLabel then
+        return
+    end
+    local setup = self.owner.data:GetCurrentSetup()
+    local progress = self.owner.inventory and self.owner.inventory:GetProgress(setup.id)
+        or { planned = 0, ready = 0, adjustable = 0, missing = 0 }
+    self.progressLabel:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SETUP_PROGRESS,
+        progress.ready,
+        progress.planned,
+        progress.adjustable,
+        progress.missing
+    ))
 end
 
 function UI:ShowSlotTooltip(slotKey, control)
@@ -1007,6 +1393,12 @@ function UI:SaveSlot()
         self:SetStatus(message, true)
         return
     end
+    self.owner.data:SetPreferredRoute(
+        build.id,
+        setup.id,
+        self.selectedSlot,
+        self.editorPreferredRoute
+    )
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
         self.owner.inventory:Refresh()
@@ -1293,7 +1685,7 @@ function UI:UndoDeletion()
 end
 
 function UI:SetStatus(message, isError)
-    self.status:SetText(message or "")
+    self.status:SetText(self.owner.accessibility:FormatStatus(message, isError))
     if isError then
         self.status:SetColor(1, 0.35, 0.3, 1)
     else
@@ -1307,9 +1699,60 @@ function UI:SavePosition()
     geometry.top = self.window:GetTop()
 end
 
+function UI:AcquireMouse()
+    if IsGameCameraUIModeActive and not IsGameCameraUIModeActive() then
+        self.ownsUIMode = true
+        SetGameCameraUIMode(true)
+        zo_callLater(function()
+            if self.ownsUIMode
+                and (not self.window:IsHidden() or not self.helpDialog:IsHidden()) then
+                SetGameCameraUIMode(true)
+            end
+        end, 10)
+    end
+end
+
+function UI:RestoreOwnedMouse(delayMs)
+    if not self.ownsUIMode
+        or (self.window:IsHidden() and self.helpDialog:IsHidden()) then
+        return
+    end
+    zo_callLater(function()
+        if self.ownsUIMode
+            and (not self.window:IsHidden() or not self.helpDialog:IsHidden())
+            and IsGameCameraUIModeActive
+            and not IsGameCameraUIModeActive() then
+            SetGameCameraUIMode(true)
+        end
+    end, delayMs or 10)
+end
+
+function UI:RegisterFocusEvent()
+    EVENT_MANAGER:RegisterForEvent(
+        "GravvyBuildPlanner_GameFocusChanged",
+        EVENT_GAME_FOCUS_CHANGED,
+        function(_, hasFocus)
+            if hasFocus then
+                self:RestoreOwnedMouse(50)
+            end
+        end
+    )
+end
+
+function UI:ReleaseMouse()
+    if not self.ownsUIMode then
+        return
+    end
+    self.ownsUIMode = false
+    if IsGameCameraUIModeActive and IsGameCameraUIModeActive() then
+        SetGameCameraUIMode(false)
+    end
+end
+
 function UI:Show()
-    self:Refresh()
     self.window:SetHidden(false)
+    self:AcquireMouse()
+    self:Refresh()
 end
 
 function UI:Hide()
@@ -1317,7 +1760,12 @@ function UI:Hide()
     self.nameDialog:SetHidden(true)
     self.confirmDialog:SetHidden(true)
     self.slotActionDialog:SetHidden(true)
+    self.exportDialog:SetHidden(true)
+    self.codeDialog:SetHidden(true)
+    self.helpDialog:SetHidden(true)
+    self.helpRequestedMouse = false
     self.window:SetHidden(true)
+    self:ReleaseMouse()
 end
 
 function UI:Toggle()

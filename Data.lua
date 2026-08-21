@@ -5,6 +5,12 @@ local SCHEMA_VERSION = 1
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
+local validAcquisitionRoutes = {
+    buy = true,
+    craft = true,
+    farm = true,
+    reconstruct = true,
+}
 
 local defaults = {
     schemaVersion = SCHEMA_VERSION,
@@ -15,6 +21,9 @@ local defaults = {
     builds = {},
     settings = {
         window = {},
+        fontScale = 1,
+        highContrast = false,
+        nonColorIndicators = false,
     },
 }
 
@@ -223,6 +232,13 @@ function Data:Migrate()
     saved.deletedActions = type(saved.deletedActions) == "table" and saved.deletedActions or {}
     saved.settings = type(saved.settings) == "table" and saved.settings or {}
     saved.settings.window = type(saved.settings.window) == "table" and saved.settings.window or {}
+    saved.settings.fontScale = zo_clamp(
+        tonumber(saved.settings.fontScale) or 1,
+        0.9,
+        1.4
+    )
+    saved.settings.highContrast = saved.settings.highContrast == true
+    saved.settings.nonColorIndicators = saved.settings.nonColorIndicators == true
     local window = saved.settings.window
     window.left = tonumber(window.left)
     window.top = tonumber(window.top)
@@ -313,6 +329,13 @@ function Data:Migrate()
             for slotKey, state in pairs(setup.acquisition) do
                 if not GravvyBuildPlannerSlots:IsValid(slotKey) or type(state) ~= "table" then
                     setup.acquisition[slotKey] = nil
+                elseif not setup.equipment[slotKey]
+                    or not validAcquisitionRoutes[state.preferredRoute] then
+                    setup.acquisition[slotKey] = nil
+                else
+                    setup.acquisition[slotKey] = {
+                        preferredRoute = state.preferredRoute,
+                    }
                 end
             end
             for _, mainHand in ipairs({ "frontMain", "backMain" }) do
@@ -706,6 +729,7 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     end
     if values == nil then
         setup.equipment[slotKey] = nil
+        setup.acquisition[slotKey] = nil
         setup.updatedAt = now()
         build.updatedAt = setup.updatedAt
         return true
@@ -732,10 +756,27 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     setup.equipment[slotKey] = requirement
     if clearedOffHand then
         setup.equipment[clearedOffHand] = nil
+        setup.acquisition[clearedOffHand] = nil
     end
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true, requirement, clearedOffHand
+end
+
+function Data:SetPreferredRoute(buildId, setupId, slotKey, route)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup or not setup.equipment[slotKey] then
+        return false
+    end
+    if route ~= nil and not validAcquisitionRoutes[route] then
+        return false
+    end
+
+    setup.acquisition[slotKey] = route and { preferredRoute = route } or nil
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true
 end
 
 local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot, move)
@@ -759,6 +800,9 @@ local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot,
     requirement.itemName = nil
     requirement.enchantmentId = nil
 
+    local sourceAcquisition = setup.acquisition[sourceSlot]
+    local targetAcquisition = setup.acquisition[targetSlot]
+    setup.acquisition[targetSlot] = nil
     local ok, result, clearedOffHand = self:SetEquipment(
         buildId,
         setupId,
@@ -766,10 +810,17 @@ local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot,
         requirement
     )
     if not ok then
+        setup.acquisition[targetSlot] = targetAcquisition
         return false, result
     end
     if move then
         setup.equipment[sourceSlot] = nil
+        setup.acquisition[sourceSlot] = nil
+        if sourceAcquisition and sourceAcquisition.preferredRoute then
+            setup.acquisition[targetSlot] = {
+                preferredRoute = sourceAcquisition.preferredRoute,
+            }
+        end
         setup.updatedAt = now()
         build.updatedAt = setup.updatedAt
     end

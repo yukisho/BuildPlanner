@@ -4,7 +4,7 @@
 ## Version: 0.3.0
 ## APIVersion: 101050
 ## AddOnVersion: 3
-## OptionalDependsOn: GravvyShoppingList LibMainMenu-2.0
+## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0
 ## SavedVariables: GravvyBuildPlanner_Data
 
 # DISCLAIMER:
@@ -25,7 +25,10 @@ Enchantments.lua
 ItemResolver.lua
 Acquisition.lua
 Inventory.lua
+ShoppingIntegration.lua
+Accessibility.lua
 UI.lua
+Settings.lua
 MainMenu.lua
 GravvyBuildPlanner.lua
 
