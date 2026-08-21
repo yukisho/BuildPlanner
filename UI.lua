@@ -476,7 +476,7 @@ function UI:CreateEditor()
         344,
         "ZoFontGameSmall"
     )
-    self.acquisitionLabel = makeLabel(panel, "", 72, 415, 344, "ZoFontGameSmall")
+    self.acquisitionLabel = makeLabel(panel, "", 14, 418, 402, "ZoFontGameSmall")
 
     local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE), 120)
     save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -14, -14)
@@ -897,10 +897,22 @@ function UI:RefreshEditorPreview(requirement)
         setup,
         resolved
     )
-    self.acquisitionLabel:SetText(zo_strformat(
-        SI_GRAVVY_BUILD_PLANNER_ACQUISITION,
-        self.owner.acquisition:GetSummary(acquisition)
-    ))
+    local owned = self.owner.inventory
+        and self.owner.inventory:GetMatch(
+            setup.id,
+            self.selectedSlot,
+            requirement,
+            setup
+        )
+    local ownedSummary = self.owner.acquisition:GetOwnedSummary(owned)
+    if ownedSummary then
+        self.acquisitionLabel:SetText(ownedSummary)
+    else
+        self.acquisitionLabel:SetText(zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_ACQUISITION,
+            self.owner.acquisition:GetSummary(acquisition)
+        ))
+    end
 
     if self.previewLink and self.previewLink ~= "" then
         self.previewIcon:SetTexture(GetItemLinkIcon(self.previewLink))
@@ -963,6 +975,12 @@ function UI:HideItemTooltip()
     end
 end
 
+function UI:RefreshOwnedStatus()
+    if self.window and not self.window:IsHidden() then
+        self:RefreshEditorPreview()
+    end
+end
+
 function UI:ShowSlotTooltip(slotKey, control)
     local setup = self.owner.data:GetCurrentSetup()
     local requirement = setup.equipment[slotKey]
@@ -990,6 +1008,9 @@ function UI:SaveSlot()
         return
     end
     self.owner.setCatalog:Refresh()
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
+    end
     self:RefreshRows()
     self:LoadEditor()
     self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SLOT_SAVED, slotName(self.selectedSlot)))
@@ -1001,6 +1022,9 @@ function UI:ClearSlot()
     if not ok then
         self:SetStatus(message, true)
         return
+    end
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
     end
     self:RefreshRows()
     self:LoadEditor()
@@ -1072,6 +1096,9 @@ function UI:TransferSlot(move)
         end
         if not ok then
             return false, message
+        end
+        if self.owner.inventory then
+            self.owner.inventory:Refresh()
         end
         self.slotActionDialog:SetHidden(true)
         self.selectedSlot = targetSlot
@@ -1247,6 +1274,9 @@ function UI:FinishAction(result, message)
         return
     end
     self.owner.setCatalog:Refresh()
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
+    end
     self:Refresh()
     self:SetStatus("")
 end

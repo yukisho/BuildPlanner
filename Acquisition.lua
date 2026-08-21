@@ -2,6 +2,25 @@ GravvyBuildPlannerAcquisition = {}
 
 local Acquisition = GravvyBuildPlannerAcquisition
 
+local function normalize(value)
+    value = zo_strtrim(type(value) == "string" and value or "")
+    return zo_strlower(value)
+end
+
+local function matchesSet(requirement, itemLink)
+    local hasSet, setName, _, _, _, setId = GetItemLinkSetInfo(itemLink, false)
+    if requirement.setId then
+        return hasSet and setId == requirement.setId
+    end
+    if requirement.setName and requirement.setName ~= "" then
+        return hasSet and normalize(setName) == normalize(requirement.setName)
+    end
+    if requirement.itemId then
+        return GetItemLinkItemId(itemLink) == requirement.itemId
+    end
+    return false
+end
+
 function Acquisition:New(itemResolver)
     return setmetatable({ itemResolver = itemResolver }, { __index = self })
 end
@@ -68,4 +87,70 @@ function Acquisition:GetSummary(state)
         return GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_UNKNOWN)
     end
     return table.concat(labels, " / ")
+end
+
+function Acquisition:CompareItem(slotKey, requirement, setup, itemLink)
+    if not itemLink
+        or itemLink == ""
+        or not matchesSet(requirement, itemLink)
+        or not self.itemResolver:MatchesSlot(slotKey, requirement, itemLink)
+        or not self.itemResolver:MatchesRequestedLevel(itemLink, requirement, setup) then
+        return nil
+    end
+
+    local differences = {}
+    if requirement.traitType
+        and requirement.traitType ~= ITEM_TRAIT_TYPE_NONE
+        and GetItemLinkTraitInfo(itemLink) ~= requirement.traitType then
+        differences[#differences + 1] = "trait"
+    end
+    if requirement.enchantmentCategory then
+        local _, category = self.itemResolver:GetEnchantInfo(itemLink)
+        if category ~= requirement.enchantmentCategory then
+            differences[#differences + 1] = "enchantment"
+        end
+    end
+
+    local targetQuality = requirement.quality or setup.defaultQuality
+    if targetQuality
+        and GetItemLinkDisplayQuality(itemLink) < targetQuality then
+        differences[#differences + 1] = "quality"
+    end
+
+    return {
+        exact = #differences == 0,
+        differences = differences,
+        itemLink = itemLink,
+    }
+end
+
+function Acquisition:GetOwnedSummary(match)
+    if not match then
+        return nil
+    end
+
+    local locationId = match.location == "equipped"
+        and SI_GRAVVY_BUILD_PLANNER_OWNED_EQUIPPED
+        or match.location == "backpack"
+            and SI_GRAVVY_BUILD_PLANNER_OWNED_BACKPACK
+            or SI_GRAVVY_BUILD_PLANNER_OWNED_BANK
+    local location = GetString(locationId)
+    if match.exact then
+        return zo_strformat(SI_GRAVVY_BUILD_PLANNER_OWNED_EXACT, location)
+    end
+
+    local labels = {}
+    local differenceIds = {
+        trait = SI_GRAVVY_BUILD_PLANNER_NEEDS_TRAIT,
+        enchantment = SI_GRAVVY_BUILD_PLANNER_NEEDS_ENCHANTMENT,
+        quality = SI_GRAVVY_BUILD_PLANNER_NEEDS_QUALITY,
+    }
+    for _, difference in ipairs(match.differences) do
+        labels[#labels + 1] = GetString(differenceIds[difference])
+    end
+    return zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_OWNED_NEEDS_WORK,
+        location,
+        table.concat(labels, ", ")
+    )
 end

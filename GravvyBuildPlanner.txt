@@ -24,6 +24,7 @@ SetCatalog.lua
 Enchantments.lua
 ItemResolver.lua
 Acquisition.lua
+Inventory.lua
 UI.lua
 MainMenu.lua
 GravvyBuildPlanner.lua

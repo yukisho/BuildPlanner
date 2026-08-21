@@ -42,6 +42,10 @@ ITEM_TRAIT_TYPE_ARMOR_DIVINES = 21
 ITEM_TRAIT_TYPE_WEAPON_PRECISE = 22
 ITEM_TRAIT_TYPE_JEWELRY_ARCANE = 23
 LINK_STYLE_DEFAULT = 0
+BAG_WORN = 1
+BAG_BACKPACK = 2
+BAG_BANK = 3
+BAG_SUBSCRIBER_BANK = 4
 
 EQUIP_TYPE_HEAD = 1
 EQUIP_TYPE_SHOULDERS = 2
@@ -198,9 +202,10 @@ function GetItemSetCollectionPieceInfo(setId, index)
         return (setId * 100) + index, index
     end
 end
-function GetItemSetCollectionPieceItemLink(pieceId)
+function GetItemSetCollectionPieceItemLink(pieceId, _, traitType, quality)
     local link = "item:" .. tostring(pieceId)
     local suffix = pieceId % 100
+    local setId = math.floor(pieceId / 100)
     if pieceId >= 5601 and pieceId <= 5603 then
         itemLinks[link] = {
             itemId = pieceId,
@@ -238,6 +243,15 @@ function GetItemSetCollectionPieceItemLink(pieceId)
             enchantId = 503,
         }
     end
+    local item = itemLinks[link]
+    item.setId = setId
+    item.setName = setId == 12 and "Order's Wrath"
+        or setId == 34 and "Pillar of Nirn"
+        or "Monster Set"
+    item.traitType = traitType or ITEM_TRAIT_TYPE_NONE
+    item.quality = quality or ITEM_QUALITY_NORMAL
+    item.level = 50
+    item.championPoints = 160
     return link
 end
 function GetItemLinkEquipType(link) return itemLinks[link].equipType end
@@ -246,6 +260,15 @@ function GetItemLinkWeaponType(link) return itemLinks[link].weaponType end
 function GetItemLinkItemId(link) return itemLinks[link].itemId end
 function GetItemLinkName(link) return itemLinks[link].name end
 function GetItemLinkIcon(link) return "icon:" .. link end
+function GetItemLinkTraitInfo(link) return itemLinks[link].traitType end
+function GetItemLinkDisplayQuality(link) return itemLinks[link].quality end
+function GetItemLinkSetInfo(link)
+    local item = itemLinks[link]
+    if item and item.setId then
+        return true, item.setName, 0, 0, 0, item.setId, 0
+    end
+    return false, "", 0, 0, 0, 0, 0
+end
 function IsItemLinkCrafted(link) return link == "crafted:item" end
 function GetItemLinkBindType(link)
     if link == "crafted:item" then
@@ -278,10 +301,16 @@ local function getLinkedGlyphId(link)
     return tonumber(fields[4])
 end
 function GetItemLinkRequiredLevel(link)
+    if itemLinks[link] then
+        return itemLinks[link].level
+    end
     local fields = getLinkFields(link)
     return fields and tonumber(fields[3]) or 50
 end
 function GetItemLinkRequiredChampionPoints(link)
+    if itemLinks[link] then
+        return itemLinks[link].championPoints
+    end
     local fields = getLinkFields(link)
     if not fields then
         return 160
@@ -298,7 +327,7 @@ function GetItemLinkAppliedEnchantId(link)
     return getLinkedGlyphId(link) or 0
 end
 function GetItemLinkFinalEnchantId(link)
-    return getLinkedGlyphId(link) or itemLinks[link].enchantId
+    return getLinkedGlyphId(link) or (itemLinks[link] and itemLinks[link].enchantId) or 0
 end
 function GetEnchantSearchCategoryType(enchantId)
     if enchantId == 501 then
@@ -312,6 +341,18 @@ function GetEnchantSearchCategoryType(enchantId)
     end
 end
 
+local testBags = {}
+function GetBagSize(bagId)
+    return #(testBags[bagId] or {})
+end
+function GetItemLink(bagId, slotIndex)
+    local bag = testBags[bagId] or {}
+    return bag[slotIndex + 1] or ""
+end
+function GetSlotStackSize(bagId, slotIndex)
+    return GetItemLink(bagId, slotIndex) ~= "" and 1 or 0
+end
+
 ItemTooltip = newControl("ItemTooltip")
 function ItemTooltip:SetLink(link) self.link = link end
 function ItemTooltip:AddLine(text) self.extraLine = text end
@@ -321,6 +362,7 @@ function ClearTooltip(tooltip) tooltip.link = nil end
 dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
 dofile("Acquisition.lua")
+dofile("Inventory.lua")
 dofile("UI.lua")
 
 local owner = {
@@ -329,6 +371,7 @@ local owner = {
     itemResolver = GravvyBuildPlannerItemResolver:New(),
 }
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
+owner.inventory = GravvyBuildPlannerInventory:New(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 
@@ -484,6 +527,119 @@ ui:TransferSlot(true)
 expectEqual(setup.equipment.shoulders, nil, "move action should clear its source")
 expect(setup.equipment.hands, "move action should fill its destination")
 
+itemLinks["owned:head"] = {
+    itemId = 3401,
+    name = "Helm of Pillar of Nirn",
+    setId = 34,
+    setName = "Pillar of Nirn",
+    equipType = EQUIP_TYPE_HEAD,
+    armorType = ARMORTYPE_MEDIUM,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+    quality = ITEM_QUALITY_LEGENDARY,
+    level = 50,
+    championPoints = 160,
+    enchantId = 26588,
+}
+itemLinks["owned:hands"] = {
+    itemId = 3404,
+    name = "Gauntlets of Pillar of Nirn",
+    setId = 34,
+    setName = "Pillar of Nirn",
+    equipType = EQUIP_TYPE_HAND,
+    armorType = ARMORTYPE_MEDIUM,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_NONE,
+    quality = ITEM_QUALITY_ARTIFACT,
+    level = 50,
+    championPoints = 160,
+    enchantId = 501,
+}
+itemLinks["owned:waist"] = {
+    itemId = 9905,
+    name = "Sash of Whorl of the Depths",
+    setId = 99,
+    setName = "Whorl of the Depths",
+    equipType = EQUIP_TYPE_WAIST,
+    armorType = ARMORTYPE_LIGHT,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = 12,
+    quality = ITEM_QUALITY_LEGENDARY,
+    level = 50,
+    championPoints = 160,
+    enchantId = 501,
+}
+itemLinks["owned:ring"] = {
+    itemId = 3402,
+    name = "Ring of Pillar of Nirn",
+    setId = 34,
+    setName = "Pillar of Nirn",
+    equipType = EQUIP_TYPE_RING,
+    armorType = ARMORTYPE_NONE,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_NONE,
+    quality = ITEM_QUALITY_LEGENDARY,
+    level = 50,
+    championPoints = 160,
+    enchantId = 502,
+}
+itemLinks["owned:low-level-head"] = {
+    itemId = 3401,
+    name = "Helm of Pillar of Nirn",
+    setId = 34,
+    setName = "Pillar of Nirn",
+    equipType = EQUIP_TYPE_HEAD,
+    armorType = ARMORTYPE_MEDIUM,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+    quality = ITEM_QUALITY_LEGENDARY,
+    level = 40,
+    championPoints = 0,
+    enchantId = 26588,
+}
+testBags[BAG_WORN] = { "owned:head" }
+testBags[BAG_BACKPACK] = { "owned:hands", "owned:ring" }
+testBags[BAG_BANK] = { "owned:waist" }
+
+expectEqual(owner.acquisition:CompareItem(
+    "head",
+    setup.equipment.head,
+    setup,
+    "owned:low-level-head"
+), nil, "under-level gear should not count as an adjustable match")
+
+local _, currentBuild = BuildPlannerTestData:GetCurrentSetup()
+BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "ring2", {
+    setName = "Pillar of Nirn",
+})
+owner.inventory:Refresh()
+local headMatch = owner.inventory:GetMatch(setup.id, "head")
+expect(headMatch and headMatch.exact, "equipped exact pieces should satisfy a planned slot")
+expectEqual(headMatch.location, "equipped", "equipped matches should retain their location")
+local handMatch = owner.inventory:GetMatch(setup.id, "hands")
+expect(handMatch and not handMatch.exact, "repairable pieces should be kept as adjustable matches")
+expectEqual(#handMatch.differences, 3, "adjustable match should report trait, enchantment, and quality")
+local waistMatch = owner.inventory:GetMatch(setup.id, "waist")
+expect(waistMatch and waistMatch.exact, "manual set names should match banked pieces")
+expectEqual(waistMatch.location, "bank", "bank matches should retain their location")
+local ringMatches = (owner.inventory:GetMatch(setup.id, "ring1") and 1 or 0)
+    + (owner.inventory:GetMatch(setup.id, "ring2") and 1 or 0)
+expectEqual(ringMatches, 1, "one owned ring should not satisfy two planned slots")
+
+ui:EditSlot("hands")
+expect(ui.acquisitionLabel.text:find(
+    GetString(SI_GRAVVY_BUILD_PLANNER_NEEDS_QUALITY),
+    1,
+    true
+), "editor should show work needed by an owned piece")
+ui.setEdit:SetText("Unowned Test Set")
+ui:OnSetTextChanged()
+expect(ui.acquisitionLabel.text:find(
+    GetString(SI_GRAVVY_BUILD_PLANNER_OWNED_BACKPACK),
+    1,
+    true
+) == nil, "unsaved edits should not show ownership for the previously saved requirement")
+
 ui:EditSlot("head")
 ui:ClearSlot()
 expectEqual(setup.equipment.head, nil, "clear button should remove the requirement")
@@ -503,6 +659,12 @@ expectEqual(LibMainMenu2.definition.binding, "GRAVVY_BUILD_PLANNER_TOGGLE", "mai
 
 SLASH_COMMANDS = {}
 EVENT_ADD_ON_LOADED = 1
+EVENT_INVENTORY_SINGLE_SLOT_UPDATE = 2
+EVENT_INVENTORY_FULL_UPDATE = 3
+EVENT_OPEN_BANK = 4
+EVENT_PLAYER_ACTIVATED = 5
+EVENT_ITEM_SET_COLLECTION_UPDATED = 6
+function zo_callLater(callback) callback() end
 EVENT_MANAGER = {
     RegisterForEvent = function(self, _, _, callback) self.addOnLoaded = callback end,
     UnregisterForEvent = function() end,

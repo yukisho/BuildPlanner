@@ -9,8 +9,10 @@ function addon:Initialize()
     self.setCatalog = GravvyBuildPlannerSetCatalog:New(self.data)
     self.itemResolver = GravvyBuildPlannerItemResolver:New()
     self.acquisition = GravvyBuildPlannerAcquisition:New(self.itemResolver)
+    self.inventory = GravvyBuildPlannerInventory:New(self)
     self.ui = GravvyBuildPlannerUI:New(self)
     self.ui:Initialize()
+    self.inventory:Initialize()
     GravvyBuildPlannerMainMenu:Initialize(self)
 
     SLASH_COMMANDS["/buildplanner"] = function() self:ToggleWindow() end
