@@ -28,6 +28,16 @@ ITEM_QUALITY_NORMAL = 1
 ITEM_QUALITY_MAGIC = 2
 ITEM_QUALITY_ARCANE = 3
 ITEM_QUALITY_ARTIFACT = 4
+BIND_TYPE_NONE = 0
+BIND_TYPE_ON_EQUIP = 1
+BIND_TYPE_ON_PICKUP = 2
+BIND_TYPE_ON_PICKUP_BACKPACK = 3
+ITEM_SET_TYPE_NONE = 0
+ITEM_SET_TYPE_CRAFTED = 1
+ITEM_SET_TYPE_DUNGEON = 2
+ITEM_SET_TYPE_MONSTER = 3
+ITEM_SET_TYPE_WEAPON = 4
+ITEM_SET_TYPE_WORLD = 5
 ITEM_TRAIT_TYPE_ARMOR_DIVINES = 21
 ITEM_TRAIT_TYPE_WEAPON_PRECISE = 22
 ITEM_TRAIT_TYPE_JEWELRY_ARCANE = 23
@@ -185,7 +195,7 @@ function GetNumItemSetCollectionPieces(setId)
 end
 function GetItemSetCollectionPieceInfo(setId, index)
     if index >= 1 and index <= 3 then
-        return (setId * 100) + index
+        return (setId * 100) + index, index
     end
 end
 function GetItemSetCollectionPieceItemLink(pieceId)
@@ -236,6 +246,30 @@ function GetItemLinkWeaponType(link) return itemLinks[link].weaponType end
 function GetItemLinkItemId(link) return itemLinks[link].itemId end
 function GetItemLinkName(link) return itemLinks[link].name end
 function GetItemLinkIcon(link) return "icon:" .. link end
+function IsItemLinkCrafted(link) return link == "crafted:item" end
+function GetItemLinkBindType(link)
+    if link == "crafted:item" then
+        return BIND_TYPE_NONE
+    end
+    local item = itemLinks[link]
+    if item and item.itemId >= 1200 and item.itemId < 1300 then
+        return BIND_TYPE_ON_EQUIP
+    end
+    return BIND_TYPE_ON_PICKUP
+end
+function GetItemSetType(setId)
+    if setId == 12 then
+        return ITEM_SET_TYPE_WORLD
+    elseif setId == 34 then
+        return ITEM_SET_TYPE_DUNGEON
+    elseif setId == 56 then
+        return ITEM_SET_TYPE_MONSTER
+    end
+    return ITEM_SET_TYPE_NONE
+end
+function IsItemSetCollectionPieceUnlocked(pieceId)
+    return pieceId == 3401
+end
 local function getLinkedGlyphId(link)
     local fields = getLinkFields(link)
     if not fields then
@@ -286,6 +320,7 @@ function ClearTooltip(tooltip) tooltip.link = nil end
 
 dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
+dofile("Acquisition.lua")
 dofile("UI.lua")
 
 local owner = {
@@ -293,6 +328,7 @@ local owner = {
     setCatalog = BuildPlannerTestCatalog,
     itemResolver = GravvyBuildPlannerItemResolver:New(),
 }
+owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 
@@ -303,6 +339,29 @@ local matchingEnchant = owner.itemResolver:Resolve("head", {
     enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_HEALTH,
 }, resolverSetup)
 expect(matchingEnchant.enchantmentMatches, "resolver should recognize a matching default enchantment")
+expectEqual(matchingEnchant.pieceId, 3401, "resolver should retain the collection piece id")
+expectEqual(matchingEnchant.collectionSlot, 1, "resolver should retain the collection slot")
+local tradeableState = owner.acquisition:Classify("head", {
+    setId = 12,
+    armorType = ARMORTYPE_LIGHT,
+}, resolverSetup)
+expect(tradeableState.tradeable, "bind-on-equip pieces should be guild-store eligible")
+expect(not tradeableState.bindOnPickup, "bind-on-equip pieces should not be marked bind-on-pickup")
+expect(not tradeableState.reconstructable, "uncollected pieces should not be reconstructable")
+local reconstructState = owner.acquisition:Classify("head", {
+    setId = 34,
+    armorType = ARMORTYPE_MEDIUM,
+}, resolverSetup)
+expect(reconstructState.bindOnPickup, "dungeon pieces should retain their bind policy")
+expect(not reconstructState.tradeable, "bind-on-pickup pieces should not be guild-store eligible")
+expect(reconstructState.reconstructable, "unlocked collection pieces should be reconstructable")
+local craftedState = owner.acquisition:Classify("head", {
+    itemLink = "crafted:item",
+}, resolverSetup)
+expect(craftedState.crafted, "crafted links should be recognized")
+expect(craftedState.tradeable, "unbound crafted links should be guild-store eligible")
+local unknownState = owner.acquisition:Classify("head", {}, resolverSetup)
+expect(unknownState.unknown, "unresolved requirements should remain unknown")
 local monsterArmorTypes = owner.itemResolver:GetAvailableArmorTypes("head", 56)
 expectEqual(#monsterArmorTypes, 3, "monster sets should retain every available armor weight")
 local plannedEnchantLink = owner.itemResolver:ApplyPlannedEnchantment(
@@ -395,6 +454,11 @@ expectEqual(setup.equipment.head.armorType, ARMORTYPE_MEDIUM, "selected armor ty
 expectEqual(setup.equipment.head.championPoints, 160, "numeric editor values should be saved")
 expectEqual(setup.equipment.head.enchantmentCategory, ENCHANTMENT_SEARCH_CATEGORY_STAMINA, "enchantment category should be saved")
 expect(setup.equipment.head.itemLink, "matching collection piece should be resolved")
+expect(ui.acquisitionLabel.text:find(
+    GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_RECONSTRUCT),
+    1,
+    true
+), "saved collection pieces should show reconstruction availability")
 ui:ShowSlotTooltip("head", ui.rows.head)
 expectEqual(ItemTooltip.link, setup.equipment.head.itemLink, "slot hover should show the native item tooltip")
 expect(ItemTooltip.extraLine, "tooltip should identify a planned enchantment that differs from the preview")

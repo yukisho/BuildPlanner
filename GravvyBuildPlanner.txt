@@ -23,6 +23,7 @@ Data.lua
 SetCatalog.lua
 Enchantments.lua
 ItemResolver.lua
+Acquisition.lua
 UI.lua
 MainMenu.lua
 GravvyBuildPlanner.lua

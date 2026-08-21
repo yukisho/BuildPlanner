@@ -6,3 +6,4 @@
 TODO.txt
 .npm-cache/
 .lua-lint/
+Tests/*.lua

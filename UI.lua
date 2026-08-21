@@ -476,6 +476,7 @@ function UI:CreateEditor()
         344,
         "ZoFontGameSmall"
     )
+    self.acquisitionLabel = makeLabel(panel, "", 72, 415, 344, "ZoFontGameSmall")
 
     local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE), 120)
     save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -14, -14)
@@ -889,6 +890,17 @@ function UI:RefreshEditorPreview(requirement)
     local resolved = self.owner.itemResolver:Resolve(self.selectedSlot, requirement, setup)
     self.previewLink = resolved and resolved.itemLink or requirement.itemLink
     self.previewRequirement = requirement
+
+    local acquisition = self.owner.acquisition:Classify(
+        self.selectedSlot,
+        requirement,
+        setup,
+        resolved
+    )
+    self.acquisitionLabel:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_ACQUISITION,
+        self.owner.acquisition:GetSummary(acquisition)
+    ))
 
     if self.previewLink and self.previewLink ~= "" then
         self.previewIcon:SetTexture(GetItemLinkIcon(self.previewLink))

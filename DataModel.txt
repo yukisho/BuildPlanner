@@ -29,6 +29,10 @@ Missing fields are allowed while the player is still entering a guide. Fields
 that contradict the slot family are rejected. Older free-text enchantments are
 kept as custom choices until the player selects a structured category.
 
+Acquisition classification is derived from the current ESO item link, set type,
+and exact collection piece. It is not stored on the requirement, so changes to
+the player's collection are reflected without rewriting the build.
+
 A two-handed weapon is stored only in frontMain or backMain with
 occupiesOffHand=true. Its paired off-hand entry is cleared and cannot be filled
 until the main-hand requirement changes or is removed.

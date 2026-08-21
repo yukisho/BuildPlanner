@@ -13,6 +13,8 @@
 - Kept all available weights selectable for monster sets and unrestricted manual sets.
 - Added copy and move actions for compatible equipment slots, including safe
   handling for occupied off-hands and existing destination requirements.
+- Added live acquisition classification for tradeable, crafted, reconstructable,
+  bind-on-pickup, and unresolved equipment requirements.
 
 0.2.0
 - Added the first keyboard and mouse planner window with fixed equipment slots.

@@ -310,7 +310,10 @@ function Resolver:Resolve(slotKey, requirement, setup)
     local fallback
     local count = GetNumItemSetCollectionPieces(requirement.setId) or 0
     for index = 1, count do
-        local pieceId = GetItemSetCollectionPieceInfo(requirement.setId, index)
+        local pieceId, collectionSlot = GetItemSetCollectionPieceInfo(
+            requirement.setId,
+            index
+        )
         if pieceId then
             local itemLink = GetItemSetCollectionPieceItemLink(
                 pieceId,
@@ -347,6 +350,8 @@ function Resolver:Resolve(slotKey, requirement, setup)
                     itemLink = itemLink,
                     itemId = GetItemLinkItemId(itemLink),
                     itemName = zo_strformat(SI_TOOLTIP_ITEM_NAME, GetItemLinkName(itemLink)),
+                    pieceId = pieceId,
+                    collectionSlot = collectionSlot,
                     enchantmentId = enchantId,
                     enchantmentCategory = enchantmentCategory,
                     enchantmentMatches = enchantmentMatches,
