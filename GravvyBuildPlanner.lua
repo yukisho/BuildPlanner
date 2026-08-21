@@ -6,6 +6,17 @@ local addon = GravvyBuildPlanner
 
 function addon:Initialize()
     self.data = GravvyBuildPlannerData:New()
+    self.setCatalog = GravvyBuildPlannerSetCatalog:New(self.data)
+    self.ui = GravvyBuildPlannerUI:New(self)
+    self.ui:Initialize()
+    GravvyBuildPlannerMainMenu:Initialize(self)
+
+    SLASH_COMMANDS["/buildplanner"] = function() self:ToggleWindow() end
+    SLASH_COMMANDS["/gbp"] = function() self:ToggleWindow() end
+end
+
+function addon:ToggleWindow()
+    self.ui:Toggle()
 end
 
 local function onAddOnLoaded(_, name)

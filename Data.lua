@@ -13,7 +13,9 @@ local defaults = {
     selectedBuildId = nil,
     deletedActions = {},
     builds = {},
-    settings = {},
+    settings = {
+        window = {},
+    },
 }
 
 local stringFields = {
@@ -219,6 +221,10 @@ function Data:Migrate()
     saved.builds = type(saved.builds) == "table" and saved.builds or {}
     saved.deletedActions = type(saved.deletedActions) == "table" and saved.deletedActions or {}
     saved.settings = type(saved.settings) == "table" and saved.settings or {}
+    saved.settings.window = type(saved.settings.window) == "table" and saved.settings.window or {}
+    local window = saved.settings.window
+    window.left = tonumber(window.left)
+    window.top = tonumber(window.top)
     while #saved.deletedActions > MAX_DELETED_ACTIONS do
         table.remove(saved.deletedActions, 1)
     end
@@ -351,6 +357,10 @@ end
 
 function Data:GetBuilds()
     return self.saved.builds
+end
+
+function Data:GetSettings()
+    return self.saved.settings
 end
 
 function Data:FindBuild(id)

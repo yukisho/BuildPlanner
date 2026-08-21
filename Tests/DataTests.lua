@@ -17,7 +17,10 @@ function ZO_CreateStringId(name, value)
     strings[name] = value
 end
 
-function GetString(id)
+function GetString(id, index)
+    if index ~= nil then
+        return tostring(id) .. " " .. tostring(index)
+    end
     return strings[id]
 end
 
@@ -198,5 +201,30 @@ expect(repaired.saved.builds[1].setups[1].id ~= repaired.saved.builds[1].setups[
 expect(repaired.saved.builds[1].setups[1].name ~= repaired.saved.builds[1].setups[2].name, "duplicate setup names should be repaired")
 expectEqual(repaired.saved.builds[1].setups[1].equipment.frontOff, nil, "invalid two-handed off-hand should be removed")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
+
+local collectionSets = {
+    [12] = "Order's Wrath",
+    [34] = "Pillar of Nirn",
+}
+function GetNextItemSetCollectionId(lastId)
+    if lastId == nil then
+        return 12
+    elseif lastId == 12 then
+        return 34
+    end
+end
+
+function GetItemSetName(setId)
+    return collectionSets[setId]
+end
+
+dofile("SetCatalog.lua")
+local catalog = GravvyBuildPlannerSetCatalog:New(data)
+expectEqual(catalog:FindExact("pillar of nirn").setId, 34, "set lookup should ignore case")
+expect(catalog:FindExact("Whorl of the Depths"), "saved manual sets should be searchable")
+expectEqual(catalog:Search("nirn")[1].name, "Pillar of Nirn", "set search should match within names")
+
+BuildPlannerTestData = data
+BuildPlannerTestCatalog = catalog
 
 print("Build Planner data tests passed")

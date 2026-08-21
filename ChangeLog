@@ -1,3 +1,11 @@
+0.2.0
+- Added the first keyboard and mouse planner window with fixed equipment slots.
+- Added build and setup selectors, naming actions, deletion confirmation, and undo.
+- Added set-name autocomplete from Item Set Collections and previously entered sets.
+- Added contextual armor, weapon, trait, quality, level, enchantment, and note fields.
+- Added a main-menu entry when LibMainMenu-2.0 is available, /buildplanner and
+  /gbp commands, and a configurable keybinding.
+
 0.1.0
 - Added the initial account-wide build and setup data model.
 - Added canonical armor, jewelry, and weapon slots with two-handed weapon handling.
