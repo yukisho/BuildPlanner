@@ -738,6 +738,52 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     return true, requirement, clearedOffHand
 end
 
+local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot, move)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+
+    local source = setup.equipment[sourceSlot]
+    if not source then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY)
+    end
+    if not GravvyBuildPlannerSlots:IsTransferCompatible(sourceSlot, targetSlot, source) then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_TRANSFER_SLOT)
+    end
+
+    local requirement = copyRequirement(source)
+    requirement.itemLink = nil
+    requirement.itemId = nil
+    requirement.itemName = nil
+    requirement.enchantmentId = nil
+
+    local ok, result, clearedOffHand = self:SetEquipment(
+        buildId,
+        setupId,
+        targetSlot,
+        requirement
+    )
+    if not ok then
+        return false, result
+    end
+    if move then
+        setup.equipment[sourceSlot] = nil
+        setup.updatedAt = now()
+        build.updatedAt = setup.updatedAt
+    end
+    return true, result, clearedOffHand
+end
+
+function Data:CopyEquipment(buildId, setupId, sourceSlot, targetSlot)
+    return transferEquipment(self, buildId, setupId, sourceSlot, targetSlot, false)
+end
+
+function Data:MoveEquipment(buildId, setupId, sourceSlot, targetSlot)
+    return transferEquipment(self, buildId, setupId, sourceSlot, targetSlot, true)
+end
+
 function Data:PushDeletedAction(action)
     action.deletedAt = now()
     local actions = self.saved.deletedActions

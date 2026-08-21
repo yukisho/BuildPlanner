@@ -83,6 +83,16 @@ function Slots:GetMainHand(slotKey)
     end
 end
 
+function Slots:IsTransferCompatible(sourceSlot, targetSlot, requirement)
+    local source = self:Get(sourceSlot)
+    local target = self:Get(targetSlot)
+    return sourceSlot ~= targetSlot
+        and source ~= nil
+        and target ~= nil
+        and source.family == target.family
+        and self:IsRequirementCompatible(targetSlot, requirement)
+end
+
 function Slots:IsRequirementCompatible(slotKey, requirement)
     local definition = self:Get(slotKey)
     if not definition or type(requirement) ~= "table" then

@@ -399,6 +399,28 @@ ui:ShowSlotTooltip("head", ui.rows.head)
 expectEqual(ItemTooltip.link, setup.equipment.head.itemLink, "slot hover should show the native item tooltip")
 expect(ItemTooltip.extraLine, "tooltip should identify a planned enchantment that differs from the preview")
 
+ui:OpenSlotActionDialog()
+local hasShoulders = false
+local hasRing = false
+for _, entry in ipairs(ui.slotTargetCombo.items) do
+    hasShoulders = hasShoulders or entry.label == GetString(SI_GRAVVY_BUILD_PLANNER_SLOT_SHOULDERS)
+    hasRing = hasRing or entry.label == GetString(SI_GRAVVY_BUILD_PLANNER_SLOT_RING1)
+end
+expect(hasShoulders, "armor transfer picker should include compatible armor slots")
+expect(not hasRing, "armor transfer picker should exclude jewelry slots")
+ui.slotTargetCombo.selectedValue = "shoulders"
+ui:TransferSlot(false)
+expect(setup.equipment.head, "copy action should keep its source")
+expect(setup.equipment.shoulders, "copy action should fill its destination")
+expectEqual(setup.equipment.shoulders.itemLink, nil, "copied UI requirements should resolve for their new slot")
+
+ui:OpenSlotActionDialog()
+ui.slotTargetCombo.selectedValue = "hands"
+ui:TransferSlot(true)
+expectEqual(setup.equipment.shoulders, nil, "move action should clear its source")
+expect(setup.equipment.hands, "move action should fill its destination")
+
+ui:EditSlot("head")
 ui:ClearSlot()
 expectEqual(setup.equipment.head, nil, "clear button should remove the requirement")
 

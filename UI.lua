@@ -278,6 +278,7 @@ function UI:Initialize()
     self:CreateEditor()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
+    self:CreateSlotActionDialog()
 
     self.status = makeLabel(window, "", 18, 661, WINDOW_WIDTH - 36, "ZoFontGameSmall")
     self:Refresh()
@@ -482,6 +483,13 @@ function UI:CreateEditor()
     local clear = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR), 120)
     clear:SetAnchor(RIGHT, save, LEFT, -8, 0)
     clear:SetHandler("OnClicked", function() self:ClearSlot() end)
+    self.slotActionButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_COPY_MOVE),
+        120
+    )
+    self.slotActionButton:SetAnchor(BOTTOMLEFT, panel, BOTTOMLEFT, 14, -14)
+    self.slotActionButton:SetHandler("OnClicked", function() self:OpenSlotActionDialog() end)
 
     self:CreateSuggestions()
 end
@@ -563,6 +571,48 @@ function UI:CreateConfirmDialog()
     accept:SetHandler("OnClicked", function() self:AcceptConfirm() end)
     local cancel = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CANCEL), 100)
     cancel:SetAnchor(RIGHT, accept, LEFT, -8, 0)
+    cancel:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
+end
+
+function UI:CreateSlotActionDialog()
+    local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerSlotActionDialog")
+    dialog:SetDimensions(430, 180)
+    dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
+    dialog:SetClampedToScreen(true)
+    dialog:SetMouseEnabled(true)
+    dialog:SetHidden(true)
+    dialog:SetDrawTier(DT_HIGH)
+    self.slotActionDialog = dialog
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(dialog)
+    backdrop:SetCenterColor(0.035, 0.035, 0.045, 1)
+    backdrop:SetEdgeColor(0.5, 0.42, 0.28, 1)
+    makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_COPY_MOVE_TITLE),
+        18,
+        10,
+        394,
+        "ZoFontWinH3"
+    )
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_DESTINATION), 18, 52, 105)
+    self.slotTargetCombo = makeCombo(
+        dialog,
+        "GravvyBuildPlannerSlotTargetCombo",
+        123,
+        52,
+        289
+    )
+
+    local move = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_MOVE), 100)
+    move:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
+    move:SetHandler("OnClicked", function() self:TransferSlot(true) end)
+    local copy = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_COPY), 100)
+    copy:SetAnchor(RIGHT, move, LEFT, -8, 0)
+    copy:SetHandler("OnClicked", function() self:TransferSlot(false) end)
+    local cancel = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CANCEL), 100)
+    cancel:SetAnchor(RIGHT, copy, LEFT, -8, 0)
     cancel:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
 end
 
@@ -704,6 +754,8 @@ function UI:LoadEditor()
         setup.defaultChampionPoints
     ))
     self.noteEdit:SetText(requirement.note or "")
+    self.slotActionButton:SetEnabled(setup.equipment[self.selectedSlot] ~= nil)
+    self.slotActionButton:SetAlpha(setup.equipment[self.selectedSlot] and 1 or 0.55)
     self.loadingEditor = false
     self:RefreshEditorPreview()
 end
@@ -943,6 +995,107 @@ function UI:ClearSlot()
     self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SLOT_CLEARED, slotName(self.selectedSlot)))
 end
 
+function UI:GetTransferTargets(requirement)
+    local setup = self.owner.data:GetCurrentSetup()
+    local choices = {}
+    for _, slotKey in ipairs(Slots.ORDER) do
+        local mainHand = Slots:GetMainHand(slotKey)
+        local mainRequirement = mainHand and setup.equipment[mainHand]
+        if Slots:IsTransferCompatible(self.selectedSlot, slotKey, requirement)
+            and not (mainRequirement and mainRequirement.occupiesOffHand) then
+            choices[#choices + 1] = { label = slotName(slotKey), value = slotKey }
+        end
+    end
+    return choices
+end
+
+function UI:OpenSlotActionDialog()
+    local setup = self.owner.data:GetCurrentSetup()
+    local requirement = setup.equipment[self.selectedSlot]
+    if not requirement then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY), true)
+        return
+    end
+
+    local choices = self:GetTransferTargets(requirement)
+    if #choices == 0 then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_NO_TRANSFER_SLOT), true)
+        return
+    end
+    setComboChoices(self.slotTargetCombo, choices, choices[1].value)
+    self.slotActionDialog:SetHidden(false)
+end
+
+function UI:TransferSlot(move)
+    local setup = self.owner.data:GetCurrentSetup()
+    local sourceSlot = self.selectedSlot
+    local targetSlot = self.slotTargetCombo.selectedValue
+    local requirement = setup.equipment[sourceSlot]
+    if not requirement or not targetSlot then
+        self.slotActionDialog:SetHidden(true)
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY), true)
+        return
+    end
+
+    local targetOffHand = Slots:GetOccupiedOffHand(targetSlot, requirement.weaponType)
+    local replacesTarget = setup.equipment[targetSlot] ~= nil
+    local clearsOffHand = targetOffHand and setup.equipment[targetOffHand] ~= nil
+    local function finishTransfer()
+        local currentSetup, build = self.owner.data:GetCurrentSetup()
+        local ok, message
+        if move then
+            ok, message = self.owner.data:MoveEquipment(
+                build.id,
+                currentSetup.id,
+                sourceSlot,
+                targetSlot
+            )
+        else
+            ok, message = self.owner.data:CopyEquipment(
+                build.id,
+                currentSetup.id,
+                sourceSlot,
+                targetSlot
+            )
+        end
+        if not ok then
+            return false, message
+        end
+        self.slotActionDialog:SetHidden(true)
+        self.selectedSlot = targetSlot
+        self:RefreshRows()
+        self:LoadEditor()
+        self:SetStatus(zo_strformat(
+            move and SI_GRAVVY_BUILD_PLANNER_SLOT_MOVED or SI_GRAVVY_BUILD_PLANNER_SLOT_COPIED,
+            slotName(sourceSlot),
+            slotName(targetSlot)
+        ))
+        return true
+    end
+
+    if replacesTarget or clearsOffHand then
+        local message
+        if clearsOffHand then
+            message = zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_CONFIRM_TRANSFER_TWO_HAND,
+                slotName(targetSlot),
+                slotName(targetOffHand)
+            )
+        else
+            message = zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_CONFIRM_REPLACE_SLOT,
+                slotName(targetSlot)
+            )
+        end
+        self:OpenConfirm(message, finishTransfer, true)
+        return
+    end
+    local ok, message = finishTransfer()
+    if not ok then
+        self:SetStatus(message, true)
+    end
+end
+
 function UI:OnSetTextChanged()
     if self.suppressSetSearch then
         return
@@ -1054,21 +1207,26 @@ function UI:AcceptNameDialog()
     self:FinishAction(result)
 end
 
-function UI:OpenConfirm(message, callback)
+function UI:OpenConfirm(message, callback, callbackRefreshesUI)
     self.confirmCallback = callback
+    self.confirmCallbackRefreshesUI = callbackRefreshesUI == true
     self.confirmText:SetText(message)
     self.confirmDialog:SetHidden(false)
 end
 
 function UI:AcceptConfirm()
     local result, message = self.confirmCallback()
+    local callbackRefreshesUI = self.confirmCallbackRefreshesUI
+    self.confirmCallbackRefreshesUI = nil
     if not result then
         self.confirmDialog:SetHidden(true)
         self:SetStatus(message, true)
         return
     end
     self.confirmDialog:SetHidden(true)
-    self:FinishAction(result)
+    if not callbackRefreshesUI then
+        self:FinishAction(result)
+    end
 end
 
 function UI:FinishAction(result, message)
@@ -1116,6 +1274,7 @@ function UI:Hide()
     self.suggestionPanel:SetHidden(true)
     self.nameDialog:SetHidden(true)
     self.confirmDialog:SetHidden(true)
+    self.slotActionDialog:SetHidden(true)
     self.window:SetHidden(true)
 end
 

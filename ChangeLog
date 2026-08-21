@@ -11,6 +11,8 @@
 - Labeled the Level and CP fields with their inherited setup defaults.
 - Automatically selected and locked armor weight for fixed-weight collection sets.
 - Kept all available weights selectable for monster sets and unrestricted manual sets.
+- Added copy and move actions for compatible equipment slots, including safe
+  handling for occupied off-hands and existing destination requirements.
 
 0.2.0
 - Added the first keyboard and mouse planner window with fixed equipment slots.

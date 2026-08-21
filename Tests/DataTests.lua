@@ -32,8 +32,12 @@ function zo_strlower(value)
     return string.lower(value)
 end
 
-function zo_strformat(id, value)
-    return (GetString(id) or "<<1>>"):gsub("<<1>>", value)
+function zo_strformat(id, ...)
+    local result = GetString(id) or "<<1>>"
+    for index = 1, select("#", ...) do
+        result = result:gsub("<<" .. tostring(index) .. ">>", tostring(select(index, ...)))
+    end
+    return result
 end
 
 function zo_clamp(value, minimum, maximum)
@@ -151,6 +155,59 @@ ok = data:SetEquipment(build.id, setup.id, "frontOff", { weaponType = WEAPONTYPE
 expect(ok, "shield should be accepted off-hand")
 ok = data:SetEquipment(build.id, setup.id, "frontMain", { weaponType = WEAPONTYPE_SHIELD })
 expect(not ok, "shield should not be accepted main-hand")
+
+ok = data:SetEquipment(build.id, setup.id, "feet", {
+    setName = "Whorl of the Depths",
+    itemName = "Shoes of Whorl of the Depths",
+    itemLink = "saved feet link",
+    itemId = 1234,
+    armorType = 1,
+    enchantmentId = 5678,
+})
+expect(ok, "saved armor requirement should be accepted")
+ok = data:CopyEquipment(build.id, setup.id, "feet", "head")
+expect(ok, "armor requirements should copy to other armor slots")
+expect(setup.equipment.feet, "copy should preserve the source slot")
+expectEqual(setup.equipment.head.setName, "Whorl of the Depths", "copy should retain the plan")
+expectEqual(setup.equipment.head.itemLink, nil, "copy should discard a slot-specific item link")
+expectEqual(setup.equipment.head.itemId, nil, "copy should discard a slot-specific item id")
+expectEqual(setup.equipment.head.itemName, nil, "copy should let the destination item name resolve")
+expectEqual(setup.equipment.head.enchantmentId, nil, "copy should let the destination enchant resolve")
+ok = data:MoveEquipment(build.id, setup.id, "head", "chest")
+expect(ok, "armor requirements should move to other armor slots")
+expectEqual(setup.equipment.head, nil, "move should clear the source slot")
+expect(setup.equipment.chest, "move should fill the destination slot")
+
+ok = data:SetEquipment(build.id, setup.id, "ring1", { setName = "Pillar of Nirn" })
+expect(ok, "jewelry requirement should be accepted")
+ok = data:CopyEquipment(build.id, setup.id, "ring1", "head")
+expect(not ok, "transfers should stay within the source slot family")
+expect(setup.equipment.ring1, "failed transfer should preserve the source")
+
+ok = data:SetEquipment(build.id, setup.id, "backOff", { weaponType = WEAPONTYPE_AXE })
+expect(ok, "back-bar off-hand should accept a one-handed weapon")
+ok = data:SetEquipment(build.id, setup.id, "frontMain", {
+    setName = "Perfected Merciless Charge",
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+})
+expect(ok, "two-handed source requirement should be accepted")
+local copied, _, clearedBackSlot = data:CopyEquipment(
+    build.id,
+    setup.id,
+    "frontMain",
+    "backMain"
+)
+expect(copied, "two-handed requirements should copy between main-hand slots")
+expectEqual(clearedBackSlot, "backOff", "copied two-handed weapon should occupy the new off-hand")
+expectEqual(setup.equipment.backOff, nil, "copying a two-handed weapon should clear the destination off-hand")
+expect(setup.equipment.frontMain, "two-handed copy should preserve its source")
+ok = data:SetEquipment(build.id, setup.id, "backMain", { weaponType = WEAPONTYPE_AXE })
+expect(ok, "one-handed weapon should free the back-bar off-hand")
+ok = data:SetEquipment(build.id, setup.id, "backOff", { weaponType = WEAPONTYPE_AXE })
+expect(ok, "freed back-bar off-hand should accept a requirement")
+ok = data:CopyEquipment(build.id, setup.id, "backOff", "frontOff")
+expect(not ok, "transfer should reject an off-hand occupied by a two-handed weapon")
+expect(setup.equipment.backOff, "failed occupied-slot transfer should preserve the source")
 
 local oldName = build.name
 ok = data:UpdateBuild(build.id, { name = "Changed", role = 7 })
