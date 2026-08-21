@@ -67,8 +67,83 @@ local glyphItemIds = {
     [ENCHANTMENT_SEARCH_CATEGORY_STAMINA_REGEN] = 26589,
 }
 
+local function splitItemLink(itemLink)
+    local prefix, data, suffix = itemLink:match("^(|H%d+:item:)([^|]+)(|h.*|h)$")
+    if not prefix then
+        return nil
+    end
+
+    local fields = {}
+    for value in data:gmatch("([^:]+)") do
+        fields[#fields + 1] = value
+    end
+    if #fields < 6 then
+        return nil
+    end
+    return prefix, fields, suffix
+end
+
+local function joinItemLink(prefix, fields, suffix)
+    return prefix .. table.concat(fields, ":") .. suffix
+end
+
+local function validLevel(value)
+    local maxLevel = GetMaxLevel and GetMaxLevel() or 50
+    return zo_clamp(math.floor(tonumber(value) or maxLevel), 1, maxLevel)
+end
+
+local function validChampionPoints(value)
+    local gearCap = GetChampionPointsPlayerProgressionCap
+        and GetChampionPointsPlayerProgressionCap()
+        or 160
+    value = math.floor((tonumber(value) or 0) / 10) * 10
+    return zo_clamp(value, 0, gearCap)
+end
+
 function Resolver:New()
-    return setmetatable({}, { __index = self })
+    return setmetatable({ armorTypeCache = {} }, { __index = self })
+end
+
+function Resolver:GetAvailableArmorTypes(slotKey, setId)
+    if not setId or not armorEquipTypes[slotKey] then
+        return {}
+    end
+
+    local cacheKey = tostring(setId) .. ":" .. slotKey
+    if self.armorTypeCache[cacheKey] then
+        return self.armorTypeCache[cacheKey]
+    end
+
+    local found = {}
+    local count = GetNumItemSetCollectionPieces(setId) or 0
+    for index = 1, count do
+        local pieceId = GetItemSetCollectionPieceInfo(setId, index)
+        if pieceId then
+            local itemLink = GetItemSetCollectionPieceItemLink(
+                pieceId,
+                LINK_STYLE_DEFAULT,
+                ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+                ITEM_QUALITY_NORMAL
+            )
+            if itemLink
+                and itemLink ~= ""
+                and GetItemLinkEquipType(itemLink) == armorEquipTypes[slotKey] then
+                local armorType = GetItemLinkArmorType(itemLink)
+                if armorType and armorType ~= ARMORTYPE_NONE then
+                    found[armorType] = true
+                end
+            end
+        end
+    end
+
+    local armorTypes = {}
+    for _, armorType in ipairs({ ARMORTYPE_LIGHT, ARMORTYPE_MEDIUM, ARMORTYPE_HEAVY }) do
+        if found[armorType] then
+            armorTypes[#armorTypes + 1] = armorType
+        end
+    end
+    self.armorTypeCache[cacheKey] = armorTypes
+    return armorTypes
 end
 
 function Resolver:MatchesSlot(slotKey, requirement, itemLink)
@@ -107,29 +182,105 @@ function Resolver:GetEnchantInfo(itemLink)
     return enchantId, GetEnchantSearchCategoryType(enchantId)
 end
 
+function Resolver:GetRequestedLevel(requirement, setup)
+    local championPoints = tonumber(requirement.championPoints)
+    local level = tonumber(requirement.level)
+    if championPoints and championPoints > 0 then
+        return 50, validChampionPoints(championPoints)
+    elseif level then
+        return validLevel(level), 0
+    end
+
+    championPoints = tonumber(setup.defaultChampionPoints)
+    if championPoints and championPoints > 0 then
+        return 50, validChampionPoints(championPoints)
+    end
+    return validLevel(setup.defaultLevel), 0
+end
+
+-- ESO folds level and quality into the subtype; the ranges follow LibItemLink 9.4.0.
+function Resolver:CreateSubTypes(level, championPoints, quality)
+    local qualityOffset = zo_clamp(
+        math.floor(tonumber(quality) or ITEM_QUALITY_NORMAL),
+        ITEM_QUALITY_NORMAL,
+        ITEM_QUALITY_LEGENDARY
+    ) - 1
+    level = validLevel(level)
+    championPoints = validChampionPoints(championPoints)
+
+    if championPoints == 0 then
+        local base = level < 4 and 30 or (level < 6 and 25 or 20)
+        return base + qualityOffset, base + qualityOffset
+    end
+
+    local base
+    if championPoints < 110 then
+        championPoints = math.max(10, championPoints)
+        base = 124 + math.floor(championPoints / 10)
+        return base + qualityOffset * 10, base + qualityOffset * 10
+    elseif championPoints < 130 then
+        base = 236 + math.floor((championPoints - 110) / 10) * 18
+    elseif championPoints < 150 then
+        base = 272 + math.floor((championPoints - 130) / 10) * 18
+    else
+        base = 308 + math.floor((championPoints - 150) / 10) * 58
+    end
+    return base + qualityOffset, base + qualityOffset
+end
+
+function Resolver:MatchesRequestedLevel(itemLink, requirement, setup)
+    if not GetItemLinkRequiredLevel or not GetItemLinkRequiredChampionPoints then
+        return true
+    end
+    local level, championPoints = self:GetRequestedLevel(requirement, setup)
+    local actualChampionPoints = GetItemLinkRequiredChampionPoints(itemLink) or 0
+    if championPoints > 0 then
+        return actualChampionPoints == championPoints
+    end
+    return actualChampionPoints == 0 and GetItemLinkRequiredLevel(itemLink) == level
+end
+
+function Resolver:ApplyPlannedLevel(itemLink, requirement, setup, quality)
+    local prefix, fields, suffix = splitItemLink(itemLink)
+    if not prefix then
+        return nil
+    end
+
+    local level, championPoints = self:GetRequestedLevel(requirement, setup)
+    local itemSubType, enchantSubType = self:CreateSubTypes(
+        level,
+        championPoints,
+        quality
+    )
+    fields[2] = tostring(itemSubType)
+    fields[3] = tostring(level)
+    if tonumber(fields[4]) and tonumber(fields[4]) ~= 0 then
+        fields[5] = tostring(enchantSubType)
+        fields[6] = tostring(level)
+    end
+
+    local leveledLink = joinItemLink(prefix, fields, suffix)
+    if not self:MatchesRequestedLevel(leveledLink, requirement, setup) then
+        return nil
+    end
+    return leveledLink
+end
+
 function Resolver:ApplyPlannedEnchantment(itemLink, category)
     local glyphItemId = glyphItemIds[category]
     if not glyphItemId then
         return nil
     end
 
-    local prefix, data, suffix = itemLink:match("^(|H%d+:item:)([^|]+)(|h.*|h)$")
+    local prefix, fields, suffix = splitItemLink(itemLink)
     if not prefix then
-        return nil
-    end
-
-    local fields = {}
-    for value in data:gmatch("([^:]+)") do
-        fields[#fields + 1] = value
-    end
-    if #fields < 6 then
         return nil
     end
 
     fields[4] = tostring(glyphItemId)
     fields[5] = fields[2]
     fields[6] = fields[3]
-    local enchantedLink = prefix .. table.concat(fields, ":") .. suffix
+    local enchantedLink = joinItemLink(prefix, fields, suffix)
 
     if GetItemLinkAppliedEnchantId and GetItemLinkAppliedEnchantId(enchantedLink) == 0 then
         return nil
@@ -168,6 +319,15 @@ function Resolver:Resolve(slotKey, requirement, setup)
                 quality
             )
             if itemLink and itemLink ~= "" and self:MatchesSlot(slotKey, requirement, itemLink) then
+                local leveledLink = self:ApplyPlannedLevel(
+                    itemLink,
+                    requirement,
+                    setup,
+                    quality
+                )
+                if leveledLink then
+                    itemLink = leveledLink
+                end
                 local enchantId, enchantmentCategory = self:GetEnchantInfo(itemLink)
                 local enchantmentMatches = not requirement.enchantmentCategory
                     or requirement.enchantmentCategory == enchantmentCategory

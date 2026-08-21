@@ -7,6 +7,10 @@
   enchantment than the one planned.
 - Replaced the preview text with the resolved item's icon.
 - Added validated preview links for selected standard glyph enchantments.
+- Made preview links honor per-slot or setup-default level and Champion Points.
+- Labeled the Level and CP fields with their inherited setup defaults.
+- Automatically selected and locked armor weight for fixed-weight collection sets.
+- Kept all available weights selectable for monster sets and unrestricted manual sets.
 
 0.2.0
 - Added the first keyboard and mouse planner window with fixed equipment slots.

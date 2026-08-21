@@ -166,6 +166,14 @@ local function getTypeChoices(slotKey)
     return choices
 end
 
+local function getArmorTypeChoices(armorTypes)
+    local choices = {}
+    for _, armorType in ipairs(armorTypes) do
+        addEnumChoice(choices, "SI_ARMORTYPE", armorType)
+    end
+    return choices
+end
+
 local function getTraitChoices(family)
     local choices = {
         { label = GetString(SI_GRAVVY_BUILD_PLANNER_ANY_TRAIT), value = ITEM_TRAIT_TYPE_NONE },
@@ -401,10 +409,34 @@ function UI:CreateEditor()
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_QUALITY), 14, 205, 105)
     self.qualityCombo = makeCombo(panel, "GravvyBuildPlannerQualityCombo", 122, 205, 290)
 
-    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_LEVEL), 14, 245, 105)
-    self.levelEdit = makeEdit(panel, "GravvyBuildPlannerLevelEdit", 122, 245, 72, true, 3)
-    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS), 208, 245, 125)
+    self.levelLabel = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_LEVEL),
+        14,
+        245,
+        125,
+        "ZoFontGameSmall"
+    )
+    self.levelEdit = makeEdit(panel, "GravvyBuildPlannerLevelEdit", 142, 245, 52, true, 3)
+    self.cpLabel = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS),
+        208,
+        245,
+        125,
+        "ZoFontGameSmall"
+    )
     self.cpEdit = makeEdit(panel, "GravvyBuildPlannerCPEdit", 340, 245, 72, true, 4)
+    self.levelEdit:SetHandler("OnTextChanged", function()
+        if not self.loadingEditor then
+            self:RefreshEditorPreview()
+        end
+    end)
+    self.cpEdit:SetHandler("OnTextChanged", function()
+        if not self.loadingEditor then
+            self:RefreshEditorPreview()
+        end
+    end)
 
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_NOTES), 14, 285, 105)
     self.noteEdit = makeNoteEdit(panel, "GravvyBuildPlannerNoteEdit", 122, 285, 290, 82)
@@ -616,6 +648,7 @@ function UI:EditSlot(slotKey)
 end
 
 function UI:LoadEditor()
+    self.loadingEditor = true
     local setup = self.owner.data:GetCurrentSetup()
     local requirement = setup.equipment[self.selectedSlot] or {}
     local definition = Slots:Get(self.selectedSlot)
@@ -631,14 +664,7 @@ function UI:LoadEditor()
     local isJewelry = definition.family == "jewelry"
     self.typeLabel:SetHidden(isJewelry)
     self.typeContainer:SetHidden(isJewelry)
-    if not isJewelry then
-        local selectedType = definition.family == "armor"
-            and (requirement.armorType or 0)
-            or (requirement.weaponType or 0)
-        setComboChoices(self.typeCombo, getTypeChoices(self.selectedSlot), selectedType, function()
-            self:OnEquipmentTypeChanged()
-        end)
-    end
+    self:RefreshTypeChoices(requirement)
     local requirementFamily = self:GetEditorRequirementFamily()
     setComboChoices(
         self.traitCombo,
@@ -669,8 +695,58 @@ function UI:LoadEditor()
     )
     self.levelEdit:SetText(requirement.level and tostring(requirement.level) or "")
     self.cpEdit:SetText(requirement.championPoints and tostring(requirement.championPoints) or "")
+    self.levelLabel:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_LEVEL_DEFAULT,
+        setup.defaultLevel
+    ))
+    self.cpLabel:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS_DEFAULT,
+        setup.defaultChampionPoints
+    ))
     self.noteEdit:SetText(requirement.note or "")
-    self:RefreshEditorPreview(requirement)
+    self.loadingEditor = false
+    self:RefreshEditorPreview()
+end
+
+function UI:RefreshTypeChoices(requirement)
+    local definition = Slots:Get(self.selectedSlot)
+    if definition.family == "jewelry" then
+        return
+    end
+
+    requirement = requirement or self:ReadEditorRequirement()
+    local choices = getTypeChoices(self.selectedSlot)
+    local selectedType = definition.family == "armor"
+        and (requirement.armorType or 0)
+        or (requirement.weaponType or 0)
+    local locked = false
+
+    if definition.family == "armor" and requirement.setId then
+        local armorTypes = self.owner.itemResolver:GetAvailableArmorTypes(
+            self.selectedSlot,
+            requirement.setId
+        )
+        if #armorTypes > 0 then
+            choices = getArmorTypeChoices(armorTypes)
+            local isAvailable = false
+            for _, armorType in ipairs(armorTypes) do
+                if selectedType == armorType then
+                    isAvailable = true
+                    break
+                end
+            end
+            if not isAvailable then
+                selectedType = armorTypes[1]
+            end
+            locked = #armorTypes == 1
+        end
+    end
+
+    setComboChoices(self.typeCombo, choices, selectedType, function()
+        self:OnEquipmentTypeChanged()
+    end)
+    self.typeCombo:SetEnabled(not locked)
+    self.typeContainer:SetAlpha(locked and 0.65 or 1)
 end
 
 function UI:GetEditorRequirementFamily()
@@ -740,10 +816,17 @@ function UI:ReadEditorRequirement()
         requirement.quality = self.qualityCombo.selectedValue
     end
     if level ~= "" then
-        requirement.level = level
+        requirement.level = zo_clamp(math.floor(tonumber(level) or 1), 1, 50)
     end
     if championPoints ~= "" then
-        requirement.championPoints = championPoints
+        local gearCap = GetChampionPointsPlayerProgressionCap
+            and GetChampionPointsPlayerProgressionCap()
+            or 160
+        requirement.championPoints = zo_clamp(
+            math.floor((tonumber(championPoints) or 0) / 10) * 10,
+            0,
+            gearCap
+        )
     end
     return requirement
 end
@@ -787,6 +870,26 @@ function UI:ShowItemTooltip(control, itemLink, requirement)
                 0.35
             )
         end
+    end
+
+    local setup = self.owner.data:GetCurrentSetup()
+    if requirement
+        and not self.owner.itemResolver:MatchesRequestedLevel(itemLink, requirement, setup)
+        and ItemTooltip.AddLine then
+        local level, championPoints = self.owner.itemResolver:GetRequestedLevel(
+            requirement,
+            setup
+        )
+        local plannedLevel = championPoints > 0
+            and zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_VALUE, championPoints)
+            or zo_strformat(SI_GRAVVY_BUILD_PLANNER_LEVEL_VALUE, level)
+        ItemTooltip:AddLine(
+            zo_strformat(SI_GRAVVY_BUILD_PLANNER_PREVIEW_LEVEL_NOTE, plannedLevel),
+            "ZoFontGameSmall",
+            0.95,
+            0.72,
+            0.35
+        )
     end
 end
 
@@ -850,6 +953,7 @@ function UI:OnSetTextChanged()
     self.suggestionOffset = 0
     self.suggestionIndex = 1
     self:RenderSuggestions()
+    self:RefreshTypeChoices()
     self:RefreshEditorPreview()
 end
 
@@ -857,6 +961,7 @@ function UI:ResolveTypedSet()
     local entry = self.owner.setCatalog:FindExact(self.setEdit:GetText())
     self.selectedSetId = entry and entry.setId or nil
     self.selectedSetName = entry and entry.name or nil
+    self:RefreshTypeChoices()
     self:RefreshEditorPreview()
 end
 
@@ -892,6 +997,7 @@ function UI:ChooseSuggestion(index)
     self.selectedSetId = entry.setId
     self.selectedSetName = entry.name
     self.suggestionPanel:SetHidden(true)
+    self:RefreshTypeChoices()
     self:RefreshEditorPreview()
 end
 

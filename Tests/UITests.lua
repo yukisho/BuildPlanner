@@ -161,14 +161,27 @@ function ZO_ComboBox_ObjectFromContainer(container)
     end
     function combo:AddItem(item) self.items[#self.items + 1] = item end
     function combo:SetSelectedItem(label) self.selectedLabel = label end
+    function combo:SetEnabled(value) self.enabled = value end
     return combo
 end
 
 GuiRoot = newControl("GuiRoot")
 
 local itemLinks = {}
+local function getLinkFields(link)
+    local data = link:match("^|H%d+:item:([^|]+)|h")
+    if not data then
+        return nil
+    end
+    local fields = {}
+    for value in data:gmatch("([^:]+)") do
+        fields[#fields + 1] = value
+    end
+    return fields
+end
+
 function GetNumItemSetCollectionPieces(setId)
-    return (setId == 12 or setId == 34) and 3 or 0
+    return (setId == 12 or setId == 34 or setId == 56) and 3 or 0
 end
 function GetItemSetCollectionPieceInfo(setId, index)
     if index >= 1 and index <= 3 then
@@ -178,7 +191,16 @@ end
 function GetItemSetCollectionPieceItemLink(pieceId)
     local link = "item:" .. tostring(pieceId)
     local suffix = pieceId % 100
-    if suffix == 1 then
+    if pieceId >= 5601 and pieceId <= 5603 then
+        itemLinks[link] = {
+            itemId = pieceId,
+            name = "Monster Helm",
+            equipType = EQUIP_TYPE_HEAD,
+            armorType = suffix,
+            weaponType = WEAPONTYPE_NONE,
+            enchantId = 501,
+        }
+    elseif suffix == 1 then
         itemLinks[link] = {
             itemId = pieceId,
             name = pieceId == 3401 and "Helm of Pillar of Nirn" or "Helm of Order's Wrath",
@@ -215,15 +237,28 @@ function GetItemLinkItemId(link) return itemLinks[link].itemId end
 function GetItemLinkName(link) return itemLinks[link].name end
 function GetItemLinkIcon(link) return "icon:" .. link end
 local function getLinkedGlyphId(link)
-    local data = link:match("^|H%d+:item:([^|]+)|h")
-    if not data then
+    local fields = getLinkFields(link)
+    if not fields then
         return nil
     end
-    local fields = {}
-    for value in data:gmatch("([^:]+)") do
-        fields[#fields + 1] = value
-    end
     return tonumber(fields[4])
+end
+function GetItemLinkRequiredLevel(link)
+    local fields = getLinkFields(link)
+    return fields and tonumber(fields[3]) or 50
+end
+function GetItemLinkRequiredChampionPoints(link)
+    local fields = getLinkFields(link)
+    if not fields then
+        return 160
+    end
+    local subType = tonumber(fields[2])
+    if subType >= 366 and subType <= 370 then
+        return 160
+    elseif subType >= 308 and subType <= 312 then
+        return 150
+    end
+    return 0
 end
 function GetItemLinkAppliedEnchantId(link)
     return getLinkedGlyphId(link) or 0
@@ -268,12 +303,38 @@ local matchingEnchant = owner.itemResolver:Resolve("head", {
     enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_HEALTH,
 }, resolverSetup)
 expect(matchingEnchant.enchantmentMatches, "resolver should recognize a matching default enchantment")
+local monsterArmorTypes = owner.itemResolver:GetAvailableArmorTypes("head", 56)
+expectEqual(#monsterArmorTypes, 3, "monster sets should retain every available armor weight")
 local plannedEnchantLink = owner.itemResolver:ApplyPlannedEnchantment(
     "|H1:item:3401:370:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
     ENCHANTMENT_SEARCH_CATEGORY_STAMINA
 )
 expect(plannedEnchantLink, "resolver should build a validated planned enchantment link")
 expect(plannedEnchantLink:find(":26588:370:50:", 1, true), "planned link should carry the stamina glyph")
+local levelThirtyLink = owner.itemResolver:ApplyPlannedLevel(
+    "|H1:item:3401:370:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
+    { level = 30 },
+    resolverSetup,
+    ITEM_QUALITY_LEGENDARY
+)
+expect(levelThirtyLink, "resolver should build a validated level 30 link")
+expect(levelThirtyLink:find(":24:30:0:", 1, true), "level 30 link should use the legendary low-level subtype")
+local levelThirtyStaminaLink = owner.itemResolver:ApplyPlannedEnchantment(
+    levelThirtyLink,
+    ENCHANTMENT_SEARCH_CATEGORY_STAMINA
+)
+expect(
+    levelThirtyStaminaLink:find(":26588:24:30:", 1, true),
+    "planned enchantments should inherit the preview level and quality"
+)
+local cpOneFiftyLink = owner.itemResolver:ApplyPlannedLevel(
+    "|H1:item:3401:370:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
+    { championPoints = 150 },
+    resolverSetup,
+    ITEM_QUALITY_LEGENDARY
+)
+expect(cpOneFiftyLink, "resolver should build a validated CP 150 link")
+expect(cpOneFiftyLink:find(":312:50:0:", 1, true), "CP 150 link should use the legendary CP 150 subtype")
 expect(owner.itemResolver:Resolve("ring1", { setId = 34 }, resolverSetup), "resolver should find jewelry pieces")
 expect(owner.itemResolver:Resolve("frontMain", {
     setId = 34,
@@ -302,6 +363,8 @@ expect(not ui.window:IsHidden(), "toggle should show planner")
 
 ui:EditSlot("head")
 expect(#ui.enchantmentCombo.items >= 5, "armor slots should offer contextual enchantments")
+expect(ui.levelLabel.text:find("50", 1, true), "level label should show the setup default")
+expect(ui.cpLabel.text:find("160", 1, true), "CP label should show the setup default")
 ui.setEdit:SetText("or")
 ui:OnSetTextChanged()
 expectEqual(#ui.suggestionData, 2, "autocomplete should include prefix and substring matches")
@@ -313,9 +376,13 @@ ui.setEdit:SetText("Pillar of Nirn")
 ui:OnSetTextChanged()
 expect(not ui.suggestionPanel:IsHidden(), "matching sets should show suggestions")
 ui:ChooseSuggestion(1)
+expectEqual(ui.typeCombo.selectedValue, ARMORTYPE_MEDIUM, "fixed-weight sets should select their available weight")
+expectEqual(ui.typeCombo.enabled, false, "fixed-weight set armor controls should be locked")
 ui.typeCombo.selectedValue = ARMORTYPE_MEDIUM
 ui.traitCombo.selectedValue = 21
 ui.qualityCombo.selectedValue = ITEM_QUALITY_LEGENDARY
+ui.cpEdit:SetText("155")
+expectEqual(ui:ReadEditorRequirement().championPoints, 150, "CP overrides should use valid ten-point steps")
 ui.cpEdit:SetText("160")
 ui.enchantmentCombo.selectedValue = ENCHANTMENT_SEARCH_CATEGORY_STAMINA
 ui:RefreshEditorPreview()
