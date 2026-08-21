@@ -1,0 +1,8 @@
+.history/
+.readme/
+.todo/
+*.jpeg
+*.md
+TODO.txt
+.npm-cache/
+.lua-lint/
