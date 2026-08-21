@@ -1,0 +1,5 @@
+0.1.0
+- Added the initial account-wide build and setup data model.
+- Added canonical armor, jewelry, and weapon slots with two-handed weapon handling.
+- Added create, copy, reorder, delete, and undo operations for builds and setups.
+- Added English, French, and Spanish foundation strings.

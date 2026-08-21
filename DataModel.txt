@@ -1,0 +1,40 @@
+Build Planner data model
+========================
+
+Saved data is account-wide and stored in GravvyBuildPlanner_Data. The top-level
+schemaVersion is independent of the ESO SavedVariables version so migrations can
+repair or reshape existing records without changing the storage name.
+
+Build
+-----
+
+A build contains its name, class ID, role, game update, guide author, source URL,
+notes, and an ordered list of setups. Build IDs are stable and unique within the
+account-wide saved data.
+
+Setup
+-----
+
+A setup is a named variation of a build. It stores default quality, level, and
+Champion Points plus equipment requirements keyed by the canonical slot names in
+EquipmentSlots.lua. Acquisition results live in a separate table and are not
+copied when a build or setup is duplicated.
+
+Equipment requirement
+---------------------
+
+Each populated slot may store set and item identity, armor or weapon type, trait,
+enchantment, quality, level, Champion Points, and a note. Missing fields are
+allowed while the player is still entering a guide. Fields that contradict the
+slot family are rejected.
+
+A two-handed weapon is stored only in frontMain or backMain with
+occupiesOffHand=true. Its paired off-hand entry is cleared and cannot be filled
+until the main-hand requirement changes or is removed.
+
+Deletion recovery
+-----------------
+
+The last 20 deleted builds or setups are kept in deletedActions. Undo restores
+the original record and position, adjusting its name only when another record
+has since taken that name. IDs are not reused.
