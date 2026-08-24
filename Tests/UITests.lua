@@ -536,6 +536,7 @@ dofile("ItemResolver.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
+dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("UI.lua")
 dofile("Settings.lua")
@@ -555,6 +556,12 @@ owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+owner.share = GravvyBuildPlannerShare:New(owner)
+owner.share:Initialize()
+expect(owner.share.window:IsHidden(), "the build share window should start hidden")
+owner.share:Open()
+expect(owner.share.codeEdit:GetText():sub(1, 5) == "GBP1:", "the share window should generate the current build code")
+owner.share:Hide()
 GravvyBuildPlannerGamepadWindow = newControl("GravvyBuildPlannerGamepadWindow")
 GravvyBuildPlannerGamepadWindow:SetHidden(true)
 local gamepad = GravvyBuildPlannerGamepad:New(owner)
@@ -1033,8 +1040,8 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    8,
-    "gamepad editing, management, export, and help dialogs should register"
+    9,
+    "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
 gamepad:Show()

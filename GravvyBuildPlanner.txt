@@ -1,9 +1,9 @@
 ## Title: |cFFAA33Build Planner|r
 ## Description: Plan ESO equipment setups and turn tradeable requirements into shopping lists.
 ## Author: Gravvy
-## Version: 0.5.0
+## Version: 0.6.0
 ## APIVersion: 101050
-## AddOnVersion: 5
+## AddOnVersion: 6
 ## DependsOn: LibSets>=0009000
 ## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0
 ## SavedVariables: GravvyBuildPlanner_Data
@@ -29,6 +29,7 @@ Inventory.lua
 ShoppingIntegration.lua
 Accessibility.lua
 UI.lua
+Share.lua
 Settings.lua
 Gamepad.lua
 Gamepad.xml

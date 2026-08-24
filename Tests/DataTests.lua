@@ -107,6 +107,7 @@ end
 dofile("Localization/en.lua")
 dofile("EquipmentSlots.lua")
 dofile("Data.lua")
+dofile("Share.lua")
 
 local data = GravvyBuildPlannerData:New()
 local firstBuild = data:GetCurrentBuild()
@@ -247,6 +248,46 @@ expect(ok, "build should be deleted")
 ok = data:UndoLastDeletion()
 expect(ok, "deleted build should be restored")
 expect(data:FindBuild(duplicate.id), "restored build should retain its id")
+
+local shareCode = GravvyBuildPlannerShare.EncodeBuild(build)
+expect(shareCode and shareCode:sub(1, 5) == "GBP1:", "builds should encode as GBP1 codes")
+local decodedBuild = GravvyBuildPlannerShare.DecodeCode(shareCode)
+expect(decodedBuild, "a generated build code should decode")
+expectEqual(decodedBuild.name, build.name, "share codes should retain the build name")
+expectEqual(#decodedBuild.setups, #build.setups, "share codes should retain every setup")
+expectEqual(decodedBuild.selectedSetupIndex, 2, "share codes should retain the selected setup")
+expectEqual(
+    decodedBuild.setups[1].equipment.waist.setName,
+    build.setups[1].equipment.waist.setName,
+    "share codes should retain equipment requirements"
+)
+local buildCount = #data:GetBuilds()
+local imported = data:ImportBuild(decodedBuild)
+expect(imported, "decoded builds should import")
+expectEqual(#data:GetBuilds(), buildCount + 1, "import should add exactly one build")
+expect(imported.name ~= build.name, "import should resolve a duplicate build name")
+expectEqual(
+    imported.setups[1].acquisition.waist.preferredRoute,
+    "buy",
+    "share codes should retain preferred acquisition routes"
+)
+expectEqual(imported.selectedSetupId, imported.setups[2].id, "import should restore the selected setup")
+local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
+expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
+local nextBuildId = data.saved.nextBuildId
+expectEqual(data:ImportBuild({ name = "Bad", setups = {} }), nil, "invalid imports should fail")
+expectEqual(data.saved.nextBuildId, nextBuildId, "failed imports should not consume ids")
+expectEqual(data:ImportBuild({
+    name = "Contradictory",
+    setups = {{
+        name = "Base",
+        equipment = {
+            frontMain = { weaponType = WEAPONTYPE_TWO_HANDED_SWORD },
+            frontOff = { weaponType = WEAPONTYPE_AXE },
+        },
+    }},
+}), nil, "imports should reject a filled off-hand beside a two-handed weapon")
+expectEqual(data.saved.nextBuildId, nextBuildId, "contradictory imports should remain transactional")
 
 TEST_SAVED = {
     nextBuildId = 1,

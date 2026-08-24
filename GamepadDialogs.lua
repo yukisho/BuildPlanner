@@ -10,6 +10,7 @@ local EXPORT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_EXPORT"
 local CODE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CODE"
 local HELP_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_HELP"
 local TRANSFER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_TRANSFER"
+local SHARE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SHARE"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -301,6 +302,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeCodeDialog()
     self:InitializeHelpDialog()
     self:InitializeTransferDialog()
+    self:InitializeShareDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -611,6 +613,9 @@ function Gamepad:InitializeManageDialog()
             ),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_EXPORT, function()
                 releaseAndOpen(MANAGE_DIALOG, function() self:ShowExportDialog() end)
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_SHARE, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowShareDialog() end)
             end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_HELP_TITLE, function()
                 releaseAndOpen(MANAGE_DIALOG, function() self:ShowHelpDialog() end)
@@ -953,6 +958,78 @@ function Gamepad:InitializeHelpDialog()
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
         },
     })
+end
+
+function Gamepad:InitializeShareDialog()
+    ZO_Dialogs_RegisterCustomDialog(SHARE_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local code, message = GravvyBuildPlannerShare.EncodeBuild(
+                self.owner.data:GetCurrentBuild()
+            )
+            self.pendingShareCode = code or ""
+            self.pendingShareError = message
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_SHARE_TITLE },
+        mainText = {
+            text = function()
+                return self.pendingShareError or GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_HELP)
+            end,
+        },
+        parametricList = {
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_SHARE_TITLE, {
+                value = function() return self.pendingShareCode end,
+                changed = function(value) self.pendingShareCode = value end,
+                defaultText = GravvyBuildPlannerShare.PREFIX,
+                maxChars = GravvyBuildPlannerShare.MAX_CODE_LENGTH,
+                multiline = true,
+            }),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORT, function()
+                self:ImportSharedBuild()
+            end),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CLOSE,
+                callback = cancelDialog(SHARE_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:ShowShareDialog()
+    ZO_Dialogs_ShowGamepadDialog(SHARE_DIALOG)
+end
+
+function Gamepad:ImportSharedBuild()
+    local decoded, message = GravvyBuildPlannerShare.DecodeCode(self.pendingShareCode)
+    if not decoded then
+        showError(message)
+        return
+    end
+    local build, importMessage = self.owner.data:ImportBuild(decoded)
+    if not build then
+        showError(importMessage)
+        return
+    end
+    self.owner.setCatalog:Refresh()
+    self.owner.inventory:QueueRefresh(0)
+    ZO_Dialogs_ReleaseDialogOnButtonPress(SHARE_DIALOG)
+    self:Refresh(true)
+    self.owner.ui:Refresh()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORTED,
+        build.name,
+        #build.setups
+    ))
 end
 
 function Gamepad:ShowHelpDialog()

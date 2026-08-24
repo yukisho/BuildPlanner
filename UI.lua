@@ -283,6 +283,9 @@ function UI:Initialize()
     local help = makeButton(window, "?", 34)
     help:SetAnchor(TOPRIGHT, export, TOPLEFT, -8, 0)
     help:SetHandler("OnClicked", function() self:ShowHelp() end)
+    local share = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE), 90)
+    share:SetAnchor(TOPRIGHT, help, TOPLEFT, -8, 0)
+    share:SetHandler("OnClicked", function() self.owner.share:Open() end)
 
     self:CreateBuildControls()
     self:CreateSlotRows()
@@ -1763,6 +1766,9 @@ function UI:Hide()
     self.exportDialog:SetHidden(true)
     self.codeDialog:SetHidden(true)
     self.helpDialog:SetHidden(true)
+    if self.owner.share and self.owner.share.window then
+        self.owner.share:Hide()
+    end
     self.helpRequestedMouse = false
     self.window:SetHidden(true)
     self:ReleaseMouse()

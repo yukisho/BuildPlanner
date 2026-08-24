@@ -10,6 +10,8 @@ local validAcquisitionRoutes = {
     craft = true,
     farm = true,
     reconstruct = true,
+    transmute = true,
+    unknown = true,
 }
 
 local defaults = {
@@ -573,6 +575,111 @@ function Data:DuplicateBuild(id, name)
     end
     build.selectedSetupId = build.selectedSetupId or build.setups[1].id
 
+    self.saved.builds[#self.saved.builds + 1] = build
+    self.saved.selectedBuildId = build.id
+    return build
+end
+
+function Data:ImportBuild(source)
+    if type(source) ~= "table" or type(source.setups) ~= "table" or #source.setups == 0 then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+    end
+
+    local name = trim(source.name)
+    local changes = copyBuildChanges(source)
+    if name == "" or not changes then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+    end
+
+    local timestamp = now()
+    local build = {
+        id = self.saved.nextBuildId,
+        name = self:GetUniqueBuildName(name),
+        classId = changes.classId,
+        role = changes.role or "",
+        patch = changes.patch or "",
+        author = changes.author or "",
+        sourceUrl = changes.sourceUrl or "",
+        notes = changes.notes or "",
+        setups = {},
+        createdAt = timestamp,
+        updatedAt = timestamp,
+    }
+
+    local usedNames = {}
+    for _, sourceSetup in ipairs(source.setups) do
+        if type(sourceSetup) ~= "table" or type(sourceSetup.equipment) ~= "table" then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        local setupName = trim(sourceSetup.name)
+        local setupChanges = copySetupChanges(sourceSetup)
+        if setupName == "" or not setupChanges then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        setupName = makeUniqueName(usedNames, setupName)
+
+        local equipment = {}
+        for slotKey, sourceRequirement in pairs(sourceSetup.equipment) do
+            local requirement = copyRequirement(sourceRequirement)
+            if not GravvyBuildPlannerSlots:IsValid(slotKey)
+                or not requirement
+                or not GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            equipment[slotKey] = requirement
+        end
+        for _, mainHand in ipairs({ "frontMain", "backMain" }) do
+            local requirement = equipment[mainHand]
+            local offHand = requirement and GravvyBuildPlannerSlots:GetOccupiedOffHand(
+                mainHand,
+                requirement.weaponType
+            )
+            if offHand then
+                if equipment[offHand] then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                requirement.occupiesOffHand = true
+            end
+        end
+
+        local acquisition = {}
+        if sourceSetup.acquisition ~= nil and type(sourceSetup.acquisition) ~= "table" then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        for slotKey, state in pairs(sourceSetup.acquisition or {}) do
+            if equipment[slotKey]
+                and type(state) == "table"
+                and validAcquisitionRoutes[state.preferredRoute] then
+                acquisition[slotKey] = { preferredRoute = state.preferredRoute }
+            else
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+        end
+
+        build.setups[#build.setups + 1] = {
+            id = self.saved.nextSetupId + #build.setups,
+            name = setupName,
+            note = setupChanges.note or "",
+            defaultQuality = setupChanges.defaultQuality or DEFAULT_QUALITY,
+            defaultLevel = setupChanges.defaultLevel or 50,
+            defaultChampionPoints = setupChanges.defaultChampionPoints or 160,
+            equipment = equipment,
+            alternativeGroups = {},
+            acquisition = acquisition,
+            createdAt = timestamp,
+            updatedAt = timestamp,
+        }
+    end
+
+    local selectedIndex = source.selectedSetupIndex == nil
+        and 1
+        or readWholeNumber(source.selectedSetupIndex, 1)
+    if not selectedIndex or selectedIndex > #build.setups then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+    end
+    build.selectedSetupId = build.setups[selectedIndex].id
+    self.saved.nextBuildId = self.saved.nextBuildId + 1
+    self.saved.nextSetupId = self.saved.nextSetupId + #build.setups
     self.saved.builds[#self.saved.builds + 1] = build
     self.saved.selectedBuildId = build.id
     return build

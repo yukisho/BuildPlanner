@@ -1,3 +1,12 @@
+0.6.0
+- Added checksummed GBP1 codes for backing up or sharing a complete build.
+- Added transactional build import with fresh IDs, safe duplicate names, and no
+  partial SavedVariables changes when a code is invalid.
+- Preserved guide metadata, every setup, equipment requirements, item links,
+  notes, setup defaults, preferred acquisition routes, and the selected setup.
+- Added keyboard and native gamepad share and import workflows.
+- Allowed Transmute and Unknown to be retained as preferred acquisition routes.
+
 0.5.0
 - Added LibSets as the complete set-name source, including crafted sets which do
   not appear in Item Set Collections.

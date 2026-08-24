@@ -175,6 +175,19 @@ local strings = {
     SI_GRAVVY_BUILD_PLANNER_ERROR_NO_TRANSFER_SLOT = "Aucun emplacement de destination n'est compatible.",
     SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT = "Cette exigence d'équipement n'est pas valide.",
     SI_GRAVVY_BUILD_PLANNER_ERROR_NOTHING_TO_UNDO = "Il n'y a rien à annuler.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE = "Partager",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_TITLE = "Partager ou importer une configuration",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_HELP = "Ce code GBP1 contient la configuration actuelle, toutes ses variantes, son équipement, ses notes et les détails du guide. Copiez-le pour le sauvegarder ou le partager, ou collez un autre code ici pour l'importer comme nouvelle configuration.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_EXPORT = "Code actuel",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_SELECT = "Sélectionner le code",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORT = "Importer le code",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_COPY_HINT = "Le code est sélectionné. Appuyez sur Ctrl+C pour le copier.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORTED = "<<1>> importée avec <<2>> variantes.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA = "Cette configuration contient des données inutilisables par le planificateur.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_INVALID = "Ce code est incomplet ou endommagé.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION = "Ce code utilise une version non prise en charge.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_PREFIX = "Collez un code de configuration commençant par <<1>>.",
+    SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_LONG = "Cette configuration est trop volumineuse pour être encodée ou importée.",
 }
 
 for stringId, translation in pairs(strings) do

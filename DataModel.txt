@@ -63,6 +63,18 @@ can be emitted as separate glyph entries. API v2 receives the whole list in one
 transaction; the same specification can be encoded as SL2 when the companion
 add-on is missing or outdated.
 
+Build sharing and backup
+------------------------
+
+GBP1 codes contain one complete build. They preserve guide metadata, setup
+order and defaults, equipment requirements, item links, notes, preferred
+acquisition routes, and the selected setup. Derived inventory matches and
+collection states are recalculated after import rather than copied.
+
+The payload is length-delimited, versioned, and checksummed. Import validates
+the complete decoded build before assigning new build and setup IDs or changing
+SavedVariables. A conflicting build name receives a numeric suffix.
+
 Settings
 --------
 
