@@ -1,3 +1,10 @@
+0.5.0
+- Added LibSets as the complete set-name source, including crafted sets which do
+  not appear in Item Set Collections.
+- Added LibSets representative item links when a planned set has no collection
+  piece, while keeping the existing trait, enchantment, quality, and level preview.
+- Added LibSets armor-weight and crafted-set metadata to planning and acquisition.
+
 0.4.0
 - Added a native gamepad planner with controller navigation for equipment slots,
   builds, and setups.

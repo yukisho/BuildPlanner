@@ -66,6 +66,12 @@ function Acquisition:Classify(slotKey, requirement, setup, resolved)
         state.crafted = ITEM_SET_TYPE_CRAFTED ~= nil
             and state.setType == ITEM_SET_TYPE_CRAFTED
     end
+    if not state.crafted
+        and requirement.setId
+        and LibSets
+        and LibSets.IsCraftedSet then
+        state.crafted = LibSets.IsCraftedSet(requirement.setId) == true
+    end
     if itemLink and itemLink ~= "" then
         if IsItemLinkCrafted and IsItemLinkCrafted(itemLink) then
             state.crafted = true

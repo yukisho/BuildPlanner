@@ -38,6 +38,16 @@ function Catalog:Refresh()
     self.entries = {}
     local seen = {}
 
+    if LibSets
+        and LibSets.GetAllSetIds
+        and LibSets.GetSetName
+        and (not LibSets.checkIfSetsAreLoadedProperly
+            or LibSets.checkIfSetsAreLoadedProperly()) then
+        for setId in pairs(LibSets.GetAllSetIds() or {}) do
+            self:Add(seen, setId, LibSets.GetSetName(setId))
+        end
+    end
+
     if GetNextItemSetCollectionId and GetItemSetName then
         local setId
         local count = 0

@@ -311,6 +311,40 @@ local function getLinkFields(link)
     return fields
 end
 
+function LibSets.GetSetArmorTypes(setId)
+    if setId == 101 then
+        return {
+            [ARMORTYPE_LIGHT] = true,
+            [ARMORTYPE_MEDIUM] = true,
+            [ARMORTYPE_HEAVY] = true,
+        }
+    end
+    return {}
+end
+function LibSets.GetSetItemId(setId, _, equipType, traitType, _, armorType)
+    if setId ~= 101 or equipType ~= EQUIP_TYPE_HEAD or armorType ~= ARMORTYPE_LIGHT then
+        return nil
+    end
+    itemLinks["item:10101"] = {
+        itemId = 10101,
+        name = "Highland Sentinel Hat",
+        equipType = EQUIP_TYPE_HEAD,
+        armorType = ARMORTYPE_LIGHT,
+        weaponType = WEAPONTYPE_NONE,
+        enchantId = 501,
+        setId = 101,
+        setName = "Highland Sentinel",
+        traitType = traitType,
+        quality = ITEM_QUALITY_NORMAL,
+        level = 50,
+        championPoints = 160,
+    }
+    return 10101
+end
+function LibSets.buildItemLink(itemId)
+    return "item:" .. tostring(itemId)
+end
+
 function GetNumItemSetCollectionPieces(setId)
     return ({ [12] = true, [34] = true, [56] = true, [78] = true,
         [90] = true, [91] = true, [92] = true, [93] = true })[setId] and 3 or 0
@@ -409,7 +443,8 @@ function GetItemLinkBindType(link)
         return BIND_TYPE_NONE
     end
     local item = itemLinks[link]
-    if item and ((item.itemId >= 1200 and item.itemId < 1300)
+    if item and (item.setId == 101
+        or (item.itemId >= 1200 and item.itemId < 1300)
         or (item.itemId >= 7800 and item.itemId < 7900)) then
         return BIND_TYPE_ON_EQUIP
     end
@@ -566,6 +601,20 @@ local unknownState = owner.acquisition:Classify("head", {}, resolverSetup)
 expect(unknownState.unknown, "unresolved requirements should remain unknown")
 local monsterArmorTypes = owner.itemResolver:GetAvailableArmorTypes("head", 56)
 expectEqual(#monsterArmorTypes, 3, "monster sets should retain every available armor weight")
+local craftedArmorTypes = owner.itemResolver:GetAvailableArmorTypes("head", 101)
+expectEqual(#craftedArmorTypes, 3, "LibSets crafted sets should expose every armor weight")
+local craftedPreview = owner.itemResolver:Resolve("head", {
+    setId = 101,
+    armorType = ARMORTYPE_LIGHT,
+}, resolverSetup)
+expect(craftedPreview and craftedPreview.itemId == 10101, "LibSets crafted gear should produce a preview")
+expectEqual(craftedPreview.pieceId, nil, "LibSets previews should not invent collection pieces")
+local libSetsCraftedState = owner.acquisition:Classify("head", {
+    setId = 101,
+    armorType = ARMORTYPE_LIGHT,
+}, resolverSetup, craftedPreview)
+expect(libSetsCraftedState.crafted, "LibSets crafted metadata should drive acquisition")
+expect(libSetsCraftedState.tradeable, "unbound LibSets crafted gear should be buyable")
 local plannedEnchantLink = owner.itemResolver:ApplyPlannedEnchantment(
     "|H1:item:3401:370:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:10000:0|h|h",
     ENCHANTMENT_SEARCH_CATEGORY_STAMINA

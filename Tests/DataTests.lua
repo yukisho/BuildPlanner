@@ -285,6 +285,16 @@ local collectionSets = {
     [12] = "Order's Wrath",
     [34] = "Pillar of Nirn",
 }
+LibSets = {
+    checkIfSetsAreLoadedProperly = function() return true end,
+    GetAllSetIds = function()
+        return { [12] = true, [34] = true, [101] = true }
+    end,
+    GetSetName = function(setId)
+        return collectionSets[setId] or (setId == 101 and "Highland Sentinel")
+    end,
+    IsCraftedSet = function(setId) return setId == 101 end,
+}
 function GetNextItemSetCollectionId(lastId)
     if lastId == nil then
         return 12
@@ -301,6 +311,7 @@ dofile("SetCatalog.lua")
 local catalog = GravvyBuildPlannerSetCatalog:New(data)
 expectEqual(catalog:FindExact("pillar of nirn").setId, 34, "set lookup should ignore case")
 expect(catalog:FindExact("Whorl of the Depths"), "saved manual sets should be searchable")
+expectEqual(catalog:FindExact("Highland Sentinel").setId, 101, "LibSets crafted sets should be searchable")
 expectEqual(catalog:Search("nirn")[1].name, "Pillar of Nirn", "set search should match within names")
 
 BuildPlannerTestData = data

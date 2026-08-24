@@ -115,23 +115,35 @@ function Resolver:GetAvailableArmorTypes(slotKey, setId)
     end
 
     local found = {}
-    local count = GetNumItemSetCollectionPieces(setId) or 0
-    for index = 1, count do
-        local pieceId = GetItemSetCollectionPieceInfo(setId, index)
-        if pieceId then
-            local itemLink = GetItemSetCollectionPieceItemLink(
-                pieceId,
-                LINK_STYLE_DEFAULT,
-                ITEM_TRAIT_TYPE_ARMOR_DIVINES,
-                ITEM_QUALITY_NORMAL
-            )
-            if itemLink
-                and itemLink ~= ""
-                and GetItemLinkEquipType(itemLink) == armorEquipTypes[slotKey] then
-                local armorType = GetItemLinkArmorType(itemLink)
-                if armorType and armorType ~= ARMORTYPE_NONE then
-                    found[armorType] = true
+    if GetNumItemSetCollectionPieces
+        and GetItemSetCollectionPieceInfo
+        and GetItemSetCollectionPieceItemLink then
+        local count = GetNumItemSetCollectionPieces(setId) or 0
+        for index = 1, count do
+            local pieceId = GetItemSetCollectionPieceInfo(setId, index)
+            if pieceId then
+                local itemLink = GetItemSetCollectionPieceItemLink(
+                    pieceId,
+                    LINK_STYLE_DEFAULT,
+                    ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+                    ITEM_QUALITY_NORMAL
+                )
+                if itemLink
+                    and itemLink ~= ""
+                    and GetItemLinkEquipType(itemLink) == armorEquipTypes[slotKey] then
+                    local armorType = GetItemLinkArmorType(itemLink)
+                    if armorType and armorType ~= ARMORTYPE_NONE then
+                        found[armorType] = true
+                    end
                 end
+            end
+        end
+    end
+
+    if LibSets and LibSets.GetSetArmorTypes then
+        for armorType, available in pairs(LibSets.GetSetArmorTypes(setId) or {}) do
+            if available then
+                found[armorType] = true
             end
         end
     end
@@ -317,11 +329,82 @@ function Resolver:CreateGlyphLink(category, requirement, setup, quality)
     return itemLink, name
 end
 
+function Resolver:BuildResult(itemLink, requirement, setup, quality, pieceId, collectionSlot)
+    local leveledLink = self:ApplyPlannedLevel(itemLink, requirement, setup, quality)
+    if leveledLink then
+        itemLink = leveledLink
+    end
+
+    local enchantId, enchantmentCategory = self:GetEnchantInfo(itemLink)
+    local enchantmentMatches = not requirement.enchantmentCategory
+        or requirement.enchantmentCategory == enchantmentCategory
+    if not enchantmentMatches then
+        local enchantedLink, plannedEnchantId = self:ApplyPlannedEnchantment(
+            itemLink,
+            requirement.enchantmentCategory
+        )
+        if enchantedLink then
+            itemLink = enchantedLink
+            enchantId = plannedEnchantId
+            enchantmentCategory = requirement.enchantmentCategory
+            enchantmentMatches = true
+        end
+    end
+
+    return {
+        itemLink = itemLink,
+        itemId = GetItemLinkItemId(itemLink),
+        itemName = zo_strformat(SI_TOOLTIP_ITEM_NAME, GetItemLinkName(itemLink)),
+        pieceId = pieceId,
+        collectionSlot = collectionSlot,
+        enchantmentId = enchantId,
+        enchantmentCategory = enchantmentCategory,
+        enchantmentMatches = enchantmentMatches,
+    }
+end
+
+function Resolver:ResolveWithLibSets(slotKey, requirement, setup, traitType, quality)
+    if not LibSets or not LibSets.GetSetItemId or not LibSets.buildItemLink then
+        return nil
+    end
+
+    local definition = Slots:Get(slotKey)
+    local equipType
+    local armorType
+    local weaponType
+    if definition.family == "armor" then
+        equipType = armorEquipTypes[slotKey]
+        armorType = requirement.armorType
+        if armorType == ARMORTYPE_NONE then
+            armorType = nil
+        end
+    elseif definition.family == "jewelry" then
+        equipType = jewelryEquipTypes[slotKey]
+    else
+        weaponType = requirement.weaponType
+        if weaponType == WEAPONTYPE_NONE then
+            weaponType = nil
+        end
+    end
+
+    local itemId = LibSets.GetSetItemId(
+        requirement.setId,
+        false,
+        equipType,
+        traitType,
+        nil,
+        armorType,
+        weaponType
+    )
+    local itemLink = itemId and LibSets.buildItemLink(itemId, 366)
+    if not itemLink or itemLink == "" or not self:MatchesSlot(slotKey, requirement, itemLink) then
+        return nil
+    end
+    return self:BuildResult(itemLink, requirement, setup, quality)
+end
+
 function Resolver:Resolve(slotKey, requirement, setup)
-    if not requirement.setId
-        or not GetNumItemSetCollectionPieces
-        or not GetItemSetCollectionPieceInfo
-        or not GetItemSetCollectionPieceItemLink then
+    if not requirement.setId then
         return nil
     end
 
@@ -333,62 +416,46 @@ function Resolver:Resolve(slotKey, requirement, setup)
     local traitType = requirement.traitType or defaultTraits[traitFamily]
     local quality = requirement.quality or setup.defaultQuality
     local fallback
-    local count = GetNumItemSetCollectionPieces(requirement.setId) or 0
-    for index = 1, count do
-        local pieceId, collectionSlot = GetItemSetCollectionPieceInfo(
-            requirement.setId,
-            index
-        )
-        if pieceId then
-            local itemLink = GetItemSetCollectionPieceItemLink(
-                pieceId,
-                LINK_STYLE_DEFAULT,
-                traitType,
-                quality
+    if GetNumItemSetCollectionPieces
+        and GetItemSetCollectionPieceInfo
+        and GetItemSetCollectionPieceItemLink then
+        local count = GetNumItemSetCollectionPieces(requirement.setId) or 0
+        for index = 1, count do
+            local pieceId, collectionSlot = GetItemSetCollectionPieceInfo(
+                requirement.setId,
+                index
             )
-            if itemLink and itemLink ~= "" and self:MatchesSlot(slotKey, requirement, itemLink) then
-                local leveledLink = self:ApplyPlannedLevel(
-                    itemLink,
-                    requirement,
-                    setup,
+            if pieceId then
+                local itemLink = GetItemSetCollectionPieceItemLink(
+                    pieceId,
+                    LINK_STYLE_DEFAULT,
+                    traitType,
                     quality
                 )
-                if leveledLink then
-                    itemLink = leveledLink
-                end
-                local enchantId, enchantmentCategory = self:GetEnchantInfo(itemLink)
-                local enchantmentMatches = not requirement.enchantmentCategory
-                    or requirement.enchantmentCategory == enchantmentCategory
-                if not enchantmentMatches then
-                    local enchantedLink, plannedEnchantId = self:ApplyPlannedEnchantment(
+                if itemLink and itemLink ~= "" and self:MatchesSlot(slotKey, requirement, itemLink) then
+                    local result = self:BuildResult(
                         itemLink,
-                        requirement.enchantmentCategory
+                        requirement,
+                        setup,
+                        quality,
+                        pieceId,
+                        collectionSlot
                     )
-                    if enchantedLink then
-                        itemLink = enchantedLink
-                        enchantId = plannedEnchantId
-                        enchantmentCategory = requirement.enchantmentCategory
-                        enchantmentMatches = true
+                    if not fallback then
+                        fallback = result
                     end
-                end
-                local result = {
-                    itemLink = itemLink,
-                    itemId = GetItemLinkItemId(itemLink),
-                    itemName = zo_strformat(SI_TOOLTIP_ITEM_NAME, GetItemLinkName(itemLink)),
-                    pieceId = pieceId,
-                    collectionSlot = collectionSlot,
-                    enchantmentId = enchantId,
-                    enchantmentCategory = enchantmentCategory,
-                    enchantmentMatches = enchantmentMatches,
-                }
-                if not fallback then
-                    fallback = result
-                end
-                if enchantmentMatches then
-                    return result
+                    if result.enchantmentMatches then
+                        return result
+                    end
                 end
             end
         end
     end
-    return fallback
+    return fallback or self:ResolveWithLibSets(
+        slotKey,
+        requirement,
+        setup,
+        traitType,
+        quality
+    )
 end
