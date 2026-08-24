@@ -583,6 +583,20 @@ for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
 end
 ui:SetView("skills")
 expect(not ui.skillPanel:IsHidden(), "keyboard users should be able to open the skill-bar planner")
+expectEqual(
+    ui.skillButtons.front[2].icon.texture,
+    "EsoUI/Art/ActionBar/abilityInset.dds",
+    "empty skill slots should use ESO's native ability background"
+)
+ui.selectedSkillSlot = 2
+ui:LoadSkillEditor()
+expectEqual(
+    ui.skillPreview.texture,
+    "EsoUI/Art/ActionBar/abilityInset.dds",
+    "an unplanned skill preview should use the native ability background"
+)
+ui.selectedSkillSlot = 1
+ui:LoadSkillEditor()
 ui.skillEdit:SetText("Deep")
 ui:OnSkillTextChanged()
 expectEqual(#ui.skillSuggestionData, 1, "skill names should autocomplete from active abilities")

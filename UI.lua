@@ -7,6 +7,7 @@ local WINDOW_HEIGHT = 700
 local SUGGESTION_ROWS = 6
 local DEFAULT_VALUE = -1
 local AUTOMATIC_ROUTE = "automatic"
+local EMPTY_SKILL_TEXTURE = "EsoUI/Art/ActionBar/abilityInset.dds"
 
 local slotStringIds = {
     head = SI_GRAVVY_BUILD_PLANNER_SLOT_HEAD,
@@ -1334,7 +1335,7 @@ function UI:RefreshSkillBars()
         for slotIndex = 1, 6 do
             local button = self.skillButtons[barKey][slotIndex]
             local skill = bars[barKey] and bars[barKey][slotIndex]
-            button.icon:SetTexture(skill and skill.icon or nil)
+            button.icon:SetTexture(skill and skill.icon or EMPTY_SKILL_TEXTURE)
             local selected = barKey == self.selectedSkillBar
                 and slotIndex == self.selectedSkillSlot
             button.backdrop:SetEdgeColor(
@@ -1366,7 +1367,7 @@ function UI:LoadSkillEditor()
             and GetString(SI_GRAVVY_BUILD_PLANNER_ULTIMATE)
             or tostring(self.selectedSkillSlot)
     ))
-    self.skillPreview:SetTexture(skill and skill.icon or nil)
+    self.skillPreview:SetTexture(skill and skill.icon or EMPTY_SKILL_TEXTURE)
     self.skillName:SetText(skill and skill.name or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED))
     self.skillSuggestionPanel:SetHidden(true)
     self.loadingSkill = false

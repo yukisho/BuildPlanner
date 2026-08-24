@@ -6,6 +6,7 @@
   ultimate-only filtering for the sixth slot.
 - Added planned skill icons, native keyboard and gamepad ability tooltips, and
   save and clear actions that never alter the player's equipped action bars.
+- Used ESO's native ability-slot background for empty bar slots and previews.
 - Added native gamepad skill-bar navigation and controller ability selection.
 - Preserved both skill bars through setup and build copies, migrations, and GBP
   sharing while retaining support for version-1 and version-2 build codes.
