@@ -185,6 +185,9 @@ function Inventory:Refresh()
     if self.owner.ui then
         self.owner.ui:RefreshOwnedStatus()
     end
+    if self.owner.gamepad then
+        self.owner.gamepad:Refresh()
+    end
 end
 
 function Inventory:GetProgress(setupId)

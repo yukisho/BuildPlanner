@@ -1,0 +1,43 @@
+<GuiXml>
+    <Controls>
+        <TopLevelControl name="GravvyBuildPlannerGamepadWindow" hidden="true" tier="HIGH" level="10">
+            <Dimensions x="720"/>
+            <Anchor point="TOPRIGHT" relativeTo="GuiRoot" relativePoint="TOPRIGHT" offsetX="-60" offsetY="80"/>
+            <Anchor point="BOTTOMRIGHT" relativeTo="GuiRoot" relativePoint="BOTTOMRIGHT" offsetX="-60" offsetY="-100"/>
+            <Controls>
+                <Backdrop name="$(parent)Backdrop" inherits="ZO_DefaultBackdrop">
+                    <AnchorFill/>
+                </Backdrop>
+                <Label name="$(parent)Title" font="ZoFontGamepadBold48" color="FFFFFF" horizontalAlignment="LEFT">
+                    <Anchor point="TOPLEFT" offsetX="30" offsetY="18"/>
+                    <Anchor point="TOPRIGHT" offsetX="-30" offsetY="18"/>
+                    <Dimensions y="52"/>
+                </Label>
+                <Label name="$(parent)BuildName" font="ZoFontGamepadCondensed42" color="C5C29E" horizontalAlignment="LEFT">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Title" relativePoint="BOTTOMLEFT" offsetY="4"/>
+                    <Anchor point="TOPRIGHT" relativeTo="$(parent)Title" relativePoint="BOTTOMRIGHT" offsetY="4"/>
+                    <Dimensions y="44"/>
+                </Label>
+                <Label name="$(parent)SetupName" font="ZoFontGamepad34" color="FFFFFF" horizontalAlignment="LEFT">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)BuildName" relativePoint="BOTTOMLEFT"/>
+                    <Anchor point="TOPRIGHT" relativeTo="$(parent)BuildName" relativePoint="BOTTOMRIGHT"/>
+                    <Dimensions y="38"/>
+                </Label>
+                <Label name="$(parent)Progress" font="ZoFontGamepad27" color="D9D4C2" horizontalAlignment="LEFT">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)SetupName" relativePoint="BOTTOMLEFT"/>
+                    <Anchor point="TOPRIGHT" relativeTo="$(parent)SetupName" relativePoint="BOTTOMRIGHT"/>
+                    <Dimensions y="34"/>
+                </Label>
+                <Control name="$(parent)List" inherits="ZO_VerticalParametricScrollListTemplate">
+                    <Anchor point="TOPLEFT" relativeTo="$(parent)Progress" relativePoint="BOTTOMLEFT" offsetY="8"/>
+                    <Anchor point="BOTTOMRIGHT" offsetX="-20" offsetY="-60"/>
+                </Control>
+                <Label name="$(parent)Status" font="ZoFontGamepad27" color="A6D18C" horizontalAlignment="LEFT">
+                    <Anchor point="BOTTOMLEFT" offsetX="30" offsetY="-14"/>
+                    <Anchor point="BOTTOMRIGHT" offsetX="-30" offsetY="-14"/>
+                    <Dimensions y="36"/>
+                </Label>
+            </Controls>
+        </TopLevelControl>
+    </Controls>
+</GuiXml>

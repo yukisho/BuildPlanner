@@ -1,0 +1,1130 @@
+local Gamepad = GravvyBuildPlannerGamepad
+local Slots = GravvyBuildPlannerSlots
+local Enchantments = GravvyBuildPlannerEnchantments
+
+local EDIT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT"
+local MANAGE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+local NAME_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_NAME"
+local CONFIRM_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CONFIRM"
+local EXPORT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_EXPORT"
+local CODE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CODE"
+local HELP_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_HELP"
+local TRANSFER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_TRANSFER"
+local DEFAULT_VALUE = -1
+
+local slotStringIds = {
+    head = SI_GRAVVY_BUILD_PLANNER_SLOT_HEAD,
+    shoulders = SI_GRAVVY_BUILD_PLANNER_SLOT_SHOULDERS,
+    chest = SI_GRAVVY_BUILD_PLANNER_SLOT_CHEST,
+    hands = SI_GRAVVY_BUILD_PLANNER_SLOT_HANDS,
+    waist = SI_GRAVVY_BUILD_PLANNER_SLOT_WAIST,
+    legs = SI_GRAVVY_BUILD_PLANNER_SLOT_LEGS,
+    feet = SI_GRAVVY_BUILD_PLANNER_SLOT_FEET,
+    neck = SI_GRAVVY_BUILD_PLANNER_SLOT_NECK,
+    ring1 = SI_GRAVVY_BUILD_PLANNER_SLOT_RING1,
+    ring2 = SI_GRAVVY_BUILD_PLANNER_SLOT_RING2,
+    frontMain = SI_GRAVVY_BUILD_PLANNER_SLOT_FRONTMAIN,
+    frontOff = SI_GRAVVY_BUILD_PLANNER_SLOT_FRONTOFF,
+    backMain = SI_GRAVVY_BUILD_PLANNER_SLOT_BACKMAIN,
+    backOff = SI_GRAVVY_BUILD_PLANNER_SLOT_BACKOFF,
+}
+
+local function slotName(slotKey)
+    return GetString(slotStringIds[slotKey])
+end
+
+local function showError(message)
+    ZO_Alert(UI_ALERT_CATEGORY_ERROR, SOUNDS.NEGATIVE_CLICK, message)
+end
+
+local function releaseAndOpen(dialogName, callback)
+    ZO_Dialogs_ReleaseDialogOnButtonPress(dialogName)
+    zo_callLater(callback, 10)
+end
+
+local function setupTextField(control, data, selected, options)
+    local edit = control.editBoxControl
+    control.highlight:SetHidden(not selected)
+    edit:SetDefaultText(options.defaultText or "")
+    edit:SetMaxInputChars(options.maxChars)
+    edit:SetNewLineEnabled(options.multiline == true)
+    edit:SetSelectAllOnFocus(true)
+    edit:SetTextType(options.numeric and TEXT_TYPE_NUMERIC or TEXT_TYPE_ALL)
+    edit:SetText(options.value() or "")
+    edit.textChangedCallback = function(editBox)
+        options.changed(editBox:GetText())
+    end
+    data.control = control
+end
+
+local function focusTextField(dialog)
+    local data = dialog.entryList:GetTargetData()
+    if data and data.control then
+        data.control.editBoxControl:TakeFocus()
+    end
+end
+
+local function textFieldEntry(header, options)
+    return {
+        template = options.multiline
+            and "ZO_Gamepad_GenericDialog_TextFieldItem_Multiline_Large"
+            or "ZO_Gamepad_GenericDialog_Parametric_TextFieldItem",
+        header = header,
+        templateData = {
+            setup = function(control, data, selected)
+                setupTextField(control, data, selected, options)
+            end,
+            callback = focusTextField,
+            narrationText = ZO_GetDefaultParametricListEditBoxNarrationText,
+        },
+    }
+end
+
+local function dropdownEntry(header, choices, value, changed)
+    local label = GetString(header)
+    return {
+        template = "ZO_GamepadDropdownItem",
+        header = header,
+        text = label,
+        templateData = {
+            setup = function(control, data, selected)
+                local dropdown = control.dropdown
+                dropdown:SetName(label)
+                dropdown:SetSortsItems(false)
+                dropdown:SetSelectedItemTextColor(selected)
+                dropdown:ClearItems()
+                local available = type(choices) == "function" and choices() or choices
+                local selectedValue = value()
+                local firstEntry
+                local selectedEntry
+                for _, choice in ipairs(available) do
+                    local choiceValue = choice.value
+                    local entry = dropdown:CreateItemEntry(choice.label, function()
+                        changed(choiceValue)
+                    end)
+                    dropdown:AddItem(entry, ZO_COMBOBOX_SUPPRESS_UPDATE)
+                    firstEntry = firstEntry or entry
+                    if choiceValue == selectedValue then
+                        selectedEntry = entry
+                    end
+                end
+                dropdown:UpdateItems()
+                dropdown:SelectItem(selectedEntry or firstEntry, true)
+                SCREEN_NARRATION_MANAGER:RegisterDialogDropdown(data.dialog, dropdown)
+            end,
+            callback = function(dialog)
+                local control = dialog.entryList:GetTargetControl()
+                if control then
+                    control.dropdown:Activate()
+                end
+            end,
+            narrationText = function(_, control)
+                return control.dropdown:GetNarrationText()
+            end,
+        },
+    }
+end
+
+local function actionEntry(stringId, callback, enabled)
+    return {
+        template = "ZO_GamepadMenuEntryTemplate",
+        text = stringId,
+        templateData = {
+            setup = ZO_SharedGamepadEntry_OnSetup,
+            callback = callback,
+            enabled = enabled,
+        },
+    }
+end
+
+local function selectDialogEntry(dialog)
+    local data = dialog.entryList:GetTargetData()
+    if data and data.callback then
+        data.callback(dialog)
+    end
+end
+
+local function cancelDialog(dialogName)
+    return function()
+        ZO_Dialogs_ReleaseDialogOnButtonPress(dialogName)
+    end
+end
+
+local function addEnumChoice(choices, stringTable, value, prefix)
+    if value == nil then
+        return
+    end
+    local label = GetString(stringTable, value)
+    if label and label ~= "" then
+        choices[#choices + 1] = {
+            label = prefix and (prefix .. ": " .. label) or label,
+            value = value,
+        }
+    end
+end
+
+local function typeChoices(slotKey)
+    local definition = Slots:Get(slotKey)
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_ANY_TYPE), value = 0 },
+    }
+    if definition.family == "armor" then
+        addEnumChoice(choices, "SI_ARMORTYPE", ARMORTYPE_LIGHT)
+        addEnumChoice(choices, "SI_ARMORTYPE", ARMORTYPE_MEDIUM)
+        addEnumChoice(choices, "SI_ARMORTYPE", ARMORTYPE_HEAVY)
+    elseif definition.family == "weapon" then
+        for _, weaponType in ipairs({
+            WEAPONTYPE_AXE,
+            WEAPONTYPE_HAMMER,
+            WEAPONTYPE_SWORD,
+            WEAPONTYPE_DAGGER,
+            WEAPONTYPE_SHIELD,
+            WEAPONTYPE_TWO_HANDED_AXE,
+            WEAPONTYPE_TWO_HANDED_HAMMER,
+            WEAPONTYPE_TWO_HANDED_SWORD,
+            WEAPONTYPE_BOW,
+            WEAPONTYPE_FIRE_STAFF,
+            WEAPONTYPE_FROST_STAFF,
+            WEAPONTYPE_LIGHTNING_STAFF,
+            WEAPONTYPE_HEALING_STAFF,
+        }) do
+            if Slots:IsRequirementCompatible(slotKey, { weaponType = weaponType }) then
+                addEnumChoice(choices, "SI_WEAPONTYPE", weaponType)
+            end
+        end
+    end
+    return choices
+end
+
+local function traitChoices(slotKey)
+    local definition = Slots:Get(slotKey)
+    local families = definition.family == "weapon"
+        and { "weapon", "armor" }
+        or { definition.family }
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_ANY_TRAIT), value = ITEM_TRAIT_TYPE_NONE },
+    }
+    local seen = {}
+    for _, family in ipairs(families) do
+        local category = family == "armor" and ITEM_TRAIT_TYPE_CATEGORY_ARMOR
+            or family == "weapon" and ITEM_TRAIT_TYPE_CATEGORY_WEAPON
+            or ITEM_TRAIT_TYPE_CATEGORY_JEWELRY
+        local prefix = #families > 1 and GetString(family == "armor"
+            and SI_GRAVVY_BUILD_PLANNER_GAMEPAD_ARMOR
+            or SI_GRAVVY_BUILD_PLANNER_GAMEPAD_WEAPON)
+        for traitType = ITEM_TRAIT_TYPE_ITERATION_BEGIN or 1,
+            ITEM_TRAIT_TYPE_ITERATION_END or 64 do
+            if traitType ~= ITEM_TRAIT_TYPE_NONE
+                and not seen[traitType]
+                and GetItemTraitTypeCategory(traitType) == category then
+                addEnumChoice(choices, "SI_ITEMTRAITTYPE", traitType, prefix)
+                seen[traitType] = true
+            end
+        end
+    end
+    table.sort(choices, function(left, right)
+        if left.value == ITEM_TRAIT_TYPE_NONE then
+            return true
+        elseif right.value == ITEM_TRAIT_TYPE_NONE then
+            return false
+        end
+        return left.label < right.label
+    end)
+    return choices
+end
+
+local function enchantmentChoices(slotKey, customName)
+    local definition = Slots:Get(slotKey)
+    local families = definition.family == "weapon"
+        and { "weapon", "armor" }
+        or { definition.family }
+    local choices = {}
+    local seen = {}
+    for _, family in ipairs(families) do
+        local prefix = #families > 1 and GetString(family == "armor"
+            and SI_GRAVVY_BUILD_PLANNER_GAMEPAD_ARMOR
+            or SI_GRAVVY_BUILD_PLANNER_GAMEPAD_WEAPON)
+        for _, choice in ipairs(Enchantments:GetChoices(family, customName)) do
+            if not seen[choice.value] then
+                choices[#choices + 1] = {
+                    label = prefix and choice.value >= 0
+                        and (prefix .. ": " .. choice.label)
+                        or choice.label,
+                    value = choice.value,
+                }
+                seen[choice.value] = true
+            end
+        end
+    end
+    return choices
+end
+
+local function qualityChoices()
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_DEFAULT), value = DEFAULT_VALUE },
+    }
+    for _, quality in ipairs({
+        ITEM_QUALITY_NORMAL,
+        ITEM_QUALITY_MAGIC,
+        ITEM_QUALITY_ARCANE,
+        ITEM_QUALITY_ARTIFACT,
+        ITEM_QUALITY_LEGENDARY,
+    }) do
+        addEnumChoice(choices, "SI_ITEMQUALITY", quality)
+    end
+    return choices
+end
+
+local function familyForPending(slotKey, pending)
+    local family = Slots:Get(slotKey).family
+    if family == "weapon" and pending.weaponType == WEAPONTYPE_SHIELD then
+        return "armor"
+    end
+    return family
+end
+
+local function valueIsInChoices(value, choices)
+    for _, choice in ipairs(choices) do
+        if choice.value == value then
+            return true
+        end
+    end
+    return false
+end
+
+function Gamepad:InitializeDialogs()
+    self:InitializeEditDialog()
+    self:InitializeManageDialog()
+    self:InitializeNameDialog()
+    self:InitializeConfirmDialog()
+    self:InitializeExportDialog()
+    self:InitializeCodeDialog()
+    self:InitializeHelpDialog()
+    self:InitializeTransferDialog()
+end
+
+function Gamepad:InitializeEditDialog()
+    ZO_Dialogs_RegisterCustomDialog(EDIT_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            self:LoadPendingRequirement()
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT_TITLE },
+        parametricList = {
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_SET, {
+                value = function() return self.pendingRequirement.setName end,
+                changed = function(value) self.pendingRequirement.setName = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_SET),
+                maxChars = 100,
+            }),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_TYPE,
+                function() return typeChoices(self.pendingSlot) end,
+                function()
+                    return self.pendingRequirement.armorType
+                        or self.pendingRequirement.weaponType
+                        or 0
+                end,
+                function(value)
+                    local family = Slots:Get(self.pendingSlot).family
+                    self.pendingRequirement.armorType = family == "armor" and value or nil
+                    self.pendingRequirement.weaponType = family == "weapon" and value or nil
+                end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_TRAIT,
+                function() return traitChoices(self.pendingSlot) end,
+                function() return self.pendingRequirement.traitType or ITEM_TRAIT_TYPE_NONE end,
+                function(value) self.pendingRequirement.traitType = value end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_ENCHANTMENT,
+                function()
+                    return enchantmentChoices(
+                        self.pendingSlot,
+                        self.pendingRequirement.legacyEnchantmentName
+                    )
+                end,
+                function()
+                    return self.pendingRequirement.enchantmentCategory
+                        or (self.pendingRequirement.legacyEnchantmentName
+                            and Enchantments.CUSTOM)
+                        or Enchantments.DEFAULT
+                end,
+                function(value) self.pendingRequirement.enchantmentCategory = value end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_QUALITY,
+                qualityChoices(),
+                function() return self.pendingRequirement.quality or DEFAULT_VALUE end,
+                function(value) self.pendingRequirement.quality = value end
+            ),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_LEVEL, {
+                value = function() return self.pendingRequirement.level end,
+                changed = function(value) self.pendingRequirement.level = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_LEVEL),
+                maxChars = 3,
+                numeric = true,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS, {
+                value = function() return self.pendingRequirement.championPoints end,
+                changed = function(value) self.pendingRequirement.championPoints = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS),
+                maxChars = 4,
+                numeric = true,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_NOTES, {
+                value = function() return self.pendingRequirement.note end,
+                changed = function(value) self.pendingRequirement.note = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_NOTES),
+                maxChars = 4000,
+                multiline = true,
+            }),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_COPY_MOVE,
+                function()
+                    releaseAndOpen(EDIT_DIALOG, function()
+                        self:ShowTransferDialog()
+                    end)
+                end,
+                function()
+                    local setup = self.owner.data:GetCurrentSetup()
+                    return setup.equipment[self.pendingSlot] ~= nil
+                end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_SAVE,
+                callback = function()
+                    local ok, message = self:SavePendingRequirement()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(EDIT_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(EDIT_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:LoadPendingRequirement()
+    self.pendingSlot = self:GetTargetSlot()
+    local setup = self.owner.data:GetCurrentSetup()
+    local saved = setup.equipment[self.pendingSlot] or {}
+    self.pendingRequirement = {
+        setName = saved.setName or "",
+        setId = saved.setId,
+        armorType = saved.armorType,
+        weaponType = saved.weaponType,
+        traitType = saved.traitType or ITEM_TRAIT_TYPE_NONE,
+        enchantmentCategory = saved.enchantmentCategory,
+        legacyEnchantmentName = not saved.enchantmentCategory and saved.enchantmentName or nil,
+        quality = saved.quality,
+        level = saved.level and tostring(saved.level) or "",
+        championPoints = saved.championPoints and tostring(saved.championPoints) or "",
+        note = saved.note or "",
+    }
+end
+
+function Gamepad:SavePendingRequirement()
+    local pending = self.pendingRequirement
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local setName = zo_strtrim(pending.setName or "")
+    local requirement = {
+        setName = setName,
+        note = pending.note or "",
+    }
+    local exactSet = self.owner.setCatalog:FindExact(setName)
+    if exactSet then
+        requirement.setId = exactSet.setId
+        requirement.setName = exactSet.name
+    end
+
+    local definition = Slots:Get(self.pendingSlot)
+    if definition.family == "armor" and pending.armorType and pending.armorType ~= 0 then
+        requirement.armorType = pending.armorType
+        if requirement.setId then
+            local available = self.owner.itemResolver:GetAvailableArmorTypes(
+                self.pendingSlot,
+                requirement.setId
+            )
+            if #available == 1 then
+                requirement.armorType = available[1]
+            elseif #available > 1 and not valueIsInChoices(
+                requirement.armorType,
+                (function()
+                    local choices = {}
+                    for _, armorType in ipairs(available) do
+                        choices[#choices + 1] = { value = armorType }
+                    end
+                    return choices
+                end)()
+            ) then
+                requirement.armorType = available[1]
+            end
+        end
+    elseif definition.family == "weapon"
+        and pending.weaponType and pending.weaponType ~= 0 then
+        requirement.weaponType = pending.weaponType
+    end
+
+    local editorFamily = familyForPending(self.pendingSlot, requirement)
+    local wantedTraitCategory = editorFamily == "armor" and ITEM_TRAIT_TYPE_CATEGORY_ARMOR
+        or editorFamily == "weapon" and ITEM_TRAIT_TYPE_CATEGORY_WEAPON
+        or ITEM_TRAIT_TYPE_CATEGORY_JEWELRY
+    if pending.traitType
+        and pending.traitType ~= ITEM_TRAIT_TYPE_NONE
+        and GetItemTraitTypeCategory(pending.traitType) == wantedTraitCategory then
+        requirement.traitType = pending.traitType
+    end
+
+    local enchantment = pending.enchantmentCategory
+    if enchantment == Enchantments.CUSTOM then
+        requirement.enchantmentName = pending.legacyEnchantmentName
+    elseif enchantment and enchantment ~= Enchantments.DEFAULT
+        and valueIsInChoices(enchantment, Enchantments:GetChoices(editorFamily)) then
+        requirement.enchantmentCategory = enchantment
+        requirement.enchantmentName = Enchantments:GetName(enchantment)
+    end
+    if pending.quality and pending.quality ~= DEFAULT_VALUE then
+        requirement.quality = pending.quality
+    end
+    if zo_strtrim(pending.level or "") ~= "" then
+        requirement.level = zo_clamp(math.floor(tonumber(pending.level) or 1), 1, 50)
+    end
+    if zo_strtrim(pending.championPoints or "") ~= "" then
+        local gearCap = GetChampionPointsPlayerProgressionCap
+            and GetChampionPointsPlayerProgressionCap()
+            or 160
+        requirement.championPoints = zo_clamp(
+            math.floor((tonumber(pending.championPoints) or 0) / 10) * 10,
+            0,
+            gearCap
+        )
+    end
+
+    local resolved = self.owner.itemResolver:Resolve(self.pendingSlot, requirement, setup)
+    if resolved then
+        requirement.itemLink = resolved.itemLink
+        requirement.itemId = resolved.itemId
+        requirement.itemName = resolved.itemName
+        if resolved.enchantmentMatches and requirement.enchantmentCategory then
+            requirement.enchantmentId = resolved.enchantmentId
+        end
+    end
+    local ok, result = self.owner.data:SetEquipment(
+        build.id,
+        setup.id,
+        self.pendingSlot,
+        requirement
+    )
+    if not ok then
+        return false, result
+    end
+    self.owner.setCatalog:Refresh()
+    self.owner.inventory:Refresh()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SLOT_SAVED,
+        slotName(self.pendingSlot)
+    ))
+    self:Refresh(true)
+    return true
+end
+
+function Gamepad:ShowEditDialog()
+    if self:IsTargetEditable() then
+        ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
+    end
+end
+
+function Gamepad:InitializeManageDialog()
+    ZO_Dialogs_RegisterCustomDialog(MANAGE_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE_TITLE },
+        mainText = { text = SI_GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE_HELP },
+        parametricList = {
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_NEW_BUILD, function()
+                self:OpenNameFromManage("newBuild")
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_RENAME_BUILD, function()
+                self:OpenNameFromManage("renameBuild")
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_DUPLICATE_BUILD, function()
+                self:OpenNameFromManage("duplicateBuild")
+            end),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_GAMEPAD_DELETE_BUILD,
+                function() self:OpenDeleteFromManage("build") end,
+                function() return #self.owner.data:GetBuilds() > 1 end
+            ),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_NEW_SETUP, function()
+                self:OpenNameFromManage("newSetup")
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_RENAME_SETUP, function()
+                self:OpenNameFromManage("renameSetup")
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_DUPLICATE_SETUP, function()
+                self:OpenNameFromManage("duplicateSetup")
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_MOVE_SETUP_UP, function()
+                self:MoveSetupFromManage(-1)
+            end, function()
+                local setup, build = self.owner.data:GetCurrentSetup()
+                local _, index = self.owner.data:FindSetup(build, setup.id)
+                return index and index > 1
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_MOVE_SETUP_DOWN, function()
+                self:MoveSetupFromManage(1)
+            end, function()
+                local setup, build = self.owner.data:GetCurrentSetup()
+                local _, index = self.owner.data:FindSetup(build, setup.id)
+                return index and index < #build.setups
+            end),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_GAMEPAD_DELETE_SETUP,
+                function() self:OpenDeleteFromManage("setup") end,
+                function()
+                    local _, build = self.owner.data:GetCurrentSetup()
+                    return #build.setups > 1
+                end
+            ),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_UNDO,
+                function() self:UndoFromManage() end,
+                function() return self.owner.data:CanUndoDeletion() end
+            ),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_EXPORT, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowExportDialog() end)
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_HELP_TITLE, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowHelpDialog() end)
+            end),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CLOSE,
+                callback = cancelDialog(MANAGE_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:ShowManageDialog()
+    ZO_Dialogs_ShowGamepadDialog(MANAGE_DIALOG)
+end
+
+function Gamepad:InitializeNameDialog()
+    ZO_Dialogs_RegisterCustomDialog(NAME_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog) dialog:setupFunc() end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_ENTER_NAME },
+        parametricList = {
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME, {
+                value = function() return self.pendingName end,
+                changed = function(value) self.pendingName = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME),
+                maxChars = 100,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_SAVE_NAME,
+                callback = function()
+                    local ok, message = self:AcceptPendingName()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(NAME_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(NAME_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:OpenNameFromManage(action)
+    local setup, build = self.owner.data:GetCurrentSetup()
+    self.pendingNameAction = action
+    self.pendingName = action == "renameBuild" and build.name
+        or action == "renameSetup" and setup.name
+        or ""
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(NAME_DIALOG)
+    end)
+end
+
+function Gamepad:AcceptPendingName()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local action = self.pendingNameAction
+    local result, message
+    if action == "newBuild" then
+        result, message = self.owner.data:CreateBuild(self.pendingName)
+    elseif action == "renameBuild" then
+        result, message = self.owner.data:RenameBuild(build.id, self.pendingName)
+    elseif action == "duplicateBuild" then
+        result, message = self.owner.data:DuplicateBuild(build.id, self.pendingName)
+    elseif action == "newSetup" then
+        result, message = self.owner.data:CreateSetup(build.id, self.pendingName)
+    elseif action == "renameSetup" then
+        result, message = self.owner.data:RenameSetup(build.id, setup.id, self.pendingName)
+    elseif action == "duplicateSetup" then
+        result, message = self.owner.data:DuplicateSetup(build.id, setup.id, self.pendingName)
+    end
+    if not result then
+        return false, message
+    end
+    self.owner.setCatalog:Refresh()
+    self.owner.inventory:Refresh()
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_SAVED))
+    self:Refresh(true)
+    return true
+end
+
+function Gamepad:MoveSetupFromManage(direction)
+    local setup, build = self.owner.data:GetCurrentSetup()
+    self.owner.data:MoveSetup(build.id, setup.id, direction)
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:Refresh(true)
+end
+
+function Gamepad:UndoFromManage()
+    local ok, message = self.owner.data:UndoLastDeletion()
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self.owner.setCatalog:Refresh()
+    self.owner.inventory:Refresh()
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_RESTORED))
+    self:Refresh(true)
+end
+
+function Gamepad:InitializeConfirmDialog()
+    ZO_Dialogs_RegisterCustomDialog(CONFIRM_DIALOG, {
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
+        title = { text = function() return self.pendingConfirmTitle end },
+        mainText = { text = function() return self.pendingConfirmText end },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_DIALOG_CONFIRM,
+                callback = function()
+                    local ok, message = self.pendingConfirm()
+                    if not ok then
+                        self:SetStatus(message, true)
+                        return
+                    end
+                    self.owner.setCatalog:Refresh()
+                    self.owner.inventory:Refresh()
+                    self:Refresh(true)
+                end,
+            },
+            { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CANCEL },
+        },
+    })
+end
+
+function Gamepad:OpenDeleteFromManage(kind)
+    local setup, build = self.owner.data:GetCurrentSetup()
+    self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_DELETE)
+    if kind == "build" then
+        self.pendingConfirmText = zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_CONFIRM_DELETE_BUILD,
+            build.name
+        )
+        self.pendingConfirm = function()
+            return self.owner.data:DeleteBuild(build.id)
+        end
+    else
+        self.pendingConfirmText = zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_CONFIRM_DELETE_SETUP,
+            setup.name
+        )
+        self.pendingConfirm = function()
+            return self.owner.data:DeleteSetup(build.id, setup.id)
+        end
+    end
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+    end)
+end
+
+function Gamepad:InitializeExportDialog()
+    ZO_Dialogs_RegisterCustomDialog(EXPORT_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            self.exportIncludeOwned = false
+            self.exportIncludeGlyphs = false
+            self:RefreshExportReview()
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_EXPORT_TITLE },
+        mainText = {
+            text = function()
+                local review = self.exportReview
+                return zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_EXPORT_SUMMARY,
+                    review.included,
+                    review.glyphs,
+                    review.excluded,
+                    review.owned
+                )
+            end,
+        },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_OWNED,
+                {
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_EXCLUDE), value = false },
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_INCLUDE), value = true },
+                },
+                function() return self.exportIncludeOwned end,
+                function(value)
+                    self.exportIncludeOwned = value
+                    self:RefreshExportReview()
+                end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_GLYPHS,
+                {
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_NO_GLYPHS), value = false },
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_ADD_GLYPHS), value = true },
+                },
+                function() return self.exportIncludeGlyphs end,
+                function(value)
+                    self.exportIncludeGlyphs = value
+                    self:RefreshExportReview()
+                end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_EXPORT_CREATE,
+                callback = function() self:ExecuteGamepadExport() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(EXPORT_DIALOG),
+            },
+        },
+    })
+end
+
+
+function Gamepad:OpenAddonPage()
+    if RequestOpenUnsafeURL then
+        RequestOpenUnsafeURL(self.owner.shopping:GetAddonURL())
+    else
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_URL_UNAVAILABLE))
+    end
+end
+
+function Gamepad:RefreshExportReview()
+    self.exportReview = self.owner.shopping:BuildReview(
+        self.exportIncludeOwned,
+        self.exportIncludeGlyphs
+    )
+end
+
+function Gamepad:ShowExportDialog()
+    ZO_Dialogs_ShowGamepadDialog(EXPORT_DIALOG)
+end
+
+function Gamepad:ExecuteGamepadExport()
+    local review = self.exportReview
+    if not review or #review.items == 0 then
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_NOTHING))
+        return
+    end
+    local api = self.owner.shopping:GetAPI()
+    if api then
+        local ok, result, itemIndex = self.owner.shopping:CreateList(review)
+        if ok then
+            ZO_Dialogs_ReleaseDialogOnButtonPress(EXPORT_DIALOG)
+            self:SetStatus(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_CREATED,
+                result.name,
+                #review.items
+            ))
+            return
+        elseif result ~= "NOT_READY" then
+            showError(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_EXPORT_FAILED,
+                itemIndex and (tostring(result) .. " #" .. tostring(itemIndex))
+                    or tostring(result)
+            ))
+            return
+        end
+    end
+    self.pendingCode = self.owner.shopping:Encode(review)
+    if not self.pendingCode then
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT_CODE_FAILED))
+        return
+    end
+    releaseAndOpen(EXPORT_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CODE_DIALOG)
+    end)
+end
+
+function Gamepad:InitializeCodeDialog()
+    ZO_Dialogs_RegisterCustomDialog(CODE_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_CODE_TITLE },
+        mainText = { text = SI_GRAVVY_BUILD_PLANNER_CODE_HELP },
+        parametricList = {
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CODE_TITLE, {
+                value = function() return self.pendingCode or "" end,
+                changed = function(value) self.pendingCode = value end,
+                defaultText = "SL2:",
+                maxChars = 20000,
+                multiline = true,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_OPEN_ADDON_PAGE,
+                callback = function() self:OpenAddonPage() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CLOSE,
+                callback = cancelDialog(CODE_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeHelpDialog()
+    ZO_Dialogs_RegisterCustomDialog(HELP_DIALOG, {
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_HELP_TITLE },
+        mainText = { text = SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT },
+        buttons = {
+            { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
+        },
+    })
+end
+
+function Gamepad:ShowHelpDialog()
+    ZO_Dialogs_ShowGamepadDialog(HELP_DIALOG)
+end
+
+function Gamepad:GetTransferTargets(sourceSlot, requirement)
+    local setup = self.owner.data:GetCurrentSetup()
+    local choices = {}
+    for _, slotKey in ipairs(Slots.ORDER) do
+        local mainHand = Slots:GetMainHand(slotKey)
+        local mainRequirement = mainHand and setup.equipment[mainHand]
+        if Slots:IsTransferCompatible(sourceSlot, slotKey, requirement)
+            and not (mainRequirement and mainRequirement.occupiesOffHand) then
+            choices[#choices + 1] = {
+                label = slotName(slotKey),
+                value = slotKey,
+            }
+        end
+    end
+    return choices
+end
+
+function Gamepad:InitializeTransferDialog()
+    ZO_Dialogs_RegisterCustomDialog(TRANSFER_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local setup = self.owner.data:GetCurrentSetup()
+            self.pendingTransferSlot = self:GetTargetSlot()
+            self.pendingTransferRequirement = setup.equipment[self.pendingTransferSlot]
+            local targets = self:GetTransferTargets(
+                self.pendingTransferSlot,
+                self.pendingTransferRequirement
+            )
+            self.pendingTransferTarget = targets[1] and targets[1].value
+            self.pendingTransferMove = false
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_COPY_MOVE_TITLE },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_DESTINATION,
+                function()
+                    return self:GetTransferTargets(
+                        self.pendingTransferSlot,
+                        self.pendingTransferRequirement
+                    )
+                end,
+                function() return self.pendingTransferTarget end,
+                function(value) self.pendingTransferTarget = value end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_COPY_MOVE,
+                {
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_COPY), value = false },
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_MOVE), value = true },
+                },
+                function() return self.pendingTransferMove end,
+                function(value) self.pendingTransferMove = value end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_COPY_MOVE,
+                callback = function() self:ExecuteTransfer() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(TRANSFER_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:ShowTransferDialog()
+    local sourceSlot = self:GetTargetSlot()
+    local setup = self.owner.data:GetCurrentSetup()
+    local requirement = sourceSlot and setup.equipment[sourceSlot]
+    if not requirement then
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY))
+        return
+    end
+    if #self:GetTransferTargets(sourceSlot, requirement) == 0 then
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_NO_TRANSFER_SLOT))
+        return
+    end
+    ZO_Dialogs_ShowGamepadDialog(TRANSFER_DIALOG)
+end
+
+function Gamepad:FinishTransfer()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local sourceSlot = self.pendingTransferSlot
+    local targetSlot = self.pendingTransferTarget
+    local ok, message
+    if self.pendingTransferMove then
+        ok, message = self.owner.data:MoveEquipment(
+            build.id,
+            setup.id,
+            sourceSlot,
+            targetSlot
+        )
+    else
+        ok, message = self.owner.data:CopyEquipment(
+            build.id,
+            setup.id,
+            sourceSlot,
+            targetSlot
+        )
+    end
+    if not ok then
+        return false, message
+    end
+
+    ZO_Dialogs_ReleaseDialogOnButtonPress(TRANSFER_DIALOG)
+    self.owner.inventory:Refresh()
+    self:SetStatus(zo_strformat(
+        self.pendingTransferMove
+            and SI_GRAVVY_BUILD_PLANNER_SLOT_MOVED
+            or SI_GRAVVY_BUILD_PLANNER_SLOT_COPIED,
+        slotName(sourceSlot),
+        slotName(targetSlot)
+    ))
+    self:Refresh(true)
+    for index, slotKey in ipairs(Slots.ORDER) do
+        if slotKey == targetSlot then
+            self.list:SetSelectedIndex(index)
+            break
+        end
+    end
+    return true
+end
+
+function Gamepad:ExecuteTransfer()
+    local setup = self.owner.data:GetCurrentSetup()
+    local sourceSlot = self.pendingTransferSlot
+    local targetSlot = self.pendingTransferTarget
+    local requirement = setup.equipment[sourceSlot]
+    if not requirement or not targetSlot then
+        showError(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY))
+        return
+    end
+
+    local targetOffHand = Slots:GetOccupiedOffHand(targetSlot, requirement.weaponType)
+    local replacesTarget = setup.equipment[targetSlot] ~= nil
+    local clearsOffHand = targetOffHand and setup.equipment[targetOffHand] ~= nil
+    if replacesTarget or clearsOffHand then
+        self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_COPY_MOVE_TITLE)
+        self.pendingConfirmText = clearsOffHand and zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_CONFIRM_TRANSFER_TWO_HAND,
+            slotName(targetSlot),
+            slotName(targetOffHand)
+        ) or zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_CONFIRM_REPLACE_SLOT,
+            slotName(targetSlot)
+        )
+        self.pendingConfirm = function() return self:FinishTransfer() end
+        releaseAndOpen(TRANSFER_DIALOG, function()
+            ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+        end)
+        return
+    end
+
+    local ok, message = self:FinishTransfer()
+    if not ok then
+        showError(message)
+    end
+end

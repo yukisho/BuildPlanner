@@ -102,6 +102,25 @@ KEY_DOWN = 2
 KEY_ENTER = 3
 KEY_ESCAPE = 4
 EVENT_GAME_FOCUS_CHANGED = 7
+EVENT_GAMEPAD_PREFERRED_MODE_CHANGED = 8
+
+SI_GAMEPAD_SELECT_OPTION = "SI_GAMEPAD_SELECT_OPTION"
+SI_GAMEPAD_BACK_OPTION = "SI_GAMEPAD_BACK_OPTION"
+SI_DIALOG_CANCEL = "SI_DIALOG_CANCEL"
+SI_DIALOG_CONFIRM = "SI_DIALOG_CONFIRM"
+SI_DIALOG_CLOSE = "SI_DIALOG_CLOSE"
+GAMEPAD_DIALOGS = { BASIC = 1, PARAMETRIC = 2 }
+GAMEPAD_LEFT_TOOLTIP = 1
+KEYBIND_STRIP_ALIGN_LEFT = 1
+UI_ALERT_CATEGORY_ERROR = 1
+ZO_COMBOBOX_SUPPRESS_UPDATE = true
+SOUNDS = {
+    GAMEPAD_OPEN_WINDOW = "open",
+    GAMEPAD_CLOSE_WINDOW = "close",
+    GAMEPAD_PAGE_BACK = "back",
+    GAMEPAD_PAGE_FORWARD = "forward",
+    NEGATIVE_CLICK = "negative",
+}
 
 local cameraUIMode = false
 function IsGameCameraUIModeActive() return cameraUIMode end
@@ -136,6 +155,13 @@ local function newControl(name, parent)
     }
 
     function control:GetName() return self.name end
+    function control:GetNamedChild(childName)
+        self.children = self.children or {}
+        if not self.children[childName] then
+            self.children[childName] = newControl(self.name .. childName, self)
+        end
+        return self.children[childName]
+    end
     function control:SetDimensions(width, height) self.width, self.height = width, height end
     function control:SetHeight(height) self.height = height end
     function control:SetAnchor() end
@@ -200,6 +226,77 @@ function ZO_ComboBox_ObjectFromContainer(container)
 end
 
 GuiRoot = newControl("GuiRoot")
+
+local gamepadPreferred = false
+function IsInGamepadPreferredMode() return gamepadPreferred end
+function PlaySound(sound) lastSound = sound end
+function ZO_Alert(_, _, message) lastAlert = message end
+function ZO_GetDefaultParametricListEditBoxNarrationText() return "" end
+function ZO_SharedGamepadEntry_OnSetup() end
+function ZO_GamepadMenuEntryTemplateParametricListFunction() end
+
+SCREEN_NARRATION_MANAGER = {
+    RegisterDialogDropdown = function() end,
+}
+
+ZO_GamepadEntryData = {}
+function ZO_GamepadEntryData:New(name)
+    local entry = { name = name, subLabels = {} }
+    function entry:AddSubLabel(value) self.subLabels[#self.subLabels + 1] = value end
+    function entry:SetFontScaleOnSelection() end
+    function entry:SetShowUnselectedSublabels() end
+    return entry
+end
+
+ZO_GamepadVerticalItemParametricScrollList = {}
+function ZO_GamepadVerticalItemParametricScrollList:New()
+    local list = { entries = {}, selectedIndex = 1 }
+    function list:AddDataTemplate() end
+    function list:SetNoItemText(value) self.noItemText = value end
+    function list:SetOnTargetDataChangedCallback(callback) self.targetChanged = callback end
+    function list:Clear() self.entries = {} end
+    function list:AddEntry(_, entry) self.entries[#self.entries + 1] = entry end
+    function list:Commit()
+        self.selectedIndex = zo_clamp(self.selectedIndex, 1, math.max(1, #self.entries))
+        if self.targetChanged then self.targetChanged() end
+    end
+    function list:GetTargetData() return self.entries[self.selectedIndex] end
+    function list:SetSelectedIndex(index)
+        self.selectedIndex = index
+        if self.targetChanged then self.targetChanged() end
+    end
+    function list:Activate() self.active = true end
+    function list:Deactivate() self.active = false end
+    return list
+end
+
+KEYBIND_STRIP = {
+    PushKeybindGroupState = function() return {} end,
+    RemoveDefaultExit = function() end,
+    AddKeybindButtonGroup = function() end,
+    RemoveKeybindButtonGroup = function() end,
+    RestoreDefaultExit = function() end,
+    PopKeybindGroupState = function() end,
+    UpdateKeybindButtonGroup = function() end,
+    GenerateGamepadBackButtonDescriptor = function(_, callback)
+        return { keybind = "UI_SHORTCUT_NEGATIVE", callback = callback }
+    end,
+}
+
+GAMEPAD_TOOLTIPS = {
+    LayoutItemLink = function(self, _, link) self.link = link end,
+    ClearTooltip = function(self) self.link = nil end,
+}
+
+local gamepadDialogs = {}
+local shownGamepadDialog
+function ZO_Dialogs_RegisterCustomDialog(name, definition)
+    gamepadDialogs[name] = definition
+end
+function ZO_Dialogs_ShowGamepadDialog(name)
+    shownGamepadDialog = name
+end
+function ZO_Dialogs_ReleaseDialogOnButtonPress() end
 
 local itemLinks = {}
 local function getLinkFields(link)
@@ -407,6 +504,8 @@ dofile("ShoppingIntegration.lua")
 dofile("Accessibility.lua")
 dofile("UI.lua")
 dofile("Settings.lua")
+dofile("Gamepad.lua")
+dofile("GamepadDialogs.lua")
 
 local owner = {
     data = BuildPlannerTestData,
@@ -421,6 +520,11 @@ owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+GravvyBuildPlannerGamepadWindow = newControl("GravvyBuildPlannerGamepadWindow")
+GravvyBuildPlannerGamepadWindow:SetHidden(true)
+local gamepad = GravvyBuildPlannerGamepad:New(owner)
+owner.gamepad = gamepad
+gamepad:Initialize()
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {
@@ -874,6 +978,115 @@ ui:EditSlot("head")
 ui:ClearSlot()
 expectEqual(setup.equipment.head, nil, "clear button should remove the requirement")
 
+expectEqual(
+    (function()
+        local count = 0
+        for _ in pairs(gamepadDialogs) do count = count + 1 end
+        return count
+    end)(),
+    8,
+    "gamepad editing, management, export, and help dialogs should register"
+)
+gamepadPreferred = true
+gamepad:Show()
+expect(not gamepad.control:IsHidden(), "gamepad mode should open the native planner")
+expectEqual(#gamepad.list.entries, 14, "the gamepad planner should show every equipment slot")
+expectEqual(gamepad:GetTargetSlot(), "head", "the native list should begin on the head slot")
+
+gamepad:LoadPendingRequirement()
+gamepad.pendingRequirement.setName = "Order's Wrath"
+gamepad.pendingRequirement.armorType = ARMORTYPE_LIGHT
+gamepad.pendingRequirement.traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES
+gamepad.pendingRequirement.enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_STAMINA
+gamepad.pendingRequirement.quality = ITEM_QUALITY_LEGENDARY
+gamepad.pendingRequirement.championPoints = "160"
+local gamepadSaved, gamepadSaveError = gamepad:SavePendingRequirement()
+expect(gamepadSaved, gamepadSaveError)
+local gamepadSetup = BuildPlannerTestData:GetCurrentSetup()
+expectEqual(
+    gamepadSetup.equipment.head.enchantmentCategory,
+    ENCHANTMENT_SEARCH_CATEGORY_STAMINA,
+    "gamepad enchantment choices should persist the planned enchantment"
+)
+expect(gamepadSetup.equipment.head.itemLink, "gamepad edits should resolve a preview item link")
+expectEqual(
+    GAMEPAD_TOOLTIPS.link,
+    gamepadSetup.equipment.head.itemLink,
+    "the selected gamepad row should use ESO's native item tooltip"
+)
+gamepad.pendingTransferSlot = "head"
+gamepad.pendingTransferTarget = "shoulders"
+gamepad.pendingTransferMove = false
+local transferOk, transferError = gamepad:FinishTransfer()
+expect(transferOk, transferError)
+expect(
+    BuildPlannerTestData:GetCurrentSetup().equipment.shoulders ~= nil,
+    "gamepad users should be able to copy a requirement to a compatible slot"
+)
+gamepad.list:SetSelectedIndex(1)
+
+local _, gamepadBuild = BuildPlannerTestData:GetCurrentSetup()
+if #gamepadBuild.setups == 1 then
+    BuildPlannerTestData:CreateSetup(gamepadBuild.id, "Gamepad Setup")
+end
+local originalSetupId = BuildPlannerTestData:GetCurrentSetup().id
+gamepad:SwitchSetup(1)
+expect(
+    BuildPlannerTestData:GetCurrentSetup().id ~= originalSetupId,
+    "shoulder navigation should switch setups"
+)
+gamepad:SwitchSetup(-1)
+gamepad.list:SetSelectedIndex(3)
+gamepad:CycleTargetRoute()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().acquisition.chest,
+    nil,
+    "cycling past the last route should restore automatic selection"
+)
+gamepad:CycleTargetRoute()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().acquisition.chest.preferredRoute,
+    "craft",
+    "gamepad users should be able to choose among available acquisition routes"
+)
+gamepad.list:SetSelectedIndex(1)
+gamepad:ClearTargetSlot()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().equipment.head,
+    nil,
+    "the gamepad clear action should remove the selected requirement"
+)
+
+GravvyShoppingList = nil
+gamepad.exportIncludeOwned = false
+gamepad.exportIncludeGlyphs = false
+gamepad:RefreshExportReview()
+gamepad:ExecuteGamepadExport()
+expectEqual(
+    shownGamepadDialog,
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_CODE",
+    "gamepad exports should show the SL2 fallback when Shopping List is unavailable"
+)
+expect(
+    gamepad.pendingCode and gamepad.pendingCode:find("SL2:", 1, true) == 1,
+    "the gamepad fallback should expose a selectable SL2 code"
+)
+openedUrl = nil
+gamepad:OpenAddonPage()
+expectEqual(
+    openedUrl,
+    "https://www.esoui.com/downloads/info4775-ShoppingList.html",
+    "the gamepad fallback should open the Shopping List add-on page"
+)
+gamepad:Hide()
+gamepadPreferred = false
+ui:Show()
+EVENT_MANAGER.callbacks[EVENT_GAMEPAD_PREFERRED_MODE_CHANGED](nil, true)
+expect(
+    ui.window:IsHidden(),
+    "switching to gamepad mode should close the mouse-driven planner cleanly"
+)
+
 dofile("MainMenu.lua")
 GravvyBuildPlannerMainMenu:Initialize(owner)
 LibMainMenu2 = {
@@ -921,5 +1134,22 @@ EVENT_MANAGER.addOnLoaded(nil, "GravvyBuildPlanner")
 expect(SLASH_COMMANDS["/buildplanner"], "long slash command should be registered")
 expect(SLASH_COMMANDS["/gbp"], "short slash command should be registered")
 expect(SLASH_COMMANDS["/buildplannerhelp"], "help slash command should be registered")
+gamepadPreferred = true
+GravvyBuildPlanner:ToggleWindow()
+expect(
+    not GravvyBuildPlanner.gamepad.control:IsHidden(),
+    "the main toggle should open the native planner in gamepad mode"
+)
+GravvyBuildPlanner:ToggleWindow()
+expect(
+    GravvyBuildPlanner.gamepad.control:IsHidden(),
+    "the main toggle should close the native planner in gamepad mode"
+)
+SLASH_COMMANDS["/buildplannerhelp"]()
+expectEqual(
+    shownGamepadDialog,
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_HELP",
+    "the help command should use the native gamepad dialog in gamepad mode"
+)
 
 print("Build Planner UI tests passed")

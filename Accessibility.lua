@@ -74,6 +74,9 @@ function Accessibility:Refresh()
     if self.owner.ui then
         self.owner.ui:Refresh()
     end
+    if self.owner.gamepad then
+        self.owner.gamepad:Refresh()
+    end
 end
 
 function Accessibility:FormatStatus(message, isError)

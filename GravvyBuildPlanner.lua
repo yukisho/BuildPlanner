@@ -15,17 +15,31 @@ function addon:Initialize()
     self.accessibility:Initialize(self)
     self.ui = GravvyBuildPlannerUI:New(self)
     self.ui:Initialize()
+    self.gamepad = GravvyBuildPlannerGamepad:New(self)
+    self.gamepad:Initialize()
     self.inventory:Initialize()
     GravvyBuildPlannerSettings:Initialize(self)
     GravvyBuildPlannerMainMenu:Initialize(self)
 
     SLASH_COMMANDS["/buildplanner"] = function() self:ToggleWindow() end
     SLASH_COMMANDS["/gbp"] = function() self:ToggleWindow() end
-    SLASH_COMMANDS["/buildplannerhelp"] = function() self.ui:ShowHelp() end
+    SLASH_COMMANDS["/buildplannerhelp"] = function()
+        if IsInGamepadPreferredMode and IsInGamepadPreferredMode() then
+            self.gamepad:ShowHelpDialog()
+        else
+            self.ui:ShowHelp()
+        end
+    end
 end
 
 function addon:ToggleWindow()
-    self.ui:Toggle()
+    if IsInGamepadPreferredMode and IsInGamepadPreferredMode() then
+        self.ui:Hide()
+        self.gamepad:Toggle()
+    else
+        self.gamepad:Hide()
+        self.ui:Toggle()
+    end
 end
 
 local function onAddOnLoaded(_, name)

@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 1
+local SCHEMA_VERSION = 2
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
@@ -309,6 +309,11 @@ function Data:Migrate()
             setup.defaultLevel = math.max(1, math.floor(tonumber(setup.defaultLevel) or 50))
             setup.defaultChampionPoints = math.max(0, math.floor(tonumber(setup.defaultChampionPoints) or 160))
             setup.equipment = type(setup.equipment) == "table" and setup.equipment or {}
+            -- Alternate groups live beside the primary loadout so they can be
+            -- added later without changing the equipment slot format.
+            setup.alternativeGroups = type(setup.alternativeGroups) == "table"
+                and setup.alternativeGroups
+                or {}
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -555,6 +560,7 @@ function Data:DuplicateBuild(id, name)
             defaultLevel = sourceSetup.defaultLevel,
             defaultChampionPoints = sourceSetup.defaultChampionPoints,
             equipment = deepCopy(sourceSetup.equipment),
+            alternativeGroups = deepCopy(sourceSetup.alternativeGroups),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -621,6 +627,7 @@ function Data:CreateSetup(buildId, name, source)
         defaultLevel = source and source.defaultLevel or 50,
         defaultChampionPoints = source and source.defaultChampionPoints or 160,
         equipment = source and deepCopy(source.equipment) or {},
+        alternativeGroups = source and deepCopy(source.alternativeGroups) or {},
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -912,4 +919,8 @@ function Data:UndoLastDeletion()
 
     table.remove(actions)
     return true, action
+end
+
+function Data:CanUndoDeletion()
+    return #self.saved.deletedActions > 0
 end

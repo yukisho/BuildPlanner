@@ -229,12 +229,17 @@ expectEqual(build.name, oldName, "failed update should not partially rename buil
 local variant = data:DuplicateSetup(build.id, setup.id)
 expect(variant, "setup should be duplicated")
 expect(variant.equipment.waist ~= setup.equipment.waist, "equipment should be copied")
+expect(variant.alternativeGroups ~= setup.alternativeGroups, "future alternate groups should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
 expect(duplicate, "build should be duplicated")
 expectEqual(#duplicate.setups, #build.setups, "all setups should be copied")
 expect(duplicate.setups[1].equipment ~= build.setups[1].equipment, "build equipment should be copied")
+expect(
+    duplicate.setups[1].alternativeGroups ~= build.setups[1].alternativeGroups,
+    "build copies should not share future alternate groups"
+)
 expectEqual(next(duplicate.setups[1].acquisition), nil, "build copy should not copy acquisition state")
 
 ok = data:DeleteBuild(duplicate.id)
@@ -269,6 +274,11 @@ expect(repaired.saved.builds[1].name ~= repaired.saved.builds[2].name, "duplicat
 expect(repaired.saved.builds[1].setups[1].id ~= repaired.saved.builds[1].setups[2].id, "duplicate setup ids should be repaired")
 expect(repaired.saved.builds[1].setups[1].name ~= repaired.saved.builds[1].setups[2].name, "duplicate setup names should be repaired")
 expectEqual(repaired.saved.builds[1].setups[1].equipment.frontOff, nil, "invalid two-handed off-hand should be removed")
+expect(
+    type(repaired.saved.builds[1].setups[1].alternativeGroups) == "table",
+    "migration should add the alternate-group extension point"
+)
+expectEqual(repaired.saved.schemaVersion, 2, "migration should advance the saved-data schema")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

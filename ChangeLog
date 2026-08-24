@@ -1,3 +1,18 @@
+0.4.0
+- Added a native gamepad planner with controller navigation for equipment slots,
+  builds, and setups.
+- Added gamepad equipment editing with contextual type, trait, enchantment,
+  quality, level, Champion Point, and note controls.
+- Added native gamepad item tooltips, acquisition routes, progress totals, and
+  copy, move, and clear actions.
+- Added gamepad build and setup creation, renaming, duplication, reordering,
+  deletion, and undo.
+- Added gamepad Shopping List review and API v2 export, with a selectable SL2
+  fallback code and add-on page link.
+- Added native gamepad help and gamepad-aware slash command behavior.
+- Reserved a setup-level data extension point for future alternate gear groups
+  without changing the primary equipment-slot format.
+
 0.3.0
 - Replaced free-text enchantments with armor, jewelry, and weapon dropdowns.
 - Added collection-piece resolution for matching armor, jewelry, and weapon slots.
