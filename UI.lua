@@ -1497,7 +1497,19 @@ function UI:ShowSkillTooltip(control, barKey, slotIndex)
         and setup.skillBars[barKey][slotIndex]
     if skill and SkillTooltip and InitializeTooltip then
         InitializeTooltip(SkillTooltip, control, LEFT, -8, 0, RIGHT)
-        SkillTooltip:LayoutSimpleAbility(skill.abilityId)
+        local catalogEntry = self.owner.skillCatalog:FindById(skill.abilityId)
+        if catalogEntry and catalogEntry.progression
+            and catalogEntry.progression.SetKeyboardTooltip then
+            catalogEntry.progression:SetKeyboardTooltip(
+                SkillTooltip,
+                false,
+                false,
+                false,
+                false
+            )
+        else
+            SkillTooltip:LayoutSimpleAbility(skill.abilityId)
+        end
     end
 end
 

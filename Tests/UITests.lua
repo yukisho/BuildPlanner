@@ -570,6 +570,17 @@ owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
 owner.skillCatalog:AddAbility(1002, false)
 owner.skillCatalog:AddAbility(1006, true)
+local nativeSkillTooltipUsed = false
+owner.skillCatalog:FindById(1001).progression = {
+    SetKeyboardTooltip = function(_, tooltip, showCost, showUpgrade, showAdvised, showBadMorph)
+        nativeSkillTooltipUsed = tooltip == SkillTooltip
+            and showCost == false
+            and showUpgrade == false
+            and showAdvised == false
+            and showBadMorph == false
+        tooltip.abilityId = 1001
+    end,
+}
 owner.accessibility = GravvyBuildPlannerAccessibility
 owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
@@ -609,6 +620,7 @@ expectEqual(
 )
 ui:ShowSkillTooltip(ui.skillButtons.front[1], "front", 1)
 expectEqual(SkillTooltip.abilityId, 1001, "planned skills should use ESO's native ability tooltip")
+expect(nativeSkillTooltipUsed, "keyboard skills should use their native progression tooltip")
 ui.selectedSkillSlot = 6
 ui:LoadSkillEditor()
 ui.skillEdit:SetText("Wild")

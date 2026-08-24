@@ -10,7 +10,7 @@ function Catalog:New()
     return setmetatable({ entries = {}, byName = {}, byId = {} }, { __index = self })
 end
 
-function Catalog:AddAbility(abilityId, isUltimate)
+function Catalog:AddAbility(abilityId, isUltimate, progression)
     abilityId = tonumber(abilityId)
     if not abilityId or abilityId <= 0 then
         return
@@ -28,6 +28,7 @@ function Catalog:AddAbility(abilityId, isUltimate)
         name = name,
         icon = GetAbilityIcon(abilityId),
         isUltimate = isUltimate == true,
+        progression = progression,
     }
     self.entries[#self.entries + 1] = entry
     self.byName[key] = entry
@@ -49,13 +50,21 @@ function Catalog:Refresh()
                         for morph = MORPH_SLOT_ITERATION_BEGIN, MORPH_SLOT_ITERATION_END do
                             local progression = skill:GetMorphData(morph)
                             if progression then
-                                self:AddAbility(progression:GetAbilityId(), skill:IsUltimate())
+                                self:AddAbility(
+                                    progression:GetAbilityId(),
+                                    skill:IsUltimate(),
+                                    progression
+                                )
                             end
                         end
                     else
                         local progression = skill:GetCurrentProgressionData()
                         if progression then
-                            self:AddAbility(progression:GetAbilityId(), skill:IsUltimate())
+                            self:AddAbility(
+                                progression:GetAbilityId(),
+                                skill:IsUltimate(),
+                                progression
+                            )
                         end
                     end
                 end
