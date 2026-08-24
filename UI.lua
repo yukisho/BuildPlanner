@@ -220,6 +220,43 @@ local function getQualityChoices()
     return choices
 end
 
+local function getRaceChoices()
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED), value = 0 },
+    }
+    if not GetRaceName then
+        return choices
+    end
+    for raceId = 1, 10 do
+        local name = GetRaceName(GENDER_MALE or 1, raceId)
+        if name and name ~= "" then
+            choices[#choices + 1] = { label = name, value = raceId }
+        end
+    end
+    return choices
+end
+
+local function getMundusChoices()
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED), value = 0 },
+    }
+    for mundus = 1, 13 do
+        local name = GetString("SI_MUNDUSSTONE", mundus)
+        if name and name ~= "" then
+            choices[#choices + 1] = { label = name, value = mundus }
+        end
+    end
+    return choices
+end
+
+local function getCurseChoices()
+    return {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_NONE), value = 0 },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_VAMPIRE), value = 1 },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_WEREWOLF), value = 2 },
+    }
+end
+
 function UI:New(owner)
     return setmetatable({
         owner = owner,
@@ -294,6 +331,7 @@ function UI:Initialize()
     self:CreateSlotRows()
     self:CreateEditor()
     self:CreateSkillPlanner()
+    self:CreateCharacterPlanner()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -393,11 +431,99 @@ function UI:CreateBuildControls()
     self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 90)
     self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 8, 0)
     self.skillsTab:SetHandler("OnClicked", function() self:SetView("skills") end)
+    self.characterTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER), 100)
+    self.characterTab:SetAnchor(LEFT, self.skillsTab, RIGHT, 8, 0)
+    self.characterTab:SetHandler("OnClicked", function() self:SetView("character") end)
 
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
     divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 124)
     divider:SetDimensions(WINDOW_WIDTH - 28, 1)
     divider:SetColor(0.5, 0.42, 0.28, 0.7)
+end
+
+function UI:CreateCharacterPlanner()
+    local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerCharacter", self.window, CT_CONTROL)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetDimensions(942, 530)
+    panel:SetHidden(true)
+    self.characterPanel = panel
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(panel)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.018, 0.018, 0.026, 0.9 },
+        { 0.28, 0.24, 0.18, 0.85 }
+    )
+
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_ATTRIBUTES), 28, 22, 390, "ZoFontWinH3")
+    self.attributeEdits = {}
+    for index, entry in ipairs({
+        { "health", SI_GRAVVY_BUILD_PLANNER_HEALTH },
+        { "magicka", SI_GRAVVY_BUILD_PLANNER_MAGICKA },
+        { "stamina", SI_GRAVVY_BUILD_PLANNER_STAMINA },
+    }) do
+        local y = 68 + ((index - 1) * 52)
+        makeLabel(panel, GetString(entry[2]), 28, y, 135)
+        local edit = makeEdit(
+            panel,
+            "GravvyBuildPlanner" .. entry[1] .. "Attribute",
+            168,
+            y,
+            90,
+            true,
+            2
+        )
+        edit:SetHandler("OnTextChanged", function() self:RefreshAttributeTotal() end)
+        self.attributeEdits[entry[1]] = edit
+    end
+    self.attributeTotal = makeLabel(panel, "", 28, 232, 300, "ZoFontGame")
+
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_RACE), 500, 30, 125)
+    self.raceCombo = makeCombo(panel, "GravvyBuildPlannerRaceCombo", 630, 30, 270)
+
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_MUNDUS), 500, 90, 125)
+    self.mundusCombo = makeCombo(panel, "GravvyBuildPlannerMundusCombo", 630, 90, 270)
+    self.mundusIcon = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+    self.mundusIcon:SetDimensions(48, 48)
+    self.mundusIcon:SetAnchor(TOPLEFT, panel, TOPLEFT, 630, 126)
+
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CURSE), 500, 190, 125)
+    self.curseCombo = makeCombo(panel, "GravvyBuildPlannerCurseCombo", 630, 190, 270)
+
+    local divider = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+    divider:SetAnchor(TOPLEFT, panel, TOPLEFT, 24, 282)
+    divider:SetDimensions(894, 1)
+    divider:SetColor(0.5, 0.42, 0.28, 0.7)
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINES), 28, 294, 390, "ZoFontWinH3")
+    self.subclassEdits = {}
+    for index = 1, 3 do
+        local y = 340 + ((index - 1) * 48)
+        makeLabel(panel, zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, index), 28, y, 135)
+        self.subclassEdits[index] = makeEdit(
+            panel,
+            "GravvyBuildPlannerSubclass" .. tostring(index),
+            168,
+            y,
+            360,
+            false,
+            100
+        )
+    end
+    local hint = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_HINT),
+        550,
+        340,
+        350,
+        "ZoFontGameSmall"
+    )
+    hint:SetHeight(90)
+    hint:SetVerticalAlignment(TEXT_ALIGN_TOP)
+
+    local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_CHARACTER), 160)
+    save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -20, -20)
+    save:SetHandler("OnClicked", function() self:SaveCharacter() end)
 end
 
 function UI:CreateSkillPlanner()
@@ -507,16 +633,21 @@ function UI:CreateSkillPlanner()
 end
 
 function UI:SetView(view)
-    self.activeView = view == "skills" and "skills" or "gear"
+    self.activeView = (view == "skills" or view == "character") and view or "gear"
     local skills = self.activeView == "skills"
-    self.paperDoll:SetHidden(skills)
-    self.editor:SetHidden(skills)
+    local character = self.activeView == "character"
+    self.paperDoll:SetHidden(skills or character)
+    self.editor:SetHidden(skills or character)
     self.skillPanel:SetHidden(not skills)
-    self.gearTab:SetAlpha(skills and 0.65 or 1)
+    self.characterPanel:SetHidden(not character)
+    self.gearTab:SetAlpha((skills or character) and 0.65 or 1)
     self.skillsTab:SetAlpha(skills and 1 or 0.65)
+    self.characterTab:SetAlpha(character and 1 or 0.65)
     if skills then
         self:RefreshSkillBars()
         self:LoadSkillEditor()
+    elseif character then
+        self:LoadCharacterEditor()
     end
 end
 
@@ -1038,7 +1169,8 @@ function UI:CreateHelpDialog()
         dialog,
         GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS),
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER),
         22,
         52,
         656,
@@ -1320,9 +1452,91 @@ function UI:Refresh()
     self:RefreshProgress()
     if self.activeView == "skills" then
         self:LoadSkillEditor()
+    elseif self.activeView == "character" then
+        self:LoadCharacterEditor()
     else
         self:LoadEditor()
     end
+end
+
+function UI:SetMundusIcon(mundus)
+    local icons = ZO_STAT_MUNDUS_ICONS
+    self.mundusIcon:SetTexture(icons and icons[mundus] or "")
+end
+
+function UI:LoadCharacterEditor()
+    if not self.characterPanel then
+        return
+    end
+    local setup = self.owner.data:GetCurrentSetup()
+    local character = setup.character or {}
+    local attributes = character.attributes or {}
+    self.loadingCharacter = true
+    for _, key in ipairs({ "health", "magicka", "stamina" }) do
+        self.attributeEdits[key]:SetText(tostring(attributes[key] or 0))
+    end
+    setComboChoices(self.raceCombo, getRaceChoices(), character.raceId or 0)
+    setComboChoices(
+        self.mundusCombo,
+        getMundusChoices(),
+        character.mundus or 0,
+        function(value) self:SetMundusIcon(value) end
+    )
+    setComboChoices(self.curseCombo, getCurseChoices(), character.curse or 0)
+    for index = 1, 3 do
+        self.subclassEdits[index]:SetText(
+            character.subclassLines and character.subclassLines[index] or ""
+        )
+    end
+    self:SetMundusIcon(character.mundus or 0)
+    self.loadingCharacter = false
+    self:RefreshAttributeTotal()
+end
+
+function UI:RefreshAttributeTotal()
+    if not self.attributeTotal or self.loadingCharacter then
+        return
+    end
+    local total = 0
+    for _, key in ipairs({ "health", "magicka", "stamina" }) do
+        total = total + (tonumber(self.attributeEdits[key]:GetText()) or 0)
+    end
+    self.attributeTotal:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_ATTRIBUTE_TOTAL,
+        total,
+        64
+    ))
+    if total > 64 then
+        self.attributeTotal:SetColor(1, 0.35, 0.3, 1)
+    else
+        self.attributeTotal:SetColor(0.75, 0.9, 0.65, 1)
+    end
+end
+
+function UI:SaveCharacter()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local values = {
+        attributes = {
+            health = tonumber(self.attributeEdits.health:GetText()) or 0,
+            magicka = tonumber(self.attributeEdits.magicka:GetText()) or 0,
+            stamina = tonumber(self.attributeEdits.stamina:GetText()) or 0,
+        },
+        raceId = self.raceCombo.selectedValue or 0,
+        mundus = self.mundusCombo.selectedValue or 0,
+        curse = self.curseCombo.selectedValue or 0,
+        subclassLines = {},
+    }
+    for index = 1, 3 do
+        values.subclassLines[index] = self.subclassEdits[index]:GetText()
+    end
+    local ok, message = self.owner.data:UpdateCharacter(build.id, setup.id, values)
+    if not ok then
+        self:SetStatus(message, true)
+        self:RefreshAttributeTotal()
+        return
+    end
+    self:LoadCharacterEditor()
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER_SAVED))
 end
 
 function UI:RefreshSkillBars()

@@ -17,8 +17,9 @@ Setup
 
 A setup is a named variation of a build. It stores default quality, level, and
 Champion Points plus equipment requirements keyed by the canonical slot names in
-EquipmentSlots.lua. Acquisition results live in a separate table and are not
-copied when a build or setup is duplicated.
+EquipmentSlots.lua. It also owns the setup's skill bars and character plan.
+Acquisition results live in a separate table and are not copied when a build or
+setup is duplicated.
 
 Equipment requirement
 ---------------------
@@ -69,6 +70,15 @@ plus their localized name and icon as display fallbacks. Build Planner reads bas
 abilities and both morphs from ESO's native skill data but never changes the
 player's equipped action bars.
 
+Character plan
+--------------
+
+Each setup records Health, Magicka, and Stamina attribute allocations with a
+combined 64-point limit. Race and Mundus use ESO's numeric identifiers so their
+names remain localized by the game. Curse uses a small None, Vampire, or
+Werewolf value, and three free-text class skill-line fields support both regular
+and subclassed guide layouts.
+
 Shopping List export
 --------------------
 
@@ -92,13 +102,14 @@ Build sharing and backup
 
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
-acquisition routes, ordered alternatives, skill bars, and the selected setup.
+acquisition routes, ordered alternatives, skill bars, character plans, and the
+selected setup.
 Derived inventory matches and collection states are recalculated after import
 rather than copied.
 
-Build Planner writes format version 3 codes and continues to accept version 1
-and version 2 codes created before equipment alternatives and skill bars were
-added.
+Build Planner writes format version 4 codes and continues to accept version 1,
+version 2, and version 3 codes created before equipment alternatives, skill
+bars, and character plans were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

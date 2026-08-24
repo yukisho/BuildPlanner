@@ -93,7 +93,7 @@ end
 
 function Gamepad:IsTargetEditable()
     local data = self:GetTargetData()
-    return data and (self.activeView == "skills" or not data.occupied)
+    return data and (self.activeView ~= "gear" or not data.occupied)
 end
 
 function Gamepad:GetTargetRoutes()
@@ -114,9 +114,12 @@ function Gamepad:InitializeKeybinds()
         alignment = KEYBIND_STRIP_ALIGN_LEFT,
         {
             name = function()
-                return GetString(self.activeView == "skills"
-                    and SI_GRAVVY_BUILD_PLANNER_EDIT_SKILL
-                    or SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
+                if self.activeView == "skills" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_EDIT_SKILL)
+                elseif self.activeView == "character" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_CHARACTER)
+                end
+                return GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
             end,
             keybind = "UI_SHORTCUT_PRIMARY",
             enabled = function() return self:IsTargetEditable() end,
@@ -138,6 +141,7 @@ function Gamepad:InitializeKeybinds()
                     or SI_GRAVVY_BUILD_PLANNER_CLEAR)
             end,
             keybind = "UI_SHORTCUT_TERTIARY",
+            visible = function() return self.activeView ~= "character" end,
             enabled = function()
                 if self.activeView == "skills" then
                     local data = self:GetTargetData()
@@ -191,9 +195,12 @@ function Gamepad:InitializeKeybinds()
         },
         {
             name = function()
-                return GetString(self.activeView == "gear"
-                    and SI_GRAVVY_BUILD_PLANNER_SKILLS
-                    or SI_GRAVVY_BUILD_PLANNER_GEAR)
+                if self.activeView == "gear" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS)
+                elseif self.activeView == "skills" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER)
+                end
+                return GetString(SI_GRAVVY_BUILD_PLANNER_GEAR)
             end,
             keybind = "UI_SHORTCUT_LEFT_STICK",
             callback = function() self:TogglePlannerView() end,
@@ -333,6 +340,63 @@ function Gamepad:Refresh(force)
         self:RefreshKeybinds()
         return
     end
+    if self.activeView == "character" then
+        local character = setup.character or {}
+        local attributes = character.attributes or {}
+        local curseNames = {
+            [0] = SI_GRAVVY_BUILD_PLANNER_CURSE_NONE,
+            [1] = SI_GRAVVY_BUILD_PLANNER_CURSE_VAMPIRE,
+            [2] = SI_GRAVVY_BUILD_PLANNER_CURSE_WEREWOLF,
+        }
+        local raceName = character.raceId and character.raceId > 0 and GetRaceName
+            and GetRaceName(GENDER_MALE or 1, character.raceId)
+            or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED)
+        local mundusName = character.mundus and character.mundus > 0
+            and GetString("SI_MUNDUSSTONE", character.mundus)
+            or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED)
+        local fields = {
+            { "health", SI_GRAVVY_BUILD_PLANNER_HEALTH, tostring(attributes.health or 0) },
+            { "magicka", SI_GRAVVY_BUILD_PLANNER_MAGICKA, tostring(attributes.magicka or 0) },
+            { "stamina", SI_GRAVVY_BUILD_PLANNER_STAMINA, tostring(attributes.stamina or 0) },
+            { "race", SI_GRAVVY_BUILD_PLANNER_RACE, raceName },
+            { "mundus", SI_GRAVVY_BUILD_PLANNER_MUNDUS, mundusName },
+            {
+                "curse",
+                SI_GRAVVY_BUILD_PLANNER_CURSE,
+                GetString(curseNames[character.curse or 0] or SI_GRAVVY_BUILD_PLANNER_CURSE_NONE),
+            },
+        }
+        for index = 1, 3 do
+            fields[#fields + 1] = {
+                "subclass" .. tostring(index),
+                SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE,
+                character.subclassLines and character.subclassLines[index] ~= ""
+                    and character.subclassLines[index]
+                    or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED),
+                index,
+            }
+        end
+        for index, field in ipairs(fields) do
+            local label = field[4]
+                and zo_strformat(field[2], field[4])
+                or GetString(field[2])
+            local entry = ZO_GamepadEntryData:New(label)
+            entry.characterField = field[1]
+            entry:SetFontScaleOnSelection(false)
+            entry:SetShowUnselectedSublabels(true)
+            entry:AddSubLabel(field[3])
+            self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+            if selectedData and selectedData.characterField == field[1] then
+                selectedIndex = index
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(selectedIndex or 1)
+        self.dirty = false
+        self:RefreshPreview()
+        self:RefreshKeybinds()
+        return
+    end
     local selectedSlot = selectedData and selectedData.slotKey
     for index, slotKey in ipairs(Slots.ORDER) do
         local mainHand = Slots:GetMainHand(slotKey)
@@ -380,7 +444,13 @@ function Gamepad:Refresh(force)
 end
 
 function Gamepad:TogglePlannerView()
-    self.activeView = self.activeView == "gear" and "skills" or "gear"
+    if self.activeView == "gear" then
+        self.activeView = "skills"
+    elseif self.activeView == "skills" then
+        self.activeView = "character"
+    else
+        self.activeView = "gear"
+    end
     self:SetStatus("")
     self:Refresh(true)
 end
@@ -476,6 +546,9 @@ function Gamepad:RefreshPreview()
         if skill and GAMEPAD_TOOLTIPS and GAMEPAD_TOOLTIPS.LayoutSimpleAbility then
             GAMEPAD_TOOLTIPS:LayoutSimpleAbility(GAMEPAD_LEFT_TOOLTIP, skill.abilityId)
         end
+        return
+    end
+    if self.activeView == "character" then
         return
     end
     local slotKey = self:GetTargetSlot()

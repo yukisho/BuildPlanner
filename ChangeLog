@@ -1,3 +1,14 @@
+0.7.2
+- Added a Character view for setup-specific Health, Magicka, and Stamina
+  allocations, with live totals and validation against ESO's 64-point limit.
+- Added localized race and Mundus Stone selectors, a native Mundus icon, and
+  None, Vampire, and Werewolf curse choices.
+- Added three guide-friendly class skill-line fields for regular and subclassed
+  builds.
+- Added native gamepad character summaries and a controller character editor.
+- Preserved character plans through migrations, setup and build copies, and GBP
+  format-version 4 sharing while retaining imports from versions 1 through 3.
+
 0.7.1
 - Added Gear and Skills views without changing the existing equipment paper doll.
 - Added front-bar and back-bar layouts with five active slots and one ultimate

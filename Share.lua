@@ -3,12 +3,14 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 3
+local FORMAT_VERSION = 4
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
 local MAX_NOTE = 4000
 local MAX_LINK = 2048
+local MAX_SUBCLASS_NAME = 100
+local MAX_RACE_ID = 10
 local MAX_U32 = 4294967295
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
@@ -350,6 +352,28 @@ function Share.EncodeBuild(build)
                 end
             end
         end
+
+        local character = setup.character or {}
+        local attributes = character.attributes or {}
+        local health = wholeNumber(attributes.health or 0, 0, 64)
+        local magicka = wholeNumber(attributes.magicka or 0, 0, 64)
+        local stamina = wholeNumber(attributes.stamina or 0, 0, 64)
+        local raceId = wholeNumber(character.raceId or 0, 0, MAX_RACE_ID)
+        local mundus = wholeNumber(character.mundus or 0, 0, 13)
+        local curse = wholeNumber(character.curse or 0, 0, 2)
+        if not health or not magicka or not stamina or health + magicka + stamina > 64
+            or not raceId or not mundus or not curse then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        parts[#parts + 1] = string.char(health, magicka, stamina, raceId, mundus, curse)
+        local subclassLines = character.subclassLines or {}
+        for index = 1, 3 do
+            local lineName = tostring(subclassLines[index] or "")
+            if #lineName > MAX_SUBCLASS_NAME then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            appendString(parts, lineName)
+        end
     end
 
     local body = table.concat(parts)
@@ -382,7 +406,7 @@ function Share.DecodeCode(code)
 
     local reader = makeReader(body)
     local version = reader:Byte()
-    if version ~= 1 and version ~= 2 and version ~= FORMAT_VERSION then
+    if version ~= 1 and version ~= 2 and version ~= 3 and version ~= FORMAT_VERSION then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION)
     end
     local build = { setups = {} }
@@ -414,6 +438,13 @@ function Share.DecodeCode(code)
             equipment = {},
             alternatives = {},
             skillBars = { front = {}, back = {} },
+            character = {
+                attributes = { health = 0, magicka = 0, stamina = 0 },
+                raceId = 0,
+                mundus = 0,
+                curse = 0,
+                subclassLines = { "", "", "" },
+            },
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -525,6 +556,33 @@ function Share.DecodeCode(code)
                         }
                     end
                 end
+            end
+        end
+        if version >= 4 then
+            local health = reader:Byte()
+            local magicka = reader:Byte()
+            local stamina = reader:Byte()
+            local raceId = reader:Byte()
+            local mundus = reader:Byte()
+            local curse = reader:Byte()
+            if not health or health > 64 or not magicka or magicka > 64
+                or not stamina or stamina > 64 or health + magicka + stamina > 64
+                or not raceId or raceId > MAX_RACE_ID or not mundus or mundus > 13
+                or not curse or curse > 2 then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            setup.character.attributes.health = health
+            setup.character.attributes.magicka = magicka
+            setup.character.attributes.stamina = stamina
+            setup.character.raceId = raceId
+            setup.character.mundus = mundus
+            setup.character.curse = curse
+            for index = 1, 3 do
+                local lineName = reader:String(MAX_SUBCLASS_NAME, false)
+                if lineName == nil then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                setup.character.subclassLines[index] = lineName
             end
         end
         build.setups[#build.setups + 1] = setup

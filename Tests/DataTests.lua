@@ -53,6 +53,15 @@ function GetWorldName()
     return "Test"
 end
 
+GENDER_MALE = 1
+function GetRaceName(_, raceId)
+    local races = {
+        "Breton", "Redguard", "Orc", "Dark Elf", "Nord",
+        "Argonian", "High Elf", "Wood Elf", "Khajiit", "Imperial",
+    }
+    return races[raceId] or ""
+end
+
 ITEM_QUALITY_LEGENDARY = 5
 ARMORTYPE_NONE = 0
 WEAPONTYPE_NONE = 0
@@ -118,6 +127,7 @@ expectEqual(firstSetup.defaultQuality, ITEM_QUALITY_LEGENDARY, "default quality"
 expectEqual(data:GetSettings().fontScale, 1, "default font scale")
 expectEqual(data:GetSettings().highContrast, false, "high contrast should be opt-in")
 expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes should be opt-in")
+expectEqual(firstSetup.character.attributes.health, 0, "new setups should have an empty character plan")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -181,6 +191,22 @@ expect(not data:SetSkill(build.id, setup.id, "back", 1, {
     icon = "wild-guardian.dds",
     isUltimate = true,
 }), "normal skill slots should reject ultimates")
+
+ok = data:UpdateCharacter(build.id, setup.id, {
+    attributes = { health = 0, magicka = 14, stamina = 50 },
+    raceId = 9,
+    mundus = 10,
+    curse = 1,
+    subclassLines = { "Animal Companions", "Winter's Embrace", "Grave Lord" },
+})
+expect(ok, "character plans should be saved")
+expectEqual(setup.character.attributes.stamina, 50, "attribute plans should retain their allocation")
+expectEqual(setup.character.mundus, 10, "Mundus choices should be saved")
+expectEqual(setup.character.subclassLines[3], "Grave Lord", "subclass lines should be saved")
+expect(not data:UpdateCharacter(build.id, setup.id, {
+    attributes = { health = 20, magicka = 20, stamina = 25 },
+}), "attribute plans should reject totals above 64")
+expectEqual(setup.character.attributes.stamina, 50, "failed character updates should not change saved data")
 
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
@@ -278,6 +304,7 @@ expect(variant, "setup should be duplicated")
 expect(variant.equipment.waist ~= setup.equipment.waist, "equipment should be copied")
 expect(variant.alternatives ~= setup.alternatives, "slot alternatives should be copied independently")
 expect(variant.skillBars ~= setup.skillBars, "skill bars should be copied independently")
+expect(variant.character ~= setup.character, "character plans should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -318,6 +345,9 @@ expectEqual(
     1001,
     "share codes should retain planned skill bars"
 )
+expectEqual(decodedBuild.setups[1].character.raceId, 9, "share codes should retain race choices")
+expectEqual(decodedBuild.setups[1].character.attributes.stamina, 50, "share codes should retain attributes")
+expectEqual(decodedBuild.setups[1].character.subclassLines[3], "Grave Lord", "share codes should retain subclass lines")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -339,6 +369,7 @@ expectEqual(
     1006,
     "import should preserve planned ultimates"
 )
+expectEqual(imported.setups[1].character.mundus, 10, "import should preserve character plans")
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local nextBuildId = data.saved.nextBuildId
@@ -386,7 +417,8 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 4, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 5, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

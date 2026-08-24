@@ -1,10 +1,12 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 4
+local SCHEMA_VERSION = 5
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
+local MAX_SUBCLASS_NAME = 100
+local MAX_RACE_ID = 10
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local validAcquisitionRoutes = {
     buy = true,
@@ -205,6 +207,81 @@ local function readWholeNumber(value, minimum)
     return value
 end
 
+local function blankCharacterPlan()
+    return {
+        attributes = { health = 0, magicka = 0, stamina = 0 },
+        raceId = 0,
+        mundus = 0,
+        curse = 0,
+        subclassLines = { "", "", "" },
+    }
+end
+
+local function invalidCharacterPlan(strict, fallback)
+    if strict then
+        return nil
+    end
+    return fallback or blankCharacterPlan()
+end
+
+local function copyCharacterPlan(source, strict)
+    if source == nil then
+        return blankCharacterPlan()
+    end
+    if type(source) ~= "table" then
+        return invalidCharacterPlan(strict)
+    end
+
+    local plan = blankCharacterPlan()
+    local attributes = source.attributes
+    if attributes ~= nil and type(attributes) ~= "table" then
+        return invalidCharacterPlan(strict, plan)
+    end
+    attributes = type(attributes) == "table" and attributes or {}
+    local total = 0
+    for _, key in ipairs({ "health", "magicka", "stamina" }) do
+        local value = readWholeNumber(attributes[key] or 0, 0)
+        if not value or value > 64 then
+            return invalidCharacterPlan(strict, plan)
+        end
+        plan.attributes[key] = value
+        total = total + value
+    end
+    if total > 64 then
+        return invalidCharacterPlan(strict, plan)
+    end
+
+    for _, entry in ipairs({
+        { "raceId", 0, MAX_RACE_ID },
+        { "mundus", 0, 13 },
+        { "curse", 0, 2 },
+    }) do
+        local key, minimum, maximum = entry[1], entry[2], entry[3]
+        local value = readWholeNumber(source[key] or 0, minimum)
+        if not value or value > maximum then
+            return invalidCharacterPlan(strict, plan)
+        end
+        plan[key] = value
+    end
+
+    local lines = source.subclassLines
+    if lines ~= nil and type(lines) ~= "table" then
+        return invalidCharacterPlan(strict, plan)
+    end
+    for index = 1, 3 do
+        local value = type(lines) == "table" and lines[index] or ""
+        if value ~= nil and type(value) ~= "string" then
+            return invalidCharacterPlan(strict, plan)
+        end
+        value = trim(value)
+        if #value > MAX_SUBCLASS_NAME then
+            return invalidCharacterPlan(strict, plan)
+        end
+        plan.subclassLines[index] = value
+    end
+    return plan
+end
+
 local function copyBuildChanges(values)
     if type(values) ~= "table" then
         return nil
@@ -382,6 +459,7 @@ function Data:Migrate()
                 or {}
             setup.alternativeGroups = nil
             setup.skillBars = copySkillBars(setup.skillBars, false)
+            setup.character = copyCharacterPlan(setup.character, false)
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -645,6 +723,7 @@ function Data:DuplicateBuild(id, name)
             equipment = deepCopy(sourceSetup.equipment),
             alternatives = deepCopy(sourceSetup.alternatives),
             skillBars = deepCopy(sourceSetup.skillBars) or { front = {}, back = {} },
+            character = copyCharacterPlan(sourceSetup.character, false),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -760,6 +839,10 @@ function Data:ImportBuild(source)
         if not skillBars then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
+        local character = copyCharacterPlan(sourceSetup.character, true)
+        if not character then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
 
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
@@ -771,6 +854,7 @@ function Data:ImportBuild(source)
             equipment = equipment,
             alternatives = alternatives,
             skillBars = skillBars,
+            character = character,
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -842,6 +926,7 @@ function Data:CreateSetup(buildId, name, source)
         equipment = source and deepCopy(source.equipment) or {},
         alternatives = source and deepCopy(source.alternatives) or {},
         skillBars = source and deepCopy(source.skillBars) or { front = {}, back = {} },
+        character = source and copyCharacterPlan(source.character, false) or blankCharacterPlan(),
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -1028,6 +1113,22 @@ function Data:SetSkill(buildId, setupId, barKey, slotIndex, values)
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true
+end
+
+function Data:UpdateCharacter(buildId, setupId, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    local character = copyCharacterPlan(values, true)
+    if not character then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHARACTER)
+    end
+    setup.character = character
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, character
 end
 
 function Data:SetAlternative(buildId, setupId, slotKey, index, values)

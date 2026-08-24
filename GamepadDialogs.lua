@@ -12,6 +12,7 @@ local HELP_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_HELP"
 local TRANSFER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_TRANSFER"
 local SHARE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SHARE"
 local SKILL_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SKILL"
+local CHARACTER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHARACTER"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -277,6 +278,42 @@ local function qualityChoices()
     return choices
 end
 
+local function raceChoices()
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED), value = 0 },
+    }
+    if GetRaceName then
+        for raceId = 1, 10 do
+            local name = GetRaceName(GENDER_MALE or 1, raceId)
+            if name and name ~= "" then
+                choices[#choices + 1] = { label = name, value = raceId }
+            end
+        end
+    end
+    return choices
+end
+
+local function mundusChoices()
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED), value = 0 },
+    }
+    for mundus = 1, 13 do
+        local name = GetString("SI_MUNDUSSTONE", mundus)
+        if name and name ~= "" then
+            choices[#choices + 1] = { label = name, value = mundus }
+        end
+    end
+    return choices
+end
+
+local function curseChoices()
+    return {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_NONE), value = 0 },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_VAMPIRE), value = 1 },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CURSE_WEREWOLF), value = 2 },
+    }
+end
+
 local function familyForPending(slotKey, pending)
     local family = Slots:Get(slotKey).family
     if family == "weapon" and pending.weaponType == WEAPONTYPE_SHIELD then
@@ -305,6 +342,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeTransferDialog()
     self:InitializeShareDialog()
     self:InitializeSkillDialog()
+    self:InitializeCharacterDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -632,12 +670,147 @@ function Gamepad:ShowEditDialog()
     if self.activeView == "skills" then
         self:ShowSkillDialog()
         return
+    elseif self.activeView == "character" then
+        ZO_Dialogs_ShowGamepadDialog(CHARACTER_DIALOG)
+        return
     end
     if self:IsTargetEditable() then
         self.pendingSlot = nil
         self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:InitializeCharacterDialog()
+    ZO_Dialogs_RegisterCustomDialog(CHARACTER_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local setup = self.owner.data:GetCurrentSetup()
+            local character = setup.character or {}
+            local attributes = character.attributes or {}
+            self.pendingCharacter = {
+                health = tostring(attributes.health or 0),
+                magicka = tostring(attributes.magicka or 0),
+                stamina = tostring(attributes.stamina or 0),
+                raceId = character.raceId or 0,
+                mundus = character.mundus or 0,
+                curse = character.curse or 0,
+                subclassLines = {
+                    character.subclassLines and character.subclassLines[1] or "",
+                    character.subclassLines and character.subclassLines[2] or "",
+                    character.subclassLines and character.subclassLines[3] or "",
+                },
+            }
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_CHARACTER },
+        parametricList = {
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_HEALTH, {
+                value = function() return self.pendingCharacter.health end,
+                changed = function(value) self.pendingCharacter.health = value end,
+                defaultText = "0",
+                maxChars = 2,
+                numeric = true,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_MAGICKA, {
+                value = function() return self.pendingCharacter.magicka end,
+                changed = function(value) self.pendingCharacter.magicka = value end,
+                defaultText = "0",
+                maxChars = 2,
+                numeric = true,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_STAMINA, {
+                value = function() return self.pendingCharacter.stamina end,
+                changed = function(value) self.pendingCharacter.stamina = value end,
+                defaultText = "0",
+                maxChars = 2,
+                numeric = true,
+            }),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_RACE,
+                raceChoices,
+                function() return self.pendingCharacter.raceId end,
+                function(value) self.pendingCharacter.raceId = value end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_MUNDUS,
+                mundusChoices,
+                function() return self.pendingCharacter.mundus end,
+                function(value) self.pendingCharacter.mundus = value end
+            ),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_CURSE,
+                curseChoices,
+                function() return self.pendingCharacter.curse end,
+                function(value) self.pendingCharacter.curse = value end
+            ),
+            textFieldEntry(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 1), {
+                value = function() return self.pendingCharacter.subclassLines[1] end,
+                changed = function(value) self.pendingCharacter.subclassLines[1] = value end,
+                defaultText = zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 1),
+                maxChars = 100,
+            }),
+            textFieldEntry(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 2), {
+                value = function() return self.pendingCharacter.subclassLines[2] end,
+                changed = function(value) self.pendingCharacter.subclassLines[2] = value end,
+                defaultText = zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 2),
+                maxChars = 100,
+            }),
+            textFieldEntry(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 3), {
+                value = function() return self.pendingCharacter.subclassLines[3] end,
+                changed = function(value) self.pendingCharacter.subclassLines[3] = value end,
+                defaultText = zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUBCLASS_LINE, 3),
+                maxChars = 100,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_SAVE_CHARACTER,
+                callback = function()
+                    local ok, message = self:SavePendingCharacter()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(CHARACTER_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(CHARACTER_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:SavePendingCharacter()
+    local pending = self.pendingCharacter
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:UpdateCharacter(build.id, setup.id, {
+        attributes = {
+            health = tonumber(pending.health) or 0,
+            magicka = tonumber(pending.magicka) or 0,
+            stamina = tonumber(pending.stamina) or 0,
+        },
+        raceId = pending.raceId,
+        mundus = pending.mundus,
+        curse = pending.curse,
+        subclassLines = pending.subclassLines,
+    })
+    if not ok then
+        return false, message
+    end
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER_SAVED))
+    self:Refresh(true)
+    return true
 end
 
 function Gamepad:InitializeSkillDialog()
@@ -1180,6 +1353,7 @@ function Gamepad:InitializeHelpDialog()
             return GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

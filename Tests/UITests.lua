@@ -632,6 +632,28 @@ expectEqual(
     1006,
     "ultimate choices should persist in the sixth bar slot"
 )
+ui:SetView("character")
+expect(not ui.characterPanel:IsHidden(), "keyboard users should be able to open the character planner")
+ui.attributeEdits.health:SetText("4")
+ui.attributeEdits.magicka:SetText("10")
+ui.attributeEdits.stamina:SetText("50")
+ui.raceCombo.selectedValue = 9
+ui.mundusCombo.selectedValue = 10
+ui.curseCombo.selectedValue = 1
+ui.subclassEdits[1]:SetText("Animal Companions")
+ui.subclassEdits[2]:SetText("Winter's Embrace")
+ui.subclassEdits[3]:SetText("Grave Lord")
+ui:SaveCharacter()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().character.attributes.stamina,
+    50,
+    "keyboard character planning should persist attributes"
+)
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().character.subclassLines[3],
+    "Grave Lord",
+    "keyboard character planning should persist subclass lines"
+)
 ui:SetView("gear")
 expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the paper doll")
 owner.share = GravvyBuildPlannerShare:New(owner)
@@ -1186,7 +1208,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    10,
+    11,
     "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
@@ -1215,6 +1237,25 @@ expectEqual(
     BuildPlannerTestData:GetCurrentSetup().skillBars.front[2].abilityId,
     1002,
     "gamepad skill selection should persist planned abilities"
+)
+gamepad:TogglePlannerView()
+expectEqual(#gamepad.list.entries, 9, "the gamepad character planner should show every planned field")
+expectEqual(gamepad:GetTargetData().characterField, "health", "character navigation should begin on Health")
+gamepad.pendingCharacter = {
+    health = "0",
+    magicka = "0",
+    stamina = "64",
+    raceId = 9,
+    mundus = 10,
+    curse = 1,
+    subclassLines = { "Animal Companions", "Winter's Embrace", "Grave Lord" },
+}
+local characterSaved, characterError = gamepad:SavePendingCharacter()
+expect(characterSaved, characterError)
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().character.attributes.stamina,
+    64,
+    "gamepad character planning should persist attributes"
 )
 gamepad:TogglePlannerView()
 expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
