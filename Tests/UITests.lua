@@ -38,6 +38,10 @@ ITEM_SET_TYPE_DUNGEON = 2
 ITEM_SET_TYPE_MONSTER = 3
 ITEM_SET_TYPE_WEAPON = 4
 ITEM_SET_TYPE_WORLD = 5
+ITEMTYPE_FOOD = 20
+ITEMTYPE_DRINK = 21
+ITEMTYPE_POTION = 22
+ITEMTYPE_POISON = 23
 ITEM_TRAIT_TYPE_ARMOR_DIVINES = 21
 ITEM_TRAIT_TYPE_WEAPON_PRECISE = 22
 ITEM_TRAIT_TYPE_JEWELRY_ARCANE = 23
@@ -466,6 +470,7 @@ function GetItemLinkEquipType(link) return itemLinks[link].equipType end
 function GetItemLinkArmorType(link) return itemLinks[link].armorType end
 function GetItemLinkWeaponType(link) return itemLinks[link].weaponType end
 function GetItemLinkItemId(link) return itemLinks[link].itemId end
+function GetItemLinkItemType(link) return itemLinks[link].itemType end
 function GetItemLinkName(link)
     if itemLinks[link] then
         return itemLinks[link].name
@@ -607,10 +612,12 @@ dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
 dofile("SkillCatalog.lua")
 dofile("ChampionCatalog.lua")
+dofile("ConsumableCatalog.lua")
 dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("UI.lua")
 dofile("ChampionPlanner.lua")
+dofile("SuppliesPlanner.lua")
 dofile("Settings.lua")
 dofile("Gamepad.lua")
 dofile("GamepadDialogs.lua")
@@ -629,6 +636,8 @@ owner.skillCatalog:AddAbility(1002, false)
 owner.skillCatalog:AddAbility(1006, true)
 owner.championCatalog = GravvyBuildPlannerChampionCatalog:New()
 owner.championCatalog:Refresh()
+owner.consumableCatalog = GravvyBuildPlannerConsumableCatalog:New(owner.data)
+owner.consumableCatalog:Refresh()
 local nativeSkillTooltipUsed = false
 owner.skillCatalog:FindById(1001).progression = {
     SetKeyboardTooltip = function(_, tooltip, showCost, showUpgrade, showAdvised, showBadMorph)
@@ -729,6 +738,19 @@ expectEqual(keyboardChampion.slottables[1], 3002,
 ui:ShowChampionTooltip(ui.championSlotButtons[1], 3002)
 expectEqual(ChampionSkillTooltip.skillId, 3002,
     "planned Champion Stars should use ESO's native Champion tooltip")
+ui:SetView("supplies")
+expect(not ui.suppliesPanel:IsHidden(), "keyboard users should be able to open the Supplies planner")
+expect(owner.consumableCatalog:FindExact(
+    "Braised Rabbit with Spring Vegetables",
+    "food"
+), "saved consumables should remain available to autocomplete")
+ui:SelectSupplyRow(1)
+ui.supplyQuantityEdit:SetText("25")
+ui:SaveSupply()
+expectEqual(BuildPlannerTestData:GetCurrentSetup().consumables[1].quantity, 25,
+    "keyboard consumable planning should persist quantities")
+ui:ShowSupplyTooltip(ui.supplyRows[1], "food:item")
+expectEqual(ItemTooltip.link, "food:item", "resolved consumables should use native item tooltips")
 ui:SetView("gear")
 expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the paper doll")
 owner.share = GravvyBuildPlannerShare:New(owner)
@@ -1283,7 +1305,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    12,
+    13,
     "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
@@ -1346,6 +1368,18 @@ local championSaved, championError = gamepad:SavePendingChampion()
 expect(championSaved, championError)
 expectEqual(BuildPlannerTestData:GetCurrentSetup().champion.warfare.slottables[2], 3002,
     "gamepad Champion planning should preserve slottable positions")
+gamepad:TogglePlannerView()
+expect(#gamepad.list.entries >= 1, "the gamepad Supplies planner should include an add entry")
+gamepad.pendingSupply = {
+    category = "potion",
+    name = "Essence of Weapon Power",
+    quantity = "10",
+    note = "Boss fights",
+}
+local supplyGamepadSaved, supplyGamepadError = gamepad:SavePendingSupply()
+expect(supplyGamepadSaved, supplyGamepadError)
+expectEqual(BuildPlannerTestData:GetCurrentSetup().consumables[2].category, "potion",
+    "gamepad consumable planning should persist categories")
 gamepad:TogglePlannerView()
 expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
 

@@ -14,6 +14,7 @@ local SHARE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SHARE"
 local SKILL_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SKILL"
 local CHARACTER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHARACTER"
 local CHAMPION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHAMPION"
+local SUPPLY_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SUPPLY"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -315,6 +316,16 @@ local function curseChoices()
     }
 end
 
+local function supplyCategoryChoices()
+    return {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_FOOD), value = "food" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_DRINK), value = "drink" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_POTION), value = "potion" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_POISON), value = "poison" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_OTHER), value = "other" },
+    }
+end
+
 local function familyForPending(slotKey, pending)
     local family = Slots:Get(slotKey).family
     if family == "weapon" and pending.weaponType == WEAPONTYPE_SHIELD then
@@ -345,6 +356,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeSkillDialog()
     self:InitializeCharacterDialog()
     self:InitializeChampionDialog()
+    self:InitializeSupplyDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -678,12 +690,139 @@ function Gamepad:ShowEditDialog()
     elseif self.activeView == "champion" then
         ZO_Dialogs_ShowGamepadDialog(CHAMPION_DIALOG)
         return
+    elseif self.activeView == "supplies" then
+        ZO_Dialogs_ShowGamepadDialog(SUPPLY_DIALOG)
+        return
     end
     if self:IsTargetEditable() then
         self.pendingSlot = nil
         self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:InitializeSupplyDialog()
+    ZO_Dialogs_RegisterCustomDialog(SUPPLY_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local data = self:GetTargetData()
+            local setup = self.owner.data:GetCurrentSetup()
+            local supply = data and data.supplyIndex and setup.consumables[data.supplyIndex]
+            self.pendingSupply = {
+                index = data and data.supplyIndex,
+                category = supply and supply.category or "food",
+                name = supply and supply.name or "",
+                quantity = supply and tostring(supply.quantity) or "1",
+                note = supply and supply.note or "",
+            }
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_SUPPLIES },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_SUPPLY_CATEGORY,
+                supplyCategoryChoices,
+                function() return self.pendingSupply.category end,
+                function(value) self.pendingSupply.category = value end
+            ),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_SUPPLY_NAME, {
+                value = function() return self.pendingSupply.name end,
+                changed = function(value) self.pendingSupply.name = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_NAME),
+                maxChars = 2048,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_SUPPLY_QUANTITY, {
+                value = function() return self.pendingSupply.quantity end,
+                changed = function(value) self.pendingSupply.quantity = value end,
+                defaultText = "1",
+                maxChars = 4,
+                numeric = true,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_NOTES, {
+                value = function() return self.pendingSupply.note end,
+                changed = function(value) self.pendingSupply.note = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_NOTES),
+                maxChars = 4000,
+                multiline = true,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVE,
+                callback = function()
+                    local ok, message = self:SavePendingSupply()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(SUPPLY_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(SUPPLY_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:SavePendingSupply()
+    local pending = self.pendingSupply
+    local typedName = zo_strtrim(pending.name or "")
+    local quantity = tonumber(pending.quantity)
+    if typedName == "" or not quantity or quantity ~= math.floor(quantity)
+        or quantity < 1 or quantity > 9999 then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE)
+    end
+    local catalogEntry = self.owner.consumableCatalog:FindExact(typedName, pending.category)
+    local category = pending.category
+    if string.find(typedName, "|H", 1, true) == 1 and GetItemLinkName then
+        local itemLink = typedName
+        local itemName = GetItemLinkName(itemLink)
+        if itemName and itemName ~= "" then
+            category = self.owner.consumableCatalog:GetCategory(itemLink) or category
+            catalogEntry = {
+                name = itemName,
+                itemId = GetItemLinkItemId and GetItemLinkItemId(itemLink),
+                itemLink = itemLink,
+                icon = GetItemLinkIcon and GetItemLinkIcon(itemLink) or "",
+            }
+            typedName = itemName
+        end
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, result = self.owner.data:SetConsumable(
+        build.id,
+        setup.id,
+        pending.index,
+        {
+            category = category,
+            name = catalogEntry and catalogEntry.name or typedName,
+            itemId = catalogEntry and catalogEntry.itemId,
+            itemLink = catalogEntry and catalogEntry.itemLink,
+            icon = catalogEntry and catalogEntry.icon or "",
+            quantity = quantity,
+            note = pending.note or "",
+        }
+    )
+    if not ok then
+        return false, result
+    end
+    self.owner.consumableCatalog:Refresh()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVED,
+        catalogEntry and catalogEntry.name or typedName
+    ))
+    self:Refresh(true)
+    return true
 end
 
 function Gamepad:InitializeChampionDialog()
@@ -1529,6 +1668,7 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

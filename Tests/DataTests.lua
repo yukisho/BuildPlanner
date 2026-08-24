@@ -129,6 +129,7 @@ expectEqual(data:GetSettings().highContrast, false, "high contrast should be opt
 expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes should be opt-in")
 expectEqual(firstSetup.character.attributes.health, 0, "new setups should have an empty character plan")
 expectEqual(firstSetup.champion.warfare.slottables[1], 0, "new setups should have empty Champion slots")
+expectEqual(#firstSetup.consumables, 0, "new setups should have no consumable requirements")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -237,6 +238,28 @@ expect(not data:SetChampionAllocation(build.id, setup.id, "craft", {
     isSlottable = true,
 }), "a Champion Star should not be duplicated across disciplines")
 
+local supplySaved, supplyIndex = data:SetConsumable(build.id, setup.id, nil, {
+    category = "food",
+    name = "Braised Rabbit with Spring Vegetables",
+    itemId = 12345,
+    itemLink = "food:item",
+    icon = "food.dds",
+    quantity = 20,
+    note = "Use for parsing",
+})
+expect(supplySaved, "consumable requirements should be saved")
+expectEqual(supplyIndex, 1, "new consumables should retain their ordered position")
+expect(not data:SetConsumable(build.id, setup.id, nil, {
+    category = "food",
+    name = "Braised Rabbit with Spring Vegetables",
+    quantity = 1,
+}), "duplicate consumables should be rejected within a category")
+expect(not data:SetConsumable(build.id, setup.id, 0, {
+    category = "drink",
+    name = "Dubious Camoran Throne",
+    quantity = 1,
+}), "invalid consumable positions should not append a new entry")
+
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
 
@@ -335,6 +358,7 @@ expect(variant.alternatives ~= setup.alternatives, "slot alternatives should be 
 expect(variant.skillBars ~= setup.skillBars, "skill bars should be copied independently")
 expect(variant.character ~= setup.character, "character plans should be copied independently")
 expect(variant.champion ~= setup.champion, "Champion plans should be copied independently")
+expect(variant.consumables ~= setup.consumables, "consumable plans should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -382,6 +406,8 @@ expectEqual(decodedBuild.setups[1].champion.warfare.allocations[1].skillId, 2001
     "share codes should retain Champion allocations")
 expectEqual(decodedBuild.setups[1].champion.warfare.slottables[2], 2001,
     "share codes should retain Champion slot positions")
+expectEqual(decodedBuild.setups[1].consumables[1].quantity, 20,
+    "share codes should retain consumable quantities")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -406,6 +432,8 @@ expectEqual(
 expectEqual(imported.setups[1].character.mundus, 10, "import should preserve character plans")
 expectEqual(imported.setups[1].champion.warfare.allocations[2].points, 20,
     "import should preserve passive Champion allocations")
+expectEqual(imported.setups[1].consumables[1].itemId, 12345,
+    "import should preserve resolved consumable identity")
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local nextBuildId = data.saved.nextBuildId
@@ -453,10 +481,12 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 6, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 7, "migration should advance the saved-data schema")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
 expectEqual(repaired.saved.builds[1].setups[1].champion.craft.slottables[4], 0,
     "migration should add Champion defaults")
+expectEqual(#repaired.saved.builds[1].setups[1].consumables, 0,
+    "migration should add consumable defaults")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

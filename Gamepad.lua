@@ -120,6 +120,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_CHARACTER)
                 elseif self.activeView == "champion" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SAVE)
+                elseif self.activeView == "supplies" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
             end,
@@ -142,6 +144,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR_SKILL)
                 elseif self.activeView == "champion" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_REMOVE)
+                elseif self.activeView == "supplies" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR)
             end,
@@ -156,6 +160,9 @@ function Gamepad:InitializeKeybinds()
                 elseif self.activeView == "champion" then
                     local data = self:GetTargetData()
                     return data and data.championSkillId ~= nil
+                elseif self.activeView == "supplies" then
+                    local data = self:GetTargetData()
+                    return data and data.supplyIndex ~= nil
                 end
                 return self:IsTargetEditable() and self:GetTargetRequirement() ~= nil
             end,
@@ -209,6 +216,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER)
                 elseif self.activeView == "character" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION)
+                elseif self.activeView == "champion" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLIES)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GEAR)
             end,
@@ -465,6 +474,45 @@ function Gamepad:Refresh(force)
         self:RefreshKeybinds()
         return
     end
+    if self.activeView == "supplies" then
+        local selectedSupplyIndex = selectedData and selectedData.supplyIndex
+        local addEntry = ZO_GamepadEntryData:New(GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_ADD))
+        addEntry:SetFontScaleOnSelection(false)
+        self.list:AddEntry("ZO_GamepadMenuEntryTemplate", addEntry)
+        for index, supply in ipairs(setup.consumables) do
+            local entry = ZO_GamepadEntryData:New(supply.name)
+            entry.supplyIndex = index
+            entry.itemLink = supply.itemLink
+            entry:SetFontScaleOnSelection(false)
+            entry:SetShowUnselectedSublabels(true)
+            entry:AddSubLabel(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_SUPPLY_GAMEPAD_DETAIL,
+                GetString(supply.category == "food"
+                    and SI_GRAVVY_BUILD_PLANNER_SUPPLY_FOOD
+                    or supply.category == "drink"
+                        and SI_GRAVVY_BUILD_PLANNER_SUPPLY_DRINK
+                        or supply.category == "potion"
+                            and SI_GRAVVY_BUILD_PLANNER_SUPPLY_POTION
+                            or supply.category == "poison"
+                                and SI_GRAVVY_BUILD_PLANNER_SUPPLY_POISON
+                                or SI_GRAVVY_BUILD_PLANNER_SUPPLY_OTHER),
+                supply.quantity
+            ))
+            if supply.note ~= "" then
+                entry:AddSubLabel(supply.note)
+            end
+            self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+            if selectedSupplyIndex == index then
+                selectedIndex = index + 1
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(selectedIndex or 1)
+        self.dirty = false
+        self:RefreshPreview()
+        self:RefreshKeybinds()
+        return
+    end
     local selectedSlot = selectedData and selectedData.slotKey
     for index, slotKey in ipairs(Slots.ORDER) do
         local mainHand = Slots:GetMainHand(slotKey)
@@ -518,6 +566,8 @@ function Gamepad:TogglePlannerView()
         self.activeView = "character"
     elseif self.activeView == "character" then
         self.activeView = "champion"
+    elseif self.activeView == "champion" then
+        self.activeView = "supplies"
     else
         self.activeView = "gear"
     end
@@ -606,6 +656,17 @@ function Gamepad:ClearTargetSlot()
         end
         return
     end
+    if self.activeView == "supplies" then
+        local data = self:GetTargetData()
+        if data and data.supplyIndex then
+            local setup, build = self.owner.data:GetCurrentSetup()
+            self.owner.data:SetConsumable(build.id, setup.id, data.supplyIndex, nil)
+            self.owner.consumableCatalog:Refresh()
+            self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVED))
+            self:Refresh(true)
+        end
+        return
+    end
     local slotKey = self:GetTargetSlot()
     local setup, build = self.owner.data:GetCurrentSetup()
     local ok, message = self.owner.data:SetEquipment(build.id, setup.id, slotKey, nil)
@@ -642,6 +703,13 @@ function Gamepad:RefreshPreview()
             and self.owner.championCatalog:FindById(data.championSkillId)
         if entry and entry.skillData and GAMEPAD_TOOLTIPS.LayoutChampionSkill then
             GAMEPAD_TOOLTIPS:LayoutChampionSkill(GAMEPAD_LEFT_TOOLTIP, entry.skillData)
+        end
+        return
+    end
+    if self.activeView == "supplies" then
+        local data = self:GetTargetData()
+        if data and data.itemLink and GAMEPAD_TOOLTIPS then
+            GAMEPAD_TOOLTIPS:LayoutItemLink(GAMEPAD_LEFT_TOOLTIP, data.itemLink)
         end
         return
     end

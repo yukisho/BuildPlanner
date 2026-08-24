@@ -186,6 +186,9 @@ end
 
 function Inventory:Refresh()
     self.items = self:ReadItems()
+    if self.owner.consumableCatalog then
+        self.owner.consumableCatalog:Refresh()
+    end
     self.matches = {}
     self.progress = {}
     for _, build in ipairs(self.owner.data:GetBuilds()) do

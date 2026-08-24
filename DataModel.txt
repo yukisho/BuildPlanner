@@ -17,7 +17,8 @@ Setup
 
 A setup is a named variation of a build. It stores default quality, level, and
 Champion Points plus equipment requirements keyed by the canonical slot names in
-EquipmentSlots.lua. It also owns the setup's skill bars and character plan.
+EquipmentSlots.lua. It also owns the setup's skill bars, character and Champion
+plans, and consumable requirements.
 Acquisition results live in a separate table and are not copied when a build or
 setup is duplicated.
 
@@ -90,6 +91,19 @@ Passive stars cannot be slotted, and one star cannot be duplicated between
 disciplines. The catalog and native tooltips come from ESO's Champion data;
 Build Planner never spends points or changes the live Champion bar.
 
+Consumable requirements
+-----------------------
+
+Each setup may contain up to 20 ordered food, drink, potion, poison, or other
+requirements. An entry stores its category, display name, quantity, and an
+optional note. When the player chooses an item known from inventory or past
+plans, its item ID, link, and icon are retained for native item tooltips. Manual
+guide names remain valid when ESO cannot resolve a specific item.
+
+The consumable catalog is rebuilt from the player's backpack, bank, craft bag,
+and saved plans. It provides entry help only; Build Planner does not consume,
+equip, craft, or purchase planned supplies.
+
 Shopping List export
 --------------------
 
@@ -114,13 +128,13 @@ Build sharing and backup
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
 acquisition routes, ordered alternatives, skill bars, character and Champion
-plans, and the selected setup.
+plans, consumable requirements, and the selected setup.
 Derived inventory matches and collection states are recalculated after import
 rather than copied.
 
-Build Planner writes format version 5 codes and continues to accept versions 1
-through 4, created before equipment alternatives, skill bars, character plans,
-and Champion plans were added.
+Build Planner writes format version 6 codes and continues to accept versions 1
+through 5, created before equipment alternatives, skill bars, character plans,
+Champion plans, and consumable requirements were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

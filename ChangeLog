@@ -1,3 +1,13 @@
+0.7.4
+- Added setup-specific food, drink, potion, poison, and other supply planning.
+- Added saved-plan and inventory-backed item suggestions while still allowing
+  free-text guide names and pasted item links.
+- Added quantities, notes, item icons, and native tooltips to the keyboard
+  Supplies view.
+- Added native gamepad supply browsing, editing, removal, and item tooltips.
+- Preserved consumable plans through migrations, setup and build copies, and
+  GBP format-version 6 sharing while retaining imports from versions 1 through 5.
+
 0.7.3
 - Added Craft, Warfare, and Fitness Champion Point planning to each setup.
 - Added Champion Star autocomplete from ESO's native Champion data, point caps,

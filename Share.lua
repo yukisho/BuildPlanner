@@ -3,7 +3,7 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 5
+local FORMAT_VERSION = 6
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
@@ -13,6 +13,7 @@ local MAX_SUBCLASS_NAME = 100
 local MAX_RACE_ID = 10
 local MAX_CHAMPION_ALLOCATIONS = 200
 local MAX_CHAMPION_POINTS = 1000
+local MAX_CONSUMABLES = 20
 local MAX_U32 = 4294967295
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
@@ -55,6 +56,17 @@ local routeValues = {
 local routeNames = {}
 for name, value in pairs(routeValues) do
     routeNames[value] = name
+end
+local consumableCategoryValues = {
+    food = 1,
+    drink = 2,
+    potion = 3,
+    poison = 4,
+    other = 5,
+}
+local consumableCategoryNames = {}
+for name, value in pairs(consumableCategoryValues) do
+    consumableCategoryNames[value] = name
 end
 
 Share.PREFIX = PREFIX
@@ -420,6 +432,36 @@ function Share.EncodeBuild(build)
                 appendU32(parts, skillId)
             end
         end
+
+        local consumables = setup.consumables or {}
+        if type(consumables) ~= "table" or #consumables > MAX_CONSUMABLES then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        parts[#parts + 1] = string.char(#consumables)
+        local seenConsumables = {}
+        for _, entry in ipairs(consumables) do
+            local category = consumableCategoryValues[entry.category]
+            local name = tostring(entry.name or "")
+            local itemLink = tostring(entry.itemLink or "")
+            local icon = tostring(entry.icon or "")
+            local note = tostring(entry.note or "")
+            local quantity = wholeNumber(entry.quantity or 1, 1, 9999)
+            local itemId = entry.itemId == nil or wholeNumber(entry.itemId, 1, MAX_U32 - 1)
+            local key = category and tostring(category) .. "\31" .. zo_strlower(name)
+            if not category or seenConsumables[key] or name == "" or #name > MAX_SUBCLASS_NAME
+                or #itemLink > MAX_LINK or #icon > MAX_STRING or #note > MAX_NOTE
+                or not quantity or not itemId then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            seenConsumables[key] = true
+            parts[#parts + 1] = string.char(category)
+            appendString(parts, name)
+            appendString(parts, itemLink)
+            appendString(parts, icon)
+            appendU16(parts, quantity)
+            appendString(parts, note)
+            appendOptionalU32(parts, entry.itemId)
+        end
     end
 
     local body = table.concat(parts)
@@ -496,6 +538,7 @@ function Share.DecodeCode(code)
                 warfare = { allocations = {}, slottables = { 0, 0, 0, 0 } },
                 fitness = { allocations = {}, slottables = { 0, 0, 0, 0 } },
             },
+            consumables = {},
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -682,6 +725,39 @@ function Share.DecodeCode(code)
                 end
             end
         end
+        if version >= 6 then
+            local count = reader:Byte()
+            if not count or count > MAX_CONSUMABLES then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            local seenConsumables = {}
+            for _ = 1, count do
+                local categoryValue = reader:Byte()
+                local category = categoryValue and consumableCategoryNames[categoryValue]
+                local name = reader:String(MAX_SUBCLASS_NAME, true)
+                local itemLink = reader:String(MAX_LINK, false)
+                local icon = reader:String(MAX_STRING, false)
+                local quantity = reader:U16()
+                local note = reader:String(MAX_NOTE, false)
+                local itemId, itemIdOk = readOptionalU32(reader)
+                local key = category and tostring(categoryValue) .. "\31" .. zo_strlower(name or "")
+                if not category or seenConsumables[key] or not name
+                    or itemLink == nil or icon == nil or not quantity
+                    or quantity < 1 or quantity > 9999 or note == nil or not itemIdOk then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seenConsumables[key] = true
+                setup.consumables[#setup.consumables + 1] = {
+                    category = category,
+                    name = name,
+                    itemId = itemId,
+                    itemLink = itemLink ~= "" and itemLink or nil,
+                    icon = icon,
+                    quantity = quantity,
+                    note = note,
+                }
+            end
+        end
         build.setups[#build.setups + 1] = setup
     end
     if not reader:IsDone() then
@@ -834,6 +910,7 @@ function Share:ImportCode()
         return
     end
     self.owner.setCatalog:Refresh()
+    self.owner.consumableCatalog:Refresh()
     self.owner.inventory:QueueRefresh(0)
     self.owner.ui:Refresh()
     self.owner.gamepad:Refresh(true)

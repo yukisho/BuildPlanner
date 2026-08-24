@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 6
+local SCHEMA_VERSION = 7
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
@@ -9,6 +9,8 @@ local MAX_SUBCLASS_NAME = 100
 local MAX_RACE_ID = 10
 local MAX_CHAMPION_ALLOCATIONS = 200
 local MAX_CHAMPION_POINTS = 1000
+local MAX_CONSUMABLES = 20
+local MAX_CONSUMABLE_QUANTITY = 9999
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local validAcquisitionRoutes = {
     buy = true,
@@ -17,6 +19,13 @@ local validAcquisitionRoutes = {
     reconstruct = true,
     transmute = true,
     unknown = true,
+}
+local validConsumableCategories = {
+    food = true,
+    drink = true,
+    potion = true,
+    poison = true,
+    other = true,
 }
 
 local defaults = {
@@ -371,6 +380,70 @@ local function copyChampionPlan(source, strict)
     return plan
 end
 
+local function copyConsumable(source)
+    if type(source) ~= "table" or not validConsumableCategories[source.category]
+        or type(source.name) ~= "string" or trim(source.name) == ""
+        or #source.name > 100 then
+        return nil
+    end
+    local quantity = readWholeNumber(source.quantity or 1, 1)
+    if not quantity or quantity > MAX_CONSUMABLE_QUANTITY then
+        return nil
+    end
+    local entry = {
+        category = source.category,
+        name = trim(source.name),
+        quantity = quantity,
+        note = normalizeNote(source.note),
+    }
+    if source.itemId ~= nil then
+        entry.itemId = readWholeNumber(source.itemId, 1)
+        if not entry.itemId then
+            return nil
+        end
+    end
+    if source.itemLink ~= nil then
+        if type(source.itemLink) ~= "string" or #source.itemLink > 2048 then
+            return nil
+        end
+        entry.itemLink = source.itemLink
+    end
+    if source.icon ~= nil then
+        if type(source.icon) ~= "string" or #source.icon > 512 then
+            return nil
+        end
+        entry.icon = source.icon
+    end
+    return entry
+end
+
+local function copyConsumables(source, strict)
+    if source == nil then
+        return {}
+    end
+    if type(source) ~= "table" or #source > MAX_CONSUMABLES then
+        if strict then
+            return nil
+        end
+        return {}
+    end
+    local entries = {}
+    local seen = {}
+    for _, sourceEntry in ipairs(source) do
+        local entry = copyConsumable(sourceEntry)
+        local key = entry and entry.category .. "\31" .. zo_strlower(entry.name)
+        if not entry or seen[key] then
+            if strict then
+                return nil
+            end
+        else
+            seen[key] = true
+            entries[#entries + 1] = entry
+        end
+    end
+    return entries
+end
+
 local function copyBuildChanges(values)
     if type(values) ~= "table" then
         return nil
@@ -550,6 +623,7 @@ function Data:Migrate()
             setup.skillBars = copySkillBars(setup.skillBars, false)
             setup.character = copyCharacterPlan(setup.character, false)
             setup.champion = copyChampionPlan(setup.champion, false)
+            setup.consumables = copyConsumables(setup.consumables, false)
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -815,6 +889,7 @@ function Data:DuplicateBuild(id, name)
             skillBars = deepCopy(sourceSetup.skillBars) or { front = {}, back = {} },
             character = copyCharacterPlan(sourceSetup.character, false),
             champion = copyChampionPlan(sourceSetup.champion, false),
+            consumables = copyConsumables(sourceSetup.consumables, false),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -938,6 +1013,10 @@ function Data:ImportBuild(source)
         if not champion then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
+        local consumables = copyConsumables(sourceSetup.consumables, true)
+        if not consumables then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
 
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
@@ -951,6 +1030,7 @@ function Data:ImportBuild(source)
             skillBars = skillBars,
             character = character,
             champion = champion,
+            consumables = consumables,
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -1024,6 +1104,7 @@ function Data:CreateSetup(buildId, name, source)
         skillBars = source and deepCopy(source.skillBars) or { front = {}, back = {} },
         character = source and copyCharacterPlan(source.character, false) or blankCharacterPlan(),
         champion = source and copyChampionPlan(source.champion, false) or blankChampionPlan(),
+        consumables = source and copyConsumables(source.consumables, false) or {},
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -1321,6 +1402,51 @@ function Data:SetChampionSlottable(buildId, setupId, disciplineKey, slotIndex, s
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true
+end
+
+function Data:SetConsumable(buildId, setupId, index, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    if index ~= nil then
+        index = readWholeNumber(index, 1)
+        if not index then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE)
+        end
+    end
+    if index and index > #setup.consumables then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE)
+    end
+    if values == nil then
+        if not index then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE)
+        end
+        table.remove(setup.consumables, index)
+    else
+        local entry = copyConsumable(values)
+        if not entry then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE)
+        end
+        for otherIndex, other in ipairs(setup.consumables) do
+            if otherIndex ~= index and other.category == entry.category
+                and zo_strlower(other.name) == zo_strlower(entry.name) then
+                return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE_DUPLICATE)
+            end
+        end
+        if index then
+            setup.consumables[index] = entry
+        elseif #setup.consumables < MAX_CONSUMABLES then
+            setup.consumables[#setup.consumables + 1] = entry
+            index = #setup.consumables
+        else
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CONSUMABLE_LIMIT)
+        end
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, index
 end
 
 function Data:SetAlternative(buildId, setupId, slotKey, index, values)
