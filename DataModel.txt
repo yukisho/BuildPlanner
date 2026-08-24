@@ -49,6 +49,17 @@ A two-handed weapon is stored only in frontMain or backMain with
 occupiesOffHand=true. Its paired off-hand entry is cleared and cannot be filled
 until the main-hand requirement changes or is removed.
 
+Each primary slot may also have up to eight ordered alternatives. Alternatives
+use the same requirement fields as the primary and must keep the same weapon
+occupancy, so a fallback cannot silently turn a one-handed bar into a two-handed
+bar. Clearing a primary slot clears its alternatives. The set-wide action adds
+the selected replacement set to every slot using the same primary set while
+retaining each slot's remaining requirements.
+
+An owned primary or alternative satisfies the one planned slot. Inventory items
+are still assigned once across the setup, and exact matches are preferred before
+adjustable matches. Alternatives therefore never increase completion totals.
+
 Shopping List export
 --------------------
 
@@ -56,6 +67,10 @@ Shopping-list entries are derived at export time and are never saved with a
 build. Missing tradeable gear is included by default. Owned gear is counted
 separately and can be included explicitly; bind-on-pickup and unresolved gear
 remain excluded.
+
+Only one requirement is exported for each slot. The primary is preferred when
+it can be bought; otherwise the first tradeable alternative is used. This keeps
+fallback choices from becoming duplicate purchases.
 
 Gear keeps its set, trait, and exact level rules, while listing quality remains
 open so a lower-quality piece can be bought and upgraded. Planned enchantments
@@ -68,8 +83,11 @@ Build sharing and backup
 
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
-acquisition routes, and the selected setup. Derived inventory matches and
+acquisition routes, ordered alternatives, and the selected setup. Derived inventory matches and
 collection states are recalculated after import rather than copied.
+
+Build Planner writes format version 2 codes and continues to accept version 1
+codes created before equipment alternatives were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

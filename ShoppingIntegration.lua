@@ -206,24 +206,49 @@ function Shopping:BuildReview(includeOwned, includeGlyphs)
         end
         review.glyphs = review.glyphs + 1
     end
-    for _, slotKey in ipairs(Slots.ORDER) do
-        local requirement = setup.equipment[slotKey]
-        if requirement then
-            local owned = self.owner.inventory:GetMatch(
-                setup.id,
+    local function chooseRequirement(slotKey, owned)
+        if owned then
+            return self.owner.inventory:GetMatchedRequirement(setup.id, slotKey, setup)
+        end
+        local choices = { setup.equipment[slotKey] }
+        for _, alternative in ipairs(self.owner.data:GetAlternatives(setup, slotKey)) do
+            choices[#choices + 1] = alternative
+        end
+        for index, candidate in ipairs(choices) do
+            local resolved = self.owner.itemResolver:Resolve(slotKey, candidate, setup)
+            local state = self.owner.acquisition:Classify(
                 slotKey,
-                requirement,
-                setup
+                candidate,
+                setup,
+                resolved
             )
+            local itemLink = resolved and resolved.itemLink or candidate.itemLink
+            if state.tradeable and not state.bindOnPickup and itemLink and itemLink ~= "" then
+                return candidate, index > 1 and index - 1 or nil, resolved
+            end
+        end
+    end
+    for _, slotKey in ipairs(Slots.ORDER) do
+        local primary = setup.equipment[slotKey]
+        if primary then
+            local owned = self.owner.inventory:GetMatch(setup.id, slotKey)
+            local requirement, alternativeIndex, resolved = chooseRequirement(slotKey, owned)
             if review.includeGlyphs
+                and requirement
                 and requirement.enchantmentCategory
                 and needsGlyph(owned) then
                 addGlyph(requirement)
             end
             if owned and not review.includeOwned then
                 review.owned = review.owned + 1
+            elseif not requirement then
+                review.excluded = review.excluded + 1
             else
-                local resolved = self.owner.itemResolver:Resolve(slotKey, requirement, setup)
+                resolved = resolved or self.owner.itemResolver:Resolve(
+                    slotKey,
+                    requirement,
+                    setup
+                )
                 local state = self.owner.acquisition:Classify(
                     slotKey,
                     requirement,
@@ -231,15 +256,24 @@ function Shopping:BuildReview(includeOwned, includeGlyphs)
                     resolved
                 )
                 local itemLink = resolved and resolved.itemLink or requirement.itemLink
-                if state.tradeable and not state.bindOnPickup and itemLink and itemLink ~= "" then
+                if state.tradeable and not state.bindOnPickup
+                    and itemLink and itemLink ~= "" then
                     local level, championPoints = self.owner.itemResolver:GetRequestedLevel(
                         requirement,
                         setup
                     )
+                    local note = itemNote(slotKey, requirement, setup)
+                    if alternativeIndex then
+                        note = zo_strformat(
+                            SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_NOTE,
+                            alternativeIndex,
+                            note
+                        )
+                    end
                     review.items[#review.items + 1] = {
                         itemLink = itemLink,
                         quantity = 1,
-                        note = itemNote(slotKey, requirement, setup),
+                        note = note,
                         match = {
                             setName = requirement.setName,
                             traitType = requirement.traitType or ITEM_TRAIT_TYPE_NONE,
@@ -251,7 +285,6 @@ function Shopping:BuildReview(includeOwned, includeGlyphs)
                         },
                     }
                     review.included = review.included + 1
-
                 else
                     review.excluded = review.excluded + 1
                 end

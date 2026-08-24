@@ -99,15 +99,25 @@ local function getRequirementOrder(setup)
         local requirement = setup.equipment[slotKey]
         if requirement then
             local priority = 0
-            if requirement.traitType and requirement.traitType ~= ITEM_TRAIT_TYPE_NONE then
-                priority = priority + 2
+            local candidates = { requirement }
+            for _, alternative in ipairs(
+                (setup.alternatives and setup.alternatives[slotKey]) or {}
+            ) do
+                candidates[#candidates + 1] = alternative
             end
-            if requirement.enchantmentCategory then
-                priority = priority + 1
+            for _, candidate in ipairs(candidates) do
+                local candidatePriority = 0
+                if candidate.traitType and candidate.traitType ~= ITEM_TRAIT_TYPE_NONE then
+                    candidatePriority = candidatePriority + 2
+                end
+                if candidate.enchantmentCategory then
+                    candidatePriority = candidatePriority + 1
+                end
+                priority = math.max(priority, candidatePriority)
             end
             ordered[#ordered + 1] = {
                 slotKey = slotKey,
-                requirement = requirement,
+                candidates = candidates,
                 priority = priority,
                 index = index,
             }
@@ -135,18 +145,27 @@ function Inventory:MatchSetup(setup)
             if not matches[planned.slotKey] then
                 for index, item in ipairs(self.items) do
                     if remaining[index] > 0 then
-                        local match = self.owner.acquisition:CompareItem(
-                            planned.slotKey,
-                            planned.requirement,
-                            setup,
-                            item.itemLink
-                        )
-                        if match and match.exact == wantExact then
-                            match.location = item.location
-                            match.bagId = item.bagId
-                            match.slotIndex = item.slotIndex
-                            matches[planned.slotKey] = match
-                            remaining[index] = remaining[index] - 1
+                        for candidateIndex, requirement in ipairs(planned.candidates) do
+                            local match = self.owner.acquisition:CompareItem(
+                                planned.slotKey,
+                                requirement,
+                                setup,
+                                item.itemLink
+                            )
+                            if match and match.exact == wantExact then
+                                match.location = item.location
+                                match.bagId = item.bagId
+                                match.slotIndex = item.slotIndex
+                                match.alternativeIndex = candidateIndex > 1
+                                    and candidateIndex - 1
+                                    or nil
+                                match.requirement = requirement
+                                matches[planned.slotKey] = match
+                                remaining[index] = remaining[index] - 1
+                                break
+                            end
+                        end
+                        if matches[planned.slotKey] then
                             break
                         end
                     end
@@ -155,6 +174,14 @@ function Inventory:MatchSetup(setup)
         end
     end
     return matches
+end
+
+function Inventory:GetMatchedRequirement(setupId, slotKey, setup)
+    local match = self.matches[setupId] and self.matches[setupId][slotKey]
+    if match and match.requirement then
+        return match.requirement, match.alternativeIndex
+    end
+    return setup and setup.equipment[slotKey], nil
 end
 
 function Inventory:Refresh()

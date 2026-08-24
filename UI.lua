@@ -495,7 +495,23 @@ function UI:CreateEditor()
         { 0.32, 0.28, 0.2, 0.9 }
     )
 
-    self.editorTitle = makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SLOT_EDITOR), 14, 5, 402, "ZoFontWinH3")
+    self.editorTitle = makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SLOT_EDITOR), 14, 5, 165, "ZoFontWinH3")
+    self.alternativeCombo = makeCombo(
+        panel,
+        "GravvyBuildPlannerAlternativeCombo",
+        181,
+        7,
+        136
+    )
+    self.setAlternativeButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SET_WIDE),
+        88
+    )
+    self.setAlternativeButton:SetAnchor(TOPRIGHT, panel, TOPRIGHT, -14, 8)
+    self.setAlternativeButton:SetHandler("OnClicked", function()
+        self:ApplySetAlternative()
+    end)
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SET), 14, 45, 105)
     self.setEdit = makeEdit(panel, "GravvyBuildPlannerSetEdit", 122, 45, 290)
     self.setEdit:SetHandler("OnTextChanged", function() self:OnSetTextChanged() end)
@@ -863,7 +879,7 @@ end
 
 function UI:CreateHelpDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerHelpDialog")
-    dialog:SetDimensions(700, 625)
+    dialog:SetDimensions(700, 700)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetHidden(true)
     dialog:SetDrawTier(DT_HIGH)
@@ -887,14 +903,15 @@ function UI:CreateHelpDialog()
     )
     local content = makeLabel(
         dialog,
-        GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT),
+        GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES),
         22,
         52,
         656,
         "ZoFontGameSmall"
     )
     content:SetVerticalAlignment(TEXT_ALIGN_TOP)
-    content:SetHeight(505)
+    content:SetHeight(580)
 
     local close = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 100)
     close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
@@ -1072,6 +1089,26 @@ function UI:GetRequirementSummary(requirement)
     return name
 end
 
+function UI:GetAlternativeChoices(setup, slotKey)
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_PRIMARY), value = 0 },
+    }
+    local alternatives = self.owner.data:GetAlternatives(setup, slotKey)
+    for index = 1, #alternatives do
+        choices[#choices + 1] = {
+            label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE, index),
+            value = index,
+        }
+    end
+    if setup.equipment[slotKey] and #alternatives < 8 then
+        choices[#choices + 1] = {
+            label = GetString(SI_GRAVVY_BUILD_PLANNER_NEW_ALTERNATIVE),
+            value = #alternatives + 1,
+        }
+    end
+    return choices
+end
+
 function UI:RefreshRows()
     local setup = self.owner.data:GetCurrentSetup()
     for _, slotKey in ipairs(Slots.ORDER) do
@@ -1104,12 +1141,8 @@ function UI:RefreshRows()
         local marker = ""
         local edge = { 0.36, 0.32, 0.24, 0.95 }
         if requirement and not occupied then
-            local match = self.owner.inventory and self.owner.inventory:GetMatch(
-                setup.id,
-                slotKey,
-                requirement,
-                setup
-            )
+            local match = self.owner.inventory
+                and self.owner.inventory:GetMatch(setup.id, slotKey)
             if match and match.exact then
                 marker = "✓"
                 edge = { 0.3, 0.78, 0.3, 1 }
@@ -1130,6 +1163,14 @@ function UI:RefreshRows()
         end
         row.backdrop:SetEdgeColor(edge[1], edge[2], edge[3], edge[4])
         row.status:SetText(marker)
+        local alternativeCount = #self.owner.data:GetAlternatives(setup, slotKey)
+        if alternativeCount > 0 then
+            summary = zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_SUMMARY_ALTERNATIVES,
+                summary,
+                alternativeCount
+            )
+        end
         row.slotSummary = slotName(slotKey) .. ":  " .. summary
         row:SetText("")
         row:SetEnabled(true)
@@ -1147,6 +1188,7 @@ end
 
 function UI:EditSlot(slotKey)
     self.selectedSlot = slotKey
+    self.editorAlternativeIndex = nil
     self:LoadEditor()
     self:RefreshRows()
 end
@@ -1154,9 +1196,30 @@ end
 function UI:LoadEditor()
     self.loadingEditor = true
     local setup = self.owner.data:GetCurrentSetup()
-    local requirement = setup.equipment[self.selectedSlot] or {}
+    local alternatives = self.owner.data:GetAlternatives(setup, self.selectedSlot)
+    if self.editorAlternativeIndex and self.editorAlternativeIndex > #alternatives + 1 then
+        self.editorAlternativeIndex = nil
+    end
+    local requirement = self.editorAlternativeIndex
+        and (alternatives[self.editorAlternativeIndex]
+            or setup.equipment[self.selectedSlot])
+        or setup.equipment[self.selectedSlot]
+        or {}
     local definition = Slots:Get(self.selectedSlot)
     self.editorTitle:SetText(slotName(self.selectedSlot))
+    setComboChoices(
+        self.alternativeCombo,
+        self:GetAlternativeChoices(setup, self.selectedSlot),
+        self.editorAlternativeIndex or 0,
+        function(value)
+            self.editorAlternativeIndex = value ~= 0 and value or nil
+            self:LoadEditor()
+        end
+    )
+    local savedAlternative = self.editorAlternativeIndex
+        and alternatives[self.editorAlternativeIndex]
+    self.setAlternativeButton:SetEnabled(savedAlternative ~= nil)
+    self.setAlternativeButton:SetAlpha(savedAlternative and 1 or 0.55)
 
     self.suppressSetSearch = true
     self.setEdit:SetText(requirement.setName or "")
@@ -1210,8 +1273,11 @@ function UI:LoadEditor()
     self.noteEdit:SetText(requirement.note or "")
     local acquisition = setup.acquisition[self.selectedSlot]
     self.editorPreferredRoute = acquisition and acquisition.preferredRoute or nil
-    self.slotActionButton:SetEnabled(setup.equipment[self.selectedSlot] ~= nil)
-    self.slotActionButton:SetAlpha(setup.equipment[self.selectedSlot] and 1 or 0.55)
+    local editingPrimary = self.editorAlternativeIndex == nil
+    self.slotActionButton:SetEnabled(editingPrimary and setup.equipment[self.selectedSlot] ~= nil)
+    self.slotActionButton:SetAlpha(
+        editingPrimary and setup.equipment[self.selectedSlot] and 1 or 0.55
+    )
     self.loadingEditor = false
     self:RefreshEditorPreview()
 end
@@ -1337,7 +1403,9 @@ function UI:ReadEditorRequirement()
             gearCap
         )
     end
-    local saved = setup.equipment[self.selectedSlot]
+    local saved = self.editorAlternativeIndex
+        and self.owner.data:GetAlternatives(setup, self.selectedSlot)[self.editorAlternativeIndex]
+        or setup.equipment[self.selectedSlot]
     if saved
         and zo_strlower(zo_strtrim(saved.setName or ""))
             == zo_strlower(zo_strtrim(requirement.setName or "")) then
@@ -1509,6 +1577,19 @@ function UI:ShowSlotTooltip(slotKey, control)
     end
     if itemLink and itemLink ~= "" then
         self:ShowItemTooltip(control, itemLink, requirement)
+        local alternativeCount = #self.owner.data:GetAlternatives(setup, displaySlot)
+        if alternativeCount > 0 and ItemTooltip.AddLine then
+            ItemTooltip:AddLine(
+                zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_COUNT,
+                    alternativeCount
+                ),
+                "ZoFontGameSmall",
+                0.82,
+                0.76,
+                0.58
+            )
+        end
     end
 end
 
@@ -1525,39 +1606,108 @@ function UI:SaveSlot()
         end
     end
 
-    local ok, message = self.owner.data:SetEquipment(build.id, setup.id, self.selectedSlot, requirement)
+    local ok, message
+    if self.editorAlternativeIndex then
+        ok, message = self.owner.data:SetAlternative(
+            build.id,
+            setup.id,
+            self.selectedSlot,
+            self.editorAlternativeIndex,
+            requirement
+        )
+    else
+        ok, message = self.owner.data:SetEquipment(
+            build.id,
+            setup.id,
+            self.selectedSlot,
+            requirement
+        )
+    end
     if not ok then
         self:SetStatus(message, true)
         return
     end
-    self.owner.data:SetPreferredRoute(
-        build.id,
-        setup.id,
-        self.selectedSlot,
-        self.editorPreferredRoute
-    )
+    if not self.editorAlternativeIndex then
+        self.owner.data:SetPreferredRoute(
+            build.id,
+            setup.id,
+            self.selectedSlot,
+            self.editorPreferredRoute
+        )
+    end
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
         self.owner.inventory:Refresh()
     end
     self:RefreshRows()
     self:LoadEditor()
-    self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SLOT_SAVED, slotName(self.selectedSlot)))
+    local statusId = self.editorAlternativeIndex
+        and SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_SAVED
+        or SI_GRAVVY_BUILD_PLANNER_SLOT_SAVED
+    self:SetStatus(zo_strformat(statusId, slotName(self.selectedSlot)))
 end
 
 function UI:ClearSlot()
     local setup, build = self.owner.data:GetCurrentSetup()
-    local ok, message = self.owner.data:SetEquipment(build.id, setup.id, self.selectedSlot, nil)
+    local clearingAlternative = self.editorAlternativeIndex ~= nil
+    local ok, message
+    if clearingAlternative then
+        ok, message = self.owner.data:SetAlternative(
+            build.id,
+            setup.id,
+            self.selectedSlot,
+            self.editorAlternativeIndex,
+            nil
+        )
+    else
+        ok, message = self.owner.data:SetEquipment(
+            build.id,
+            setup.id,
+            self.selectedSlot,
+            nil
+        )
+    end
     if not ok then
         self:SetStatus(message, true)
         return
+    end
+    if clearingAlternative then
+        self.editorAlternativeIndex = nil
     end
     if self.owner.inventory then
         self.owner.inventory:Refresh()
     end
     self:RefreshRows()
     self:LoadEditor()
-    self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SLOT_CLEARED, slotName(self.selectedSlot)))
+    local statusId = clearingAlternative
+        and SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_REMOVED
+        or SI_GRAVVY_BUILD_PLANNER_SLOT_CLEARED
+    self:SetStatus(zo_strformat(statusId, slotName(self.selectedSlot)))
+end
+
+function UI:ApplySetAlternative()
+    if not self.editorAlternativeIndex then
+        return
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, result = self.owner.data:ApplySetAlternative(
+        build.id,
+        setup.id,
+        self.selectedSlot,
+        self.editorAlternativeIndex
+    )
+    if not ok then
+        self:SetStatus(result, true)
+        return
+    end
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
+    end
+    self:RefreshRows()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SET_ALTERNATIVE_APPLIED,
+        result
+    ))
 end
 
 function UI:GetTransferTargets(requirement)

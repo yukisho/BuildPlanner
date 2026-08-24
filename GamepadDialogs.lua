@@ -310,11 +310,20 @@ function Gamepad:InitializeEditDialog()
         blockDialogReleaseOnPress = true,
         gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
         setup = function(dialog)
-            self:LoadPendingRequirement()
+            self.editDialog = dialog
+            if not self.pendingSlot then
+                self:LoadPendingRequirement(self.pendingAlternativeIndex)
+            end
             dialog:setupFunc()
         end,
         title = { text = SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT_TITLE },
         parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_REQUIREMENT,
+                function() return self:GetPendingAlternativeChoices() end,
+                function() return self.pendingAlternativeIndex or 0 end,
+                function(value) self:SelectPendingAlternative(value) end
+            ),
             textFieldEntry(SI_GRAVVY_BUILD_PLANNER_SET, {
                 value = function() return self.pendingRequirement.setName end,
                 changed = function(value) self.pendingRequirement.setName = value end,
@@ -394,6 +403,31 @@ function Gamepad:InitializeEditDialog()
                 function()
                     local setup = self.owner.data:GetCurrentSetup()
                     return setup.equipment[self.pendingSlot] ~= nil
+                        and self.pendingAlternativeIndex == nil
+                end
+            ),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_SET_WIDE,
+                function() self:ApplyPendingSetAlternative() end,
+                function()
+                    local setup = self.owner.data:GetCurrentSetup()
+                    return self.pendingAlternativeIndex ~= nil
+                        and self.owner.data:GetAlternatives(
+                            setup,
+                            self.pendingSlot
+                        )[self.pendingAlternativeIndex] ~= nil
+                end
+            ),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_REMOVE_ALTERNATIVE,
+                function() self:RemovePendingAlternative() end,
+                function()
+                    local setup = self.owner.data:GetCurrentSetup()
+                    return self.pendingAlternativeIndex ~= nil
+                        and self.owner.data:GetAlternatives(
+                            setup,
+                            self.pendingSlot
+                        )[self.pendingAlternativeIndex] ~= nil
                 end
             ),
         },
@@ -424,10 +458,43 @@ function Gamepad:InitializeEditDialog()
     })
 end
 
-function Gamepad:LoadPendingRequirement()
-    self.pendingSlot = self:GetTargetSlot()
+function Gamepad:GetPendingAlternativeChoices()
     local setup = self.owner.data:GetCurrentSetup()
-    local saved = setup.equipment[self.pendingSlot] or {}
+    local alternatives = self.owner.data:GetAlternatives(setup, self.pendingSlot)
+    local choices = {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_PRIMARY), value = 0 },
+    }
+    for index = 1, #alternatives do
+        choices[#choices + 1] = {
+            label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE, index),
+            value = index,
+        }
+    end
+    if setup.equipment[self.pendingSlot] and #alternatives < 8 then
+        choices[#choices + 1] = {
+            label = GetString(SI_GRAVVY_BUILD_PLANNER_NEW_ALTERNATIVE),
+            value = #alternatives + 1,
+        }
+    end
+    return choices
+end
+
+function Gamepad:SelectPendingAlternative(value)
+    self:LoadPendingRequirement(value ~= 0 and value or nil)
+    if self.editDialog then
+        self.editDialog:setupFunc()
+    end
+end
+
+function Gamepad:LoadPendingRequirement(alternativeIndex)
+    self.pendingSlot = self.pendingSlot or self:GetTargetSlot()
+    local setup = self.owner.data:GetCurrentSetup()
+    local alternatives = self.owner.data:GetAlternatives(setup, self.pendingSlot)
+    self.pendingAlternativeIndex = alternativeIndex
+    local saved = alternativeIndex
+        and (alternatives[alternativeIndex] or setup.equipment[self.pendingSlot])
+        or setup.equipment[self.pendingSlot]
+        or {}
     self.pendingRequirement = {
         setName = saved.setName or "",
         setId = saved.setId,
@@ -529,12 +596,23 @@ function Gamepad:SavePendingRequirement()
             requirement.enchantmentId = resolved.enchantmentId
         end
     end
-    local ok, result = self.owner.data:SetEquipment(
-        build.id,
-        setup.id,
-        self.pendingSlot,
-        requirement
-    )
+    local ok, result
+    if self.pendingAlternativeIndex then
+        ok, result = self.owner.data:SetAlternative(
+            build.id,
+            setup.id,
+            self.pendingSlot,
+            self.pendingAlternativeIndex,
+            requirement
+        )
+    else
+        ok, result = self.owner.data:SetEquipment(
+            build.id,
+            setup.id,
+            self.pendingSlot,
+            requirement
+        )
+    end
     if not ok then
         return false, result
     end
@@ -550,8 +628,57 @@ end
 
 function Gamepad:ShowEditDialog()
     if self:IsTargetEditable() then
+        self.pendingSlot = nil
+        self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:RemovePendingAlternative()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetAlternative(
+        build.id,
+        setup.id,
+        self.pendingSlot,
+        self.pendingAlternativeIndex,
+        nil
+    )
+    if not ok then
+        showError(message)
+        return
+    end
+    self.pendingAlternativeIndex = nil
+    self.owner.inventory:Refresh()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_REMOVED,
+        slotName(self.pendingSlot)
+    ))
+    ZO_Dialogs_ReleaseDialogOnButtonPress(EDIT_DIALOG)
+end
+
+function Gamepad:ApplyPendingSetAlternative()
+    local ok, message = self:SavePendingRequirement()
+    if not ok then
+        showError(message)
+        return
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    ok, message = self.owner.data:ApplySetAlternative(
+        build.id,
+        setup.id,
+        self.pendingSlot,
+        self.pendingAlternativeIndex
+    )
+    if not ok then
+        showError(message)
+        return
+    end
+    self.owner.inventory:Refresh()
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SET_ALTERNATIVE_APPLIED,
+        message
+    ))
+    ZO_Dialogs_ReleaseDialogOnButtonPress(EDIT_DIALOG)
 end
 
 function Gamepad:InitializeManageDialog()
@@ -953,7 +1080,10 @@ function Gamepad:InitializeHelpDialog()
     ZO_Dialogs_RegisterCustomDialog(HELP_DIALOG, {
         gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
         title = { text = SI_GRAVVY_BUILD_PLANNER_HELP_TITLE },
-        mainText = { text = SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT },
+        mainText = { text = function()
+            return GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
+        end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
         },

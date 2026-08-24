@@ -1,9 +1,10 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 2
+local SCHEMA_VERSION = 3
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
+local MAX_ALTERNATIVES = 8
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local validAcquisitionRoutes = {
     buy = true,
@@ -129,6 +130,32 @@ local function copyRequirement(source)
         end
     end
     return copy
+end
+
+local function sameSet(left, right)
+    if left.setId and right.setId then
+        return left.setId == right.setId
+    end
+    local leftName = zo_strlower(trim(left.setName))
+    local rightName = zo_strlower(trim(right.setName))
+    return leftName ~= "" and leftName == rightName
+end
+
+local function normalizeAlternative(slotKey, source, primary)
+    local requirement = copyRequirement(source)
+    if not requirement
+        or not GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+        return nil
+    end
+    local occupiedOffHand = GravvyBuildPlannerSlots:GetOccupiedOffHand(
+        slotKey,
+        requirement.weaponType
+    )
+    requirement.occupiesOffHand = occupiedOffHand ~= nil
+    if primary and requirement.occupiesOffHand ~= (primary.occupiesOffHand == true) then
+        return nil
+    end
+    return requirement
 end
 
 local function readWholeNumber(value, minimum)
@@ -311,11 +338,10 @@ function Data:Migrate()
             setup.defaultLevel = math.max(1, math.floor(tonumber(setup.defaultLevel) or 50))
             setup.defaultChampionPoints = math.max(0, math.floor(tonumber(setup.defaultChampionPoints) or 160))
             setup.equipment = type(setup.equipment) == "table" and setup.equipment or {}
-            -- Alternate groups live beside the primary loadout so they can be
-            -- added later without changing the equipment slot format.
-            setup.alternativeGroups = type(setup.alternativeGroups) == "table"
-                and setup.alternativeGroups
+            setup.alternatives = type(setup.alternatives) == "table"
+                and setup.alternatives
                 or {}
+            setup.alternativeGroups = nil
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -354,6 +380,21 @@ function Data:Migrate()
                 if offHand then
                     requirement.occupiesOffHand = true
                     setup.equipment[offHand] = nil
+                end
+            end
+            for slotKey, entries in pairs(setup.alternatives) do
+                local primary = setup.equipment[slotKey]
+                if not primary or type(entries) ~= "table" then
+                    setup.alternatives[slotKey] = nil
+                else
+                    local alternatives = {}
+                    for _, entry in ipairs(entries) do
+                        local requirement = normalizeAlternative(slotKey, entry, primary)
+                        if requirement and #alternatives < MAX_ALTERNATIVES then
+                            alternatives[#alternatives + 1] = requirement
+                        end
+                    end
+                    setup.alternatives[slotKey] = #alternatives > 0 and alternatives or nil
                 end
             end
         end
@@ -562,7 +603,7 @@ function Data:DuplicateBuild(id, name)
             defaultLevel = sourceSetup.defaultLevel,
             defaultChampionPoints = sourceSetup.defaultChampionPoints,
             equipment = deepCopy(sourceSetup.equipment),
-            alternativeGroups = deepCopy(sourceSetup.alternativeGroups),
+            alternatives = deepCopy(sourceSetup.alternatives),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -656,6 +697,25 @@ function Data:ImportBuild(source)
             end
         end
 
+        local alternatives = {}
+        if sourceSetup.alternatives ~= nil and type(sourceSetup.alternatives) ~= "table" then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        for slotKey, entries in pairs(sourceSetup.alternatives or {}) do
+            local primary = equipment[slotKey]
+            if not primary or type(entries) ~= "table" or #entries > MAX_ALTERNATIVES then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            alternatives[slotKey] = {}
+            for _, entry in ipairs(entries) do
+                local requirement = normalizeAlternative(slotKey, entry, primary)
+                if not requirement then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                alternatives[slotKey][#alternatives[slotKey] + 1] = requirement
+            end
+        end
+
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
             name = setupName,
@@ -664,7 +724,7 @@ function Data:ImportBuild(source)
             defaultLevel = setupChanges.defaultLevel or 50,
             defaultChampionPoints = setupChanges.defaultChampionPoints or 160,
             equipment = equipment,
-            alternativeGroups = {},
+            alternatives = alternatives,
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -734,7 +794,7 @@ function Data:CreateSetup(buildId, name, source)
         defaultLevel = source and source.defaultLevel or 50,
         defaultChampionPoints = source and source.defaultChampionPoints or 160,
         equipment = source and deepCopy(source.equipment) or {},
-        alternativeGroups = source and deepCopy(source.alternativeGroups) or {},
+        alternatives = source and deepCopy(source.alternatives) or {},
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -843,6 +903,7 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     end
     if values == nil then
         setup.equipment[slotKey] = nil
+        setup.alternatives[slotKey] = nil
         setup.acquisition[slotKey] = nil
         setup.updatedAt = now()
         build.updatedAt = setup.updatedAt
@@ -868,13 +929,100 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     )
     requirement.occupiesOffHand = clearedOffHand ~= nil
     setup.equipment[slotKey] = requirement
+    local alternatives = setup.alternatives[slotKey]
+    if alternatives then
+        local compatible = {}
+        for _, alternative in ipairs(alternatives) do
+            alternative = normalizeAlternative(slotKey, alternative, requirement)
+            if alternative then
+                compatible[#compatible + 1] = alternative
+            end
+        end
+        setup.alternatives[slotKey] = #compatible > 0 and compatible or nil
+    end
     if clearedOffHand then
         setup.equipment[clearedOffHand] = nil
+        setup.alternatives[clearedOffHand] = nil
         setup.acquisition[clearedOffHand] = nil
     end
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true, requirement, clearedOffHand
+end
+
+function Data:GetAlternatives(setup, slotKey)
+    return setup and setup.alternatives and setup.alternatives[slotKey] or {}
+end
+
+function Data:SetAlternative(buildId, setupId, slotKey, index, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    local primary = setup and setup.equipment[slotKey]
+    if not primary then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SOURCE_SLOT_EMPTY)
+    end
+
+    local alternatives = setup.alternatives[slotKey] or {}
+    index = tonumber(index) or (#alternatives + 1)
+    if index ~= math.floor(index) or index < 1 or index > #alternatives + 1
+        or index > MAX_ALTERNATIVES then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_ALTERNATIVE_LIMIT)
+    end
+    if values == nil then
+        if not alternatives[index] then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT)
+        end
+        table.remove(alternatives, index)
+        setup.alternatives[slotKey] = #alternatives > 0 and alternatives or nil
+    else
+        local requirement = normalizeAlternative(slotKey, values, primary)
+        if not requirement then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_ALTERNATIVE)
+        end
+        alternatives[index] = requirement
+        setup.alternatives[slotKey] = alternatives
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, values and alternatives[index] or nil
+end
+
+function Data:ApplySetAlternative(buildId, setupId, sourceSlot, alternativeIndex)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    local primary = setup and setup.equipment[sourceSlot]
+    local source = primary and self:GetAlternatives(setup, sourceSlot)[alternativeIndex]
+    if not source or trim(primary.setName) == "" or trim(source.setName) == "" then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_ALTERNATIVE)
+    end
+
+    local added = 0
+    for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
+        local planned = setup.equipment[slotKey]
+        if planned and slotKey ~= sourceSlot and sameSet(planned, primary) then
+            local replacement = copyRequirement(planned)
+            replacement.setId = source.setId
+            replacement.setName = source.setName
+            replacement.itemLink = nil
+            replacement.itemId = nil
+            replacement.itemName = nil
+            replacement.enchantmentId = nil
+            local duplicate = false
+            for _, existing in ipairs(self:GetAlternatives(setup, slotKey)) do
+                if sameSet(existing, replacement) then
+                    duplicate = true
+                    break
+                end
+            end
+            if not duplicate then
+                local ok = self:SetAlternative(buildId, setupId, slotKey, nil, replacement)
+                if ok then
+                    added = added + 1
+                end
+            end
+        end
+    end
+    return true, added
 end
 
 function Data:SetPreferredRoute(buildId, setupId, slotKey, route)
@@ -916,7 +1064,10 @@ local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot,
 
     local sourceAcquisition = setup.acquisition[sourceSlot]
     local targetAcquisition = setup.acquisition[targetSlot]
+    local sourceAlternatives = deepCopy(setup.alternatives[sourceSlot] or {})
+    local targetAlternatives = setup.alternatives[targetSlot]
     setup.acquisition[targetSlot] = nil
+    setup.alternatives[targetSlot] = nil
     local ok, result, clearedOffHand = self:SetEquipment(
         buildId,
         setupId,
@@ -925,10 +1076,19 @@ local function transferEquipment(self, buildId, setupId, sourceSlot, targetSlot,
     )
     if not ok then
         setup.acquisition[targetSlot] = targetAcquisition
+        setup.alternatives[targetSlot] = targetAlternatives
         return false, result
+    end
+    for _, alternative in ipairs(sourceAlternatives) do
+        alternative.itemLink = nil
+        alternative.itemId = nil
+        alternative.itemName = nil
+        alternative.enchantmentId = nil
+        self:SetAlternative(buildId, setupId, targetSlot, nil, alternative)
     end
     if move then
         setup.equipment[sourceSlot] = nil
+        setup.alternatives[sourceSlot] = nil
         setup.acquisition[sourceSlot] = nil
         if sourceAcquisition and sourceAcquisition.preferredRoute then
             setup.acquisition[targetSlot] = {

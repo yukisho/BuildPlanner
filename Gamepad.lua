@@ -105,7 +105,7 @@ function Gamepad:GetTargetRoutes()
     local setup = self.owner.data:GetCurrentSetup()
     local resolved = self.owner.itemResolver:Resolve(slotKey, requirement, setup)
     local state = self.owner.acquisition:Classify(slotKey, requirement, setup, resolved)
-    local owned = self.owner.inventory:GetMatch(setup.id, slotKey, requirement, setup)
+    local owned = self.owner.inventory:GetMatch(setup.id, slotKey)
     return self.owner.acquisition:GetAvailableRoutes(state, owned)
 end
 
@@ -290,7 +290,16 @@ function Gamepad:Refresh(force)
                 GetString(slotStringIds[mainHand])
             ))
         else
-            entry:AddSubLabel(requirementSummary(requirement))
+            local summary = requirementSummary(requirement)
+            local alternativeCount = #self.owner.data:GetAlternatives(setup, slotKey)
+            if alternativeCount > 0 then
+                summary = zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_SUMMARY_ALTERNATIVES,
+                    summary,
+                    alternativeCount
+                )
+            end
+            entry:AddSubLabel(summary)
             local status = self:GetAcquisitionStatus(slotKey, requirement, setup)
             if status then
                 entry:AddSubLabel(status)

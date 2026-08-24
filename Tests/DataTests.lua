@@ -138,6 +138,19 @@ local ok = data:SetEquipment(build.id, setup.id, "waist", {
     enchantmentName = "Magicka",
 })
 expect(ok, "armor requirement should be accepted")
+ok = data:SetAlternative(build.id, setup.id, "waist", nil, {
+    setName = "Order's Wrath",
+    armorType = 1,
+    traitType = 12,
+    enchantmentName = "Magicka",
+})
+expect(ok, "a compatible slot alternative should be accepted")
+expectEqual(#data:GetAlternatives(setup, "waist"), 1, "alternatives should retain their order")
+ok = data:SetAlternative(build.id, setup.id, "waist", nil, {
+    setName = "Invalid Weapon",
+    weaponType = WEAPONTYPE_AXE,
+})
+expect(not ok, "slot alternatives should use the same equipment family as their primary")
 ok = data:SetPreferredRoute(build.id, setup.id, "waist", "buy")
 expect(ok, "a supported acquisition route should be saved")
 expectEqual(setup.acquisition.waist.preferredRoute, "buy", "the preferred route should remain separate from equipment")
@@ -175,6 +188,13 @@ ok = data:SetEquipment(build.id, setup.id, "feet", {
     enchantmentId = 5678,
 })
 expect(ok, "saved armor requirement should be accepted")
+ok = data:ApplySetAlternative(build.id, setup.id, "waist", 1)
+expect(ok, "a saved replacement set should apply to matching primary-set slots")
+expectEqual(
+    data:GetAlternatives(setup, "feet")[1].setName,
+    "Order's Wrath",
+    "set-wide alternatives should keep each matching slot's other requirements"
+)
 ok = data:CopyEquipment(build.id, setup.id, "feet", "head")
 expect(ok, "armor requirements should copy to other armor slots")
 expect(setup.equipment.feet, "copy should preserve the source slot")
@@ -230,7 +250,7 @@ expectEqual(build.name, oldName, "failed update should not partially rename buil
 local variant = data:DuplicateSetup(build.id, setup.id)
 expect(variant, "setup should be duplicated")
 expect(variant.equipment.waist ~= setup.equipment.waist, "equipment should be copied")
-expect(variant.alternativeGroups ~= setup.alternativeGroups, "future alternate groups should be copied independently")
+expect(variant.alternatives ~= setup.alternatives, "slot alternatives should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -238,8 +258,8 @@ expect(duplicate, "build should be duplicated")
 expectEqual(#duplicate.setups, #build.setups, "all setups should be copied")
 expect(duplicate.setups[1].equipment ~= build.setups[1].equipment, "build equipment should be copied")
 expect(
-    duplicate.setups[1].alternativeGroups ~= build.setups[1].alternativeGroups,
-    "build copies should not share future alternate groups"
+    duplicate.setups[1].alternatives ~= build.setups[1].alternatives,
+    "build copies should not share slot alternatives"
 )
 expectEqual(next(duplicate.setups[1].acquisition), nil, "build copy should not copy acquisition state")
 
@@ -261,6 +281,11 @@ expectEqual(
     build.setups[1].equipment.waist.setName,
     "share codes should retain equipment requirements"
 )
+expectEqual(
+    decodedBuild.setups[1].alternatives.waist[1].setName,
+    "Order's Wrath",
+    "share codes should retain ordered slot alternatives"
+)
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -272,6 +297,11 @@ expectEqual(
     "share codes should retain preferred acquisition routes"
 )
 expectEqual(imported.selectedSetupId, imported.setups[2].id, "import should restore the selected setup")
+expectEqual(
+    imported.setups[1].alternatives.waist[1].setName,
+    "Order's Wrath",
+    "import should preserve shared alternatives"
+)
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local nextBuildId = data.saved.nextBuildId
@@ -316,10 +346,10 @@ expect(repaired.saved.builds[1].setups[1].id ~= repaired.saved.builds[1].setups[
 expect(repaired.saved.builds[1].setups[1].name ~= repaired.saved.builds[1].setups[2].name, "duplicate setup names should be repaired")
 expectEqual(repaired.saved.builds[1].setups[1].equipment.frontOff, nil, "invalid two-handed off-hand should be removed")
 expect(
-    type(repaired.saved.builds[1].setups[1].alternativeGroups) == "table",
-    "migration should add the alternate-group extension point"
+    type(repaired.saved.builds[1].setups[1].alternatives) == "table",
+    "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 2, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 3, "migration should advance the saved-data schema")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

@@ -1,3 +1,16 @@
+0.7.0
+- Added up to eight ordered fallback alternatives for each planned equipment slot.
+- Added Primary, Alternative, and New Alternative choices to the keyboard and
+  gamepad equipment editors.
+- Added set-wide fallback application for replacing every matching piece of a
+  primary set while preserving each slot's type, trait, enchantment, and level.
+- Allowed owned fallback pieces to satisfy setup progress without increasing the
+  number of planned slots or consuming one inventory item more than once.
+- Made Shopping List choose one tradeable fallback when the primary requirement
+  cannot be bought, rather than exporting every option as a separate purchase.
+- Preserved alternatives through slot copies, moves, setup duplication, full-build
+  sharing, and import. Existing GBP version-1 codes remain importable.
+
 0.6.0
 - Replaced the keyboard equipment list with an ESO-style paper-doll layout
   using the native player silhouette and empty-slot artwork.

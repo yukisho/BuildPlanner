@@ -781,6 +781,24 @@ expectEqual(setup.equipment.head.armorType, ARMORTYPE_MEDIUM, "selected armor ty
 expectEqual(setup.equipment.head.championPoints, 160, "numeric editor values should be saved")
 expectEqual(setup.equipment.head.enchantmentCategory, ENCHANTMENT_SEARCH_CATEGORY_STAMINA, "enchantment category should be saved")
 expect(setup.equipment.head.itemLink, "matching collection piece should be resolved")
+for _, entry in ipairs(ui.alternativeCombo.items) do
+    if entry.label == GetString(SI_GRAVVY_BUILD_PLANNER_NEW_ALTERNATIVE) then
+        entry.callback()
+        break
+    end
+end
+expectEqual(ui.editorAlternativeIndex, 1, "keyboard users should be able to start a slot alternative")
+ui.setEdit:SetText("Order's Wrath")
+ui:ResolveTypedSet()
+ui:SaveSlot()
+expectEqual(
+    setup.alternatives.head[1].setId,
+    12,
+    "keyboard alternatives should save through the normal equipment editor"
+)
+expect(ui.setAlternativeButton.enabled, "saved alternatives should enable set-wide application")
+ui.editorAlternativeIndex = nil
+ui:LoadEditor()
 expect(ui.acquisitionLabel.text:find(
     GetString(SI_GRAVVY_BUILD_PLANNER_ACQUISITION_RECONSTRUCT),
     1,
@@ -804,12 +822,19 @@ ui:TransferSlot(false)
 expect(setup.equipment.head, "copy action should keep its source")
 expect(setup.equipment.shoulders, "copy action should fill its destination")
 expectEqual(setup.equipment.shoulders.itemLink, nil, "copied UI requirements should resolve for their new slot")
+expectEqual(
+    setup.alternatives.shoulders[1].setId,
+    12,
+    "copying a slot should carry its fallback alternatives"
+)
 
 ui:OpenSlotActionDialog()
 ui.slotTargetCombo.selectedValue = "hands"
 ui:TransferSlot(true)
 expectEqual(setup.equipment.shoulders, nil, "move action should clear its source")
 expect(setup.equipment.hands, "move action should fill its destination")
+expectEqual(setup.alternatives.shoulders, nil, "moving a slot should clear source alternatives")
+expectEqual(setup.alternatives.hands[1].setId, 12, "moving a slot should carry its alternatives")
 
 itemLinks["owned:head"] = {
     itemId = 3401,
@@ -881,8 +906,22 @@ itemLinks["owned:low-level-head"] = {
     championPoints = 0,
     enchantId = 26588,
 }
+itemLinks["owned:alternative-feet"] = {
+    itemId = 1207,
+    name = "Shoes of Order's Wrath",
+    setId = 12,
+    setName = "Order's Wrath",
+    equipType = EQUIP_TYPE_FEET,
+    armorType = ARMORTYPE_LIGHT,
+    weaponType = WEAPONTYPE_NONE,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+    quality = ITEM_QUALITY_LEGENDARY,
+    level = 50,
+    championPoints = 160,
+    enchantId = 501,
+}
 testBags[BAG_WORN] = { "owned:head" }
-testBags[BAG_BACKPACK] = { "owned:hands", "owned:ring" }
+testBags[BAG_BACKPACK] = { "owned:hands", "owned:ring", "owned:alternative-feet" }
 testBags[BAG_BANK] = { "owned:waist" }
 
 expectEqual(owner.acquisition:CompareItem(
@@ -896,6 +935,18 @@ local _, currentBuild = BuildPlannerTestData:GetCurrentSetup()
 BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "ring2", {
     setName = "Pillar of Nirn",
 })
+BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "feet", {
+    setId = 34,
+    setName = "Pillar of Nirn",
+    armorType = ARMORTYPE_MEDIUM,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+})
+BuildPlannerTestData:SetAlternative(currentBuild.id, setup.id, "feet", nil, {
+    setId = 12,
+    setName = "Order's Wrath",
+    armorType = ARMORTYPE_LIGHT,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+})
 owner.inventory:Refresh()
 local headMatch = owner.inventory:GetMatch(setup.id, "head")
 expect(headMatch and headMatch.exact, "equipped exact pieces should satisfy a planned slot")
@@ -906,6 +957,9 @@ expectEqual(#handMatch.differences, 3, "adjustable match should report trait, en
 local waistMatch = owner.inventory:GetMatch(setup.id, "waist")
 expect(waistMatch and waistMatch.exact, "manual set names should match banked pieces")
 expectEqual(waistMatch.location, "bank", "bank matches should retain their location")
+local feetMatch = owner.inventory:GetMatch(setup.id, "feet")
+expect(feetMatch and feetMatch.exact, "an exact fallback item should satisfy its planned slot")
+expectEqual(feetMatch.alternativeIndex, 1, "owned matches should identify the chosen alternative")
 local ringMatches = (owner.inventory:GetMatch(setup.id, "ring1") and 1 or 0)
     + (owner.inventory:GetMatch(setup.id, "ring2") and 1 or 0)
 expectEqual(ringMatches, 1, "one owned ring should not satisfy two planned slots")
@@ -959,6 +1013,16 @@ BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "head", {
     enchantmentCategory = ENCHANTMENT_SEARCH_CATEGORY_STAMINA,
     enchantmentName = "Stamina",
 })
+BuildPlannerTestData:SetEquipment(currentBuild.id, setup.id, "backMain", {
+    setId = 34,
+    setName = "Pillar of Nirn",
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+})
+BuildPlannerTestData:SetAlternative(currentBuild.id, setup.id, "backMain", nil, {
+    setId = 12,
+    setName = "Order's Wrath",
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+})
 owner.inventory:Refresh()
 
 ui:EditSlot("chest")
@@ -975,21 +1039,25 @@ expectEqual(
 )
 
 local review = owner.shopping:BuildReview(false, false)
-expectEqual(review.included, 2, "only missing tradeable equipment should be included")
+expectEqual(review.included, 3, "missing tradeable equipment and viable fallbacks should be included")
 expect(review.owned >= 1, "owned requirements should be reported separately")
 expectEqual(review.glyphs, 0, "glyphs should be opt-in")
-expectEqual(#review.items, 2, "each eligible gear requirement should create one entry")
+expectEqual(#review.items, 3, "each eligible slot should create only one gear entry")
 expectEqual(review.items[1].match.qualityMode, "any", "lower-quality gear should remain eligible for upgrading")
 local hasUnrestrictedTrait = false
+local hasAlternative = false
 for _, item in ipairs(review.items) do
     hasUnrestrictedTrait = hasUnrestrictedTrait
         or item.match.traitType == ITEM_TRAIT_TYPE_NONE
+    hasAlternative = hasAlternative
+        or item.note:find("Alternative 1", 1, true) ~= nil
 end
 expect(hasUnrestrictedTrait, "an unspecified trait should remain unrestricted")
+expect(hasAlternative, "shopping export should identify a fallback chosen over a bound primary")
 
 local glyphReview = owner.shopping:BuildReview(false, true)
 expectEqual(glyphReview.glyphs, 2, "missing enchantments should be exported even when owned gear is skipped")
-expectEqual(#glyphReview.items, 4, "glyph entries should be added to the equipment batch")
+expectEqual(#glyphReview.items, 5, "glyph entries should be added to the equipment batch")
 local shareCode = owner.shopping:Encode(glyphReview)
 expect(shareCode and shareCode:find("SL2:", 1, true) == 1, "fallback exports should use the SL2 format")
 ITEM_LINK_TYPE = "item"
@@ -1004,7 +1072,7 @@ ShoppingListData = {
 dofile("F:/laragon/www/ShoppingList/Share.lua")
 local decodedShare = ShoppingListShare.DecodeCode(shareCode)
 expect(decodedShare, "Shopping List should decode Build Planner's fallback code")
-expectEqual(#decodedShare.items, 4, "the decoded SL2 list should retain every exported entry")
+expectEqual(#decodedShare.items, 5, "the decoded SL2 list should retain every exported entry")
 expectEqual(decodedShare.items[1].match.qualityMode, "any", "SL2 should retain upgradeable gear quality matching")
 
 GravvyShoppingList = { API = { GetVersion = function() return 1 end } }
@@ -1037,7 +1105,7 @@ ui:OpenExportDialog()
 ui:ExecuteExport()
 expect(createdSpec, "API v2 should receive a transactional list specification")
 expectEqual(createdSpec.onNameConflict, "unique", "exports should not overwrite an existing list")
-expectEqual(#createdSpec.items, 2, "the API batch should contain eligible equipment")
+expectEqual(#createdSpec.items, 3, "the API batch should contain eligible equipment")
 GravvyShoppingList = nil
 
 ui:EditSlot("head")
@@ -1075,6 +1143,16 @@ expectEqual(
     "gamepad enchantment choices should persist the planned enchantment"
 )
 expect(gamepadSetup.equipment.head.itemLink, "gamepad edits should resolve a preview item link")
+gamepad:LoadPendingRequirement(1)
+gamepad.pendingRequirement.setName = "Pillar of Nirn"
+gamepad.pendingRequirement.armorType = ARMORTYPE_MEDIUM
+gamepadSaved, gamepadSaveError = gamepad:SavePendingRequirement()
+expect(gamepadSaved, gamepadSaveError)
+expectEqual(
+    gamepadSetup.alternatives.head[1].setId,
+    34,
+    "gamepad users should be able to save ordered slot alternatives"
+)
 expectEqual(
     GAMEPAD_TOOLTIPS.link,
     gamepadSetup.equipment.head.itemLink,
@@ -1088,6 +1166,11 @@ expect(transferOk, transferError)
 expect(
     BuildPlannerTestData:GetCurrentSetup().equipment.shoulders ~= nil,
     "gamepad users should be able to copy a requirement to a compatible slot"
+)
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().alternatives.shoulders[1].setId,
+    34,
+    "gamepad transfers should carry slot alternatives"
 )
 gamepad.list:SetSelectedIndex(1)
 
@@ -1121,6 +1204,11 @@ expectEqual(
     BuildPlannerTestData:GetCurrentSetup().equipment.head,
     nil,
     "the gamepad clear action should remove the selected requirement"
+)
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().alternatives.head,
+    nil,
+    "clearing a primary requirement should also remove its alternatives"
 )
 
 GravvyShoppingList = nil

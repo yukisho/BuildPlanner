@@ -3,7 +3,7 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 1
+local FORMAT_VERSION = 2
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
@@ -288,6 +288,43 @@ function Share.EncodeBuild(build)
                 parts[#parts + 1] = string.char(route)
             end
         end
+
+        local alternativeSlotCount = 0
+        for slotKey, alternatives in pairs(setup.alternatives or {}) do
+            if not Slots:IsValid(slotKey) or not setup.equipment[slotKey]
+                or type(alternatives) ~= "table" or #alternatives > 8 then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            if #alternatives > 0 then
+                alternativeSlotCount = alternativeSlotCount + 1
+            end
+        end
+        parts[#parts + 1] = string.char(alternativeSlotCount)
+        for slotIndex, slotKey in ipairs(Slots.ORDER) do
+            local alternatives = setup.alternatives and setup.alternatives[slotKey]
+            if alternatives and #alternatives > 0 then
+                parts[#parts + 1] = string.char(slotIndex)
+                parts[#parts + 1] = string.char(#alternatives)
+                for _, requirement in ipairs(alternatives) do
+                    if type(requirement) ~= "table"
+                        or not Slots:IsRequirementCompatible(slotKey, requirement) then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    for _, field in ipairs(requirementStrings) do
+                        local value = tostring(requirement[field.key] or "")
+                        if #value > field.max then
+                            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                        end
+                        appendString(parts, value)
+                    end
+                    for _, key in ipairs(requirementNumbers) do
+                        if not appendOptionalU32(parts, requirement[key]) then
+                            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                        end
+                    end
+                end
+            end
+        end
     end
 
     local body = table.concat(parts)
@@ -319,7 +356,8 @@ function Share.DecodeCode(code)
     end
 
     local reader = makeReader(body)
-    if reader:Byte() ~= FORMAT_VERSION then
+    local version = reader:Byte()
+    if version ~= 1 and version ~= FORMAT_VERSION then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION)
     end
     local build = { setups = {} }
@@ -349,6 +387,7 @@ function Share.DecodeCode(code)
             defaultLevel = reader:U16(),
             defaultChampionPoints = reader:U32(),
             equipment = {},
+            alternatives = {},
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -393,6 +432,49 @@ function Share.DecodeCode(code)
             setup.equipment[slotKey] = requirement
             if route ~= 0 then
                 setup.acquisition[slotKey] = { preferredRoute = routeNames[route] }
+            end
+        end
+        if version >= 2 then
+            local alternativeSlotCount = reader:Byte()
+            if not alternativeSlotCount or alternativeSlotCount > #Slots.ORDER then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            local seenAlternativeSlots = {}
+            for _ = 1, alternativeSlotCount do
+                local slotIndex = reader:Byte()
+                local slotKey = slotIndex and Slots.ORDER[slotIndex]
+                local alternativeCount = reader:Byte()
+                if not slotKey or seenAlternativeSlots[slotKey]
+                    or not setup.equipment[slotKey]
+                    or not alternativeCount or alternativeCount < 1
+                    or alternativeCount > 8 then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seenAlternativeSlots[slotKey] = true
+                setup.alternatives[slotKey] = {}
+                for _ = 1, alternativeCount do
+                    local requirement = {}
+                    for _, field in ipairs(requirementStrings) do
+                        local value = reader:String(field.max, false)
+                        if value == nil then
+                            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                        end
+                        if value ~= "" then
+                            requirement[field.key] = value
+                        end
+                    end
+                    for _, key in ipairs(requirementNumbers) do
+                        local value, ok = readOptionalU32(reader)
+                        if not ok then
+                            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                        end
+                        requirement[key] = value
+                    end
+                    if not Slots:IsRequirementCompatible(slotKey, requirement) then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    setup.alternatives[slotKey][#setup.alternatives[slotKey] + 1] = requirement
+                end
             end
         end
         build.setups[#build.setups + 1] = setup
