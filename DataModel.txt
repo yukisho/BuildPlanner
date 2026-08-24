@@ -18,7 +18,7 @@ Setup
 A setup is a named variation of a build. It stores default quality, level, and
 Champion Points plus equipment requirements keyed by the canonical slot names in
 EquipmentSlots.lua. It also owns the setup's skill bars, character and Champion
-plans, and consumable requirements.
+plans, consumable requirements, and a progression checklist.
 Acquisition results live in a separate table and are not copied when a build or
 setup is duplicated.
 
@@ -104,6 +104,24 @@ The consumable catalog is rebuilt from the player's backpack, bank, craft bag,
 and saved plans. It provides entry help only; Build Planner does not consume,
 equip, craft, or purchase planned supplies.
 
+Progression checklist
+---------------------
+
+Each setup may contain up to 100 ordered Passive Skill, Skill Line, Unlock, or
+Other steps. Every step stores its name, completion state, optional target rank,
+and notes. Passive entries can also retain a rank-specific ESO ability ID and
+icon so the planner can use native passive-skill tooltips. Checklist completion
+is part of the setup plan and is copied and shared with that setup.
+
+Setup comparison
+----------------
+
+Comparison state is not saved. The current setup is compared with another setup
+from the same build when the view opens. Only changed values are returned for
+setup defaults, equipment and alternatives, skill bars, character choices,
+Champion allocations and slottables, supplies, and progression steps. Derived
+acquisition and inventory states are intentionally excluded.
+
 Shopping List export
 --------------------
 
@@ -128,13 +146,13 @@ Build sharing and backup
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
 acquisition routes, ordered alternatives, skill bars, character and Champion
-plans, consumable requirements, and the selected setup.
+plans, consumable requirements, progression checklists, and the selected setup.
 Derived inventory matches and collection states are recalculated after import
 rather than copied.
 
-Build Planner writes format version 6 codes and continues to accept versions 1
-through 5, created before equipment alternatives, skill bars, character plans,
-Champion plans, and consumable requirements were added.
+Build Planner writes format version 7 codes and continues to accept versions 1
+through 6, created before equipment alternatives, skill bars, character plans,
+Champion plans, consumable requirements, and progression checklists were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

@@ -93,7 +93,8 @@ end
 
 function Gamepad:IsTargetEditable()
     local data = self:GetTargetData()
-    return data and (self.activeView ~= "gear" or not data.occupied)
+    return data and self.activeView ~= "comparison"
+        and (self.activeView ~= "gear" or not data.occupied)
 end
 
 function Gamepad:GetTargetRoutes()
@@ -122,6 +123,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SAVE)
                 elseif self.activeView == "supplies" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVE)
+                elseif self.activeView == "checklist" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
             end,
@@ -130,13 +133,37 @@ function Gamepad:InitializeKeybinds()
             callback = function() self:ShowEditDialog() end,
         },
         {
-            name = GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE),
+            name = function()
+                if self.activeView == "checklist" then
+                    local data = self:GetTargetData()
+                    return GetString(data and data.completed
+                        and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_INCOMPLETE
+                        or SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_COMPLETE)
+                elseif self.activeView == "comparison" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_NEXT_SETUP)
+                end
+                return GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE)
+            end,
             keybind = "UI_SHORTCUT_SECONDARY",
             visible = function()
-                return self:GetTargetRequirement() ~= nil
-                    and #self:GetTargetRoutes() > 1
+                if self.activeView == "checklist" then
+                    local data = self:GetTargetData()
+                    return data and data.checklistIndex ~= nil
+                elseif self.activeView == "comparison" then
+                    local _, build = self.owner.data:GetCurrentSetup()
+                    return #build.setups > 2
+                end
+                return self:GetTargetRequirement() ~= nil and #self:GetTargetRoutes() > 1
             end,
-            callback = function() self:CycleTargetRoute() end,
+            callback = function()
+                if self.activeView == "checklist" then
+                    self:ToggleTargetChecklist()
+                elseif self.activeView == "comparison" then
+                    self:CycleComparisonTarget()
+                else
+                    self:CycleTargetRoute()
+                end
+            end,
         },
         {
             name = function()
@@ -146,11 +173,15 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_REMOVE)
                 elseif self.activeView == "supplies" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVE)
+                elseif self.activeView == "checklist" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_REMOVE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR)
             end,
             keybind = "UI_SHORTCUT_TERTIARY",
-            visible = function() return self.activeView ~= "character" end,
+            visible = function()
+                return self.activeView ~= "character" and self.activeView ~= "comparison"
+            end,
             enabled = function()
                 if self.activeView == "skills" then
                     local data = self:GetTargetData()
@@ -163,6 +194,9 @@ function Gamepad:InitializeKeybinds()
                 elseif self.activeView == "supplies" then
                     local data = self:GetTargetData()
                     return data and data.supplyIndex ~= nil
+                elseif self.activeView == "checklist" then
+                    local data = self:GetTargetData()
+                    return data and data.checklistIndex ~= nil
                 end
                 return self:IsTargetEditable() and self:GetTargetRequirement() ~= nil
             end,
@@ -218,6 +252,10 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION)
                 elseif self.activeView == "champion" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLIES)
+                elseif self.activeView == "supplies" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST)
+                elseif self.activeView == "checklist" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GEAR)
             end,
@@ -513,6 +551,85 @@ function Gamepad:Refresh(force)
         self:RefreshKeybinds()
         return
     end
+    if self.activeView == "checklist" then
+        local selectedChecklistIndex = selectedData and selectedData.checklistIndex
+        local addEntry = ZO_GamepadEntryData:New(GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_ADD))
+        addEntry:SetFontScaleOnSelection(false)
+        self.list:AddEntry("ZO_GamepadMenuEntryTemplate", addEntry)
+        for index, item in ipairs(setup.checklist) do
+            local marker = item.completed and "✓ " or "○ "
+            local entry = ZO_GamepadEntryData:New(marker .. item.name)
+            entry.checklistIndex = index
+            entry.abilityId = item.abilityId
+            entry.targetRank = item.targetRank
+            entry.completed = item.completed
+            entry:SetFontScaleOnSelection(false)
+            entry:SetShowUnselectedSublabels(true)
+            local categoryId = item.category == "passive"
+                and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_PASSIVE
+                or item.category == "skillLine"
+                    and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SKILL_LINE
+                    or item.category == "unlock"
+                        and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_UNLOCK
+                        or SI_GRAVVY_BUILD_PLANNER_CHECKLIST_OTHER
+            local detail = GetString(categoryId)
+            if item.targetRank then
+                detail = detail .. " · " .. zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_CHECKLIST_RANK_VALUE,
+                    item.targetRank
+                )
+            end
+            entry:AddSubLabel(detail)
+            if item.note ~= "" then
+                entry:AddSubLabel(item.note)
+            end
+            self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+            if selectedChecklistIndex == index then
+                selectedIndex = index + 1
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(selectedIndex or 1)
+        self.dirty = false
+        self:RefreshPreview()
+        self:RefreshKeybinds()
+        return
+    end
+    if self.activeView == "comparison" then
+        local target = self.comparisonSetupId
+            and self.owner.data:FindSetup(build, self.comparisonSetupId)
+        if not target or target.id == setup.id then
+            target = GravvyBuildPlannerComparison:GetDefaultTarget(build, setup.id)
+            self.comparisonSetupId = target and target.id
+        end
+        self.setupName:SetText(target and (setup.name .. " ↔ " .. target.name) or setup.name)
+        local differences = GravvyBuildPlannerComparison:Build(setup, target)
+        if #differences == 0 then
+            local message = target
+                and GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_NONE)
+                or GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_NEEDS_SETUP)
+            local entry = ZO_GamepadEntryData:New(message)
+            entry:SetFontScaleOnSelection(false)
+            self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+        else
+            for _, difference in ipairs(differences) do
+                local entry = ZO_GamepadEntryData:New(
+                    difference.section .. " · " .. difference.label
+                )
+                entry:SetFontScaleOnSelection(false)
+                entry:SetShowUnselectedSublabels(true)
+                entry:AddSubLabel(setup.name .. ": " .. difference.left)
+                entry:AddSubLabel(target.name .. ": " .. difference.right)
+                self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(1)
+        self.dirty = false
+        self:ClearPreview()
+        self:RefreshKeybinds()
+        return
+    end
     local selectedSlot = selectedData and selectedData.slotKey
     for index, slotKey in ipairs(Slots.ORDER) do
         local mainHand = Slots:GetMainHand(slotKey)
@@ -568,6 +685,10 @@ function Gamepad:TogglePlannerView()
         self.activeView = "champion"
     elseif self.activeView == "champion" then
         self.activeView = "supplies"
+    elseif self.activeView == "supplies" then
+        self.activeView = "checklist"
+    elseif self.activeView == "checklist" then
+        self.activeView = "comparison"
     else
         self.activeView = "gear"
     end
@@ -632,6 +753,45 @@ function Gamepad:CycleTargetRoute()
     self:Refresh(true)
 end
 
+function Gamepad:ToggleTargetChecklist()
+    local data = self:GetTargetData()
+    if not data or not data.checklistIndex then
+        return
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetChecklistCompleted(
+        build.id,
+        setup.id,
+        data.checklistIndex,
+        not data.completed
+    )
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self:Refresh(true)
+end
+
+function Gamepad:CycleComparisonTarget()
+    local current, build = self.owner.data:GetCurrentSetup()
+    local candidates = {}
+    local selectedIndex = 0
+    for _, setup in ipairs(build.setups) do
+        if setup.id ~= current.id then
+            candidates[#candidates + 1] = setup
+            if setup.id == self.comparisonSetupId then
+                selectedIndex = #candidates
+            end
+        end
+    end
+    if #candidates == 0 then
+        return
+    end
+    selectedIndex = (selectedIndex % #candidates) + 1
+    self.comparisonSetupId = candidates[selectedIndex].id
+    self:Refresh(true)
+end
+
 function Gamepad:ClearTargetSlot()
     if self.activeView == "skills" then
         local data = self:GetTargetData()
@@ -663,6 +823,23 @@ function Gamepad:ClearTargetSlot()
             self.owner.data:SetConsumable(build.id, setup.id, data.supplyIndex, nil)
             self.owner.consumableCatalog:Refresh()
             self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVED))
+            self:Refresh(true)
+        end
+        return
+    end
+    if self.activeView == "checklist" then
+        local data = self:GetTargetData()
+        if data and data.checklistIndex then
+            local setup, build = self.owner.data:GetCurrentSetup()
+            local ok, message = self.owner.data:SetChecklistEntry(
+                build.id,
+                setup.id,
+                data.checklistIndex,
+                nil
+            )
+            self:SetStatus(ok
+                and GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_REMOVED)
+                or message, not ok)
             self:Refresh(true)
         end
         return
@@ -711,6 +888,16 @@ function Gamepad:RefreshPreview()
         if data and data.itemLink and GAMEPAD_TOOLTIPS then
             GAMEPAD_TOOLTIPS:LayoutItemLink(GAMEPAD_LEFT_TOOLTIP, data.itemLink)
         end
+        return
+    end
+    if self.activeView == "checklist" then
+        local data = self:GetTargetData()
+        if data and data.abilityId and GAMEPAD_TOOLTIPS then
+            GAMEPAD_TOOLTIPS:LayoutSimpleAbility(GAMEPAD_LEFT_TOOLTIP, data.abilityId)
+        end
+        return
+    end
+    if self.activeView == "comparison" then
         return
     end
     local slotKey = self:GetTargetSlot()

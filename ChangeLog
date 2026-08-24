@@ -1,3 +1,15 @@
+0.7.5
+- Added setup-specific Passive Skill, Skill Line, Unlock, and Other progression
+  checklists with target ranks, notes, and completion tracking.
+- Added passive-skill autocomplete from ESO's native skill data, rank-aware icons,
+  and native keyboard and gamepad ability tooltips.
+- Added keyboard and gamepad setup comparison that shows only changed defaults,
+  gear and alternatives, skills, character choices, Champion Points, supplies,
+  and checklist steps.
+- Preserved progression checklists through migrations, setup and build copies,
+  and GBP format-version 7 sharing while retaining imports from versions 1
+  through 6.
+
 0.7.4
 - Added setup-specific food, drink, potion, poison, and other supply planning.
 - Added saved-plan and inventory-backed item suggestions while still allowing

@@ -3,7 +3,7 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 6
+local FORMAT_VERSION = 7
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
@@ -14,6 +14,7 @@ local MAX_RACE_ID = 10
 local MAX_CHAMPION_ALLOCATIONS = 200
 local MAX_CHAMPION_POINTS = 1000
 local MAX_CONSUMABLES = 20
+local MAX_CHECKLIST_ENTRIES = 100
 local MAX_U32 = 4294967295
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
@@ -67,6 +68,16 @@ local consumableCategoryValues = {
 local consumableCategoryNames = {}
 for name, value in pairs(consumableCategoryValues) do
     consumableCategoryNames[value] = name
+end
+local checklistCategoryValues = {
+    passive = 1,
+    skillLine = 2,
+    unlock = 3,
+    other = 4,
+}
+local checklistCategoryNames = {}
+for name, value in pairs(checklistCategoryValues) do
+    checklistCategoryNames[value] = name
 end
 
 Share.PREFIX = PREFIX
@@ -462,6 +473,38 @@ function Share.EncodeBuild(build)
             appendString(parts, note)
             appendOptionalU32(parts, entry.itemId)
         end
+
+        local checklist = setup.checklist or {}
+        if type(checklist) ~= "table" or #checklist > MAX_CHECKLIST_ENTRIES then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        parts[#parts + 1] = string.char(#checklist)
+        local seenChecklist = {}
+        for _, entry in ipairs(checklist) do
+            local category = checklistCategoryValues[entry.category]
+            local name = tostring(entry.name or "")
+            local note = tostring(entry.note or "")
+            local icon = tostring(entry.icon or "")
+            local targetRank = entry.targetRank
+                and wholeNumber(entry.targetRank, 1, 50)
+            local abilityId = entry.abilityId
+                and wholeNumber(entry.abilityId, 1, MAX_U32 - 1)
+            local key = category and tostring(category) .. "\31" .. zo_strlower(name)
+            if not category or seenChecklist[key] or name == ""
+                or #name > MAX_SUBCLASS_NAME or #note > MAX_NOTE or #icon > MAX_STRING
+                or (entry.targetRank ~= nil and not targetRank)
+                or (entry.abilityId ~= nil and not abilityId) then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            seenChecklist[key] = true
+            parts[#parts + 1] = string.char(category)
+            appendString(parts, name)
+            parts[#parts + 1] = string.char(targetRank or 0)
+            parts[#parts + 1] = string.char(entry.completed == true and 1 or 0)
+            appendOptionalU32(parts, abilityId)
+            appendString(parts, icon)
+            appendString(parts, note)
+        end
     end
 
     local body = table.concat(parts)
@@ -539,6 +582,7 @@ function Share.DecodeCode(code)
                 fitness = { allocations = {}, slottables = { 0, 0, 0, 0 } },
             },
             consumables = {},
+            checklist = {},
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -754,6 +798,40 @@ function Share.DecodeCode(code)
                     itemLink = itemLink ~= "" and itemLink or nil,
                     icon = icon,
                     quantity = quantity,
+                    note = note,
+                }
+            end
+        end
+        if version >= 7 then
+            local count = reader:Byte()
+            if not count or count > MAX_CHECKLIST_ENTRIES then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            local seenChecklist = {}
+            for _ = 1, count do
+                local categoryValue = reader:Byte()
+                local category = categoryValue and checklistCategoryNames[categoryValue]
+                local name = reader:String(MAX_SUBCLASS_NAME, true)
+                local targetRank = reader:Byte()
+                local completed = reader:Byte()
+                local abilityId, abilityIdOk = readOptionalU32(reader)
+                local icon = reader:String(MAX_STRING, false)
+                local note = reader:String(MAX_NOTE, false)
+                local key = category and tostring(categoryValue) .. "\31"
+                    .. zo_strlower(name or "")
+                if not category or seenChecklist[key] or not name or not targetRank
+                    or targetRank > 50 or (completed ~= 0 and completed ~= 1)
+                    or not abilityIdOk or icon == nil or note == nil then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seenChecklist[key] = true
+                setup.checklist[#setup.checklist + 1] = {
+                    category = category,
+                    name = name,
+                    targetRank = targetRank > 0 and targetRank or nil,
+                    completed = completed == 1,
+                    abilityId = abilityId,
+                    icon = icon,
                     note = note,
                 }
             end

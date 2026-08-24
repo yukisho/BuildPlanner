@@ -130,6 +130,7 @@ expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes 
 expectEqual(firstSetup.character.attributes.health, 0, "new setups should have an empty character plan")
 expectEqual(firstSetup.champion.warfare.slottables[1], 0, "new setups should have empty Champion slots")
 expectEqual(#firstSetup.consumables, 0, "new setups should have no consumable requirements")
+expectEqual(#firstSetup.checklist, 0, "new setups should have an empty progression checklist")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -260,6 +261,25 @@ expect(not data:SetConsumable(build.id, setup.id, 0, {
     quantity = 1,
 }), "invalid consumable positions should not append a new entry")
 
+local checklistSaved, checklistIndex = data:SetChecklistEntry(build.id, setup.id, nil, {
+    category = "passive",
+    name = "Advanced Species",
+    targetRank = 2,
+    abilityId = 5002,
+    icon = "advanced-species.dds",
+    completed = false,
+    note = "Animal Companions",
+})
+expect(checklistSaved, "passive and progression steps should be saved")
+expectEqual(checklistIndex, 1, "new checklist steps should retain their ordered position")
+expect(data:SetChecklistCompleted(build.id, setup.id, checklistIndex, true),
+    "checklist completion should update independently")
+expect(setup.checklist[1].completed, "checklist completion should be retained")
+expect(not data:SetChecklistEntry(build.id, setup.id, nil, {
+    category = "passive",
+    name = "Advanced Species",
+}), "duplicate checklist steps should be rejected within a category")
+
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
 
@@ -359,6 +379,7 @@ expect(variant.skillBars ~= setup.skillBars, "skill bars should be copied indepe
 expect(variant.character ~= setup.character, "character plans should be copied independently")
 expect(variant.champion ~= setup.champion, "Champion plans should be copied independently")
 expect(variant.consumables ~= setup.consumables, "consumable plans should be copied independently")
+expect(variant.checklist ~= setup.checklist, "progression checklists should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -408,6 +429,10 @@ expectEqual(decodedBuild.setups[1].champion.warfare.slottables[2], 2001,
     "share codes should retain Champion slot positions")
 expectEqual(decodedBuild.setups[1].consumables[1].quantity, 20,
     "share codes should retain consumable quantities")
+expectEqual(decodedBuild.setups[1].checklist[1].abilityId, 5002,
+    "share codes should retain passive-skill identity")
+expect(decodedBuild.setups[1].checklist[1].completed,
+    "share codes should retain checklist completion")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -434,6 +459,8 @@ expectEqual(imported.setups[1].champion.warfare.allocations[2].points, 20,
     "import should preserve passive Champion allocations")
 expectEqual(imported.setups[1].consumables[1].itemId, 12345,
     "import should preserve resolved consumable identity")
+expectEqual(imported.setups[1].checklist[1].targetRank, 2,
+    "import should preserve progression targets")
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local nextBuildId = data.saved.nextBuildId
@@ -481,12 +508,14 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 7, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 8, "migration should advance the saved-data schema")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
 expectEqual(repaired.saved.builds[1].setups[1].champion.craft.slottables[4], 0,
     "migration should add Champion defaults")
 expectEqual(#repaired.saved.builds[1].setups[1].consumables, 0,
     "migration should add consumable defaults")
+expectEqual(#repaired.saved.builds[1].setups[1].checklist, 0,
+    "migration should add checklist defaults")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

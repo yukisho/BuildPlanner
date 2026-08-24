@@ -486,6 +486,8 @@ local abilities = {
     [1001] = { name = "Deep Fissure", icon = "deep-fissure.dds" },
     [1002] = { name = "Subterranean Assault", icon = "subterranean-assault.dds" },
     [1006] = { name = "Wild Guardian", icon = "wild-guardian.dds" },
+    [5001] = { name = "Advanced Species", icon = "advanced-species.dds" },
+    [5002] = { name = "Advanced Species", icon = "advanced-species.dds" },
 }
 function GetAbilityName(abilityId) return abilities[abilityId] and abilities[abilityId].name or "" end
 function GetAbilityIcon(abilityId) return abilities[abilityId] and abilities[abilityId].icon or "" end
@@ -615,9 +617,12 @@ dofile("ChampionCatalog.lua")
 dofile("ConsumableCatalog.lua")
 dofile("Share.lua")
 dofile("Accessibility.lua")
+dofile("Comparison.lua")
 dofile("UI.lua")
 dofile("ChampionPlanner.lua")
 dofile("SuppliesPlanner.lua")
+dofile("ChecklistPlanner.lua")
+dofile("ComparisonPlanner.lua")
 dofile("Settings.lua")
 dofile("Gamepad.lua")
 dofile("GamepadDialogs.lua")
@@ -634,6 +639,29 @@ owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
 owner.skillCatalog:AddAbility(1002, false)
 owner.skillCatalog:AddAbility(1006, true)
+local nativePassiveTooltipUsed = false
+owner.skillCatalog:AddPassive("Advanced Species", "Animal Companions", 2, {
+    [1] = {
+        abilityId = 5001,
+        icon = "advanced-species.dds",
+        progression = {
+            SetKeyboardTooltip = function(_, tooltip, showCost)
+                nativePassiveTooltipUsed = tooltip == SkillTooltip and showCost == false
+                tooltip.abilityId = 5001
+            end,
+        },
+    },
+    [2] = {
+        abilityId = 5002,
+        icon = "advanced-species.dds",
+        progression = {
+            SetKeyboardTooltip = function(_, tooltip, showCost)
+                nativePassiveTooltipUsed = tooltip == SkillTooltip and showCost == false
+                tooltip.abilityId = 5002
+            end,
+        },
+    },
+})
 owner.championCatalog = GravvyBuildPlannerChampionCatalog:New()
 owner.championCatalog:Refresh()
 owner.consumableCatalog = GravvyBuildPlannerConsumableCatalog:New(owner.data)
@@ -751,6 +779,36 @@ expectEqual(BuildPlannerTestData:GetCurrentSetup().consumables[1].quantity, 25,
     "keyboard consumable planning should persist quantities")
 ui:ShowSupplyTooltip(ui.supplyRows[1], "food:item")
 expectEqual(ItemTooltip.link, "food:item", "resolved consumables should use native item tooltips")
+ui:SetView("checklist")
+expect(not ui.checklistPanel:IsHidden(), "keyboard users should be able to open the progression checklist")
+expectEqual(#owner.skillCatalog:SearchPassives("Advanced", 6), 1,
+    "passive skills should autocomplete from ESO skill data")
+ui:SelectChecklistRow(1)
+ui:ShowChecklistTooltip(ui.checklistRows[1], 5002, 2)
+expectEqual(SkillTooltip.abilityId, 5002, "passive steps should use their rank-specific tooltip")
+expect(nativePassiveTooltipUsed, "passive steps should use ESO's native passive tooltip")
+ui:ToggleChecklistCompleted()
+expect(not BuildPlannerTestData:GetCurrentSetup().checklist[1].completed,
+    "checklist completion should toggle from the planner")
+ui:ToggleChecklistCompleted()
+ui.selectedChecklistIndex = nil
+ui:LoadChecklistEditor()
+ui.checklistCategoryCombo.selectedValue = "unlock"
+ui.checklistNameEdit:SetText("Undaunted Rank 9")
+ui.checklistRankEdit:SetText("9")
+ui.checklistNoteEdit:SetText("Unlock Undaunted Mettle")
+ui:SaveChecklistEntry()
+expectEqual(#BuildPlannerTestData:GetCurrentSetup().checklist, 2,
+    "keyboard progression steps should persist")
+ui:SetView("comparison")
+expect(not ui.comparisonPanel:IsHidden(), "keyboard users should be able to compare setups")
+expect(ui.comparisonSetupId, "comparison should select another setup automatically")
+expect(#ui.comparisonDifferences > 0, "comparison should include only changed setup fields")
+expect(not ui.comparisonRows[1]:IsHidden(), "changed fields should be visible in the comparison table")
+expectEqual(#GravvyBuildPlannerComparison:Build(
+    BuildPlannerTestData:GetCurrentSetup(),
+    BuildPlannerTestData:GetCurrentSetup()
+), 0, "comparison should omit every unchanged field")
 ui:SetView("gear")
 expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the paper doll")
 owner.share = GravvyBuildPlannerShare:New(owner)
@@ -1305,7 +1363,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    13,
+    14,
     "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
@@ -1380,6 +1438,21 @@ local supplyGamepadSaved, supplyGamepadError = gamepad:SavePendingSupply()
 expect(supplyGamepadSaved, supplyGamepadError)
 expectEqual(BuildPlannerTestData:GetCurrentSetup().consumables[2].category, "potion",
     "gamepad consumable planning should persist categories")
+gamepad:TogglePlannerView()
+expect(#gamepad.list.entries >= 2, "the gamepad progression checklist should include planned steps")
+gamepad.pendingChecklist = {
+    category = "skillLine",
+    name = "Undaunted",
+    targetRank = "9",
+    completed = false,
+    note = "For Undaunted Mettle",
+}
+local checklistGamepadSaved, checklistGamepadError = gamepad:SavePendingChecklist()
+expect(checklistGamepadSaved, checklistGamepadError)
+expectEqual(BuildPlannerTestData:GetCurrentSetup().checklist[3].category, "skillLine",
+    "gamepad progression planning should persist checklist types")
+gamepad:TogglePlannerView()
+expect(#gamepad.list.entries >= 1, "the gamepad comparison should show changes or an empty-state row")
 gamepad:TogglePlannerView()
 expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
 

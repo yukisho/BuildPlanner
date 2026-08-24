@@ -15,6 +15,7 @@ local SKILL_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SKILL"
 local CHARACTER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHARACTER"
 local CHAMPION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHAMPION"
 local SUPPLY_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SUPPLY"
+local CHECKLIST_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHECKLIST"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -326,6 +327,22 @@ local function supplyCategoryChoices()
     }
 end
 
+local function checklistCategoryChoices()
+    return {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_PASSIVE), value = "passive" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SKILL_LINE), value = "skillLine" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_UNLOCK), value = "unlock" },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_OTHER), value = "other" },
+    }
+end
+
+local function checklistStatusChoices()
+    return {
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_INCOMPLETE), value = false },
+        { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_COMPLETE), value = true },
+    }
+end
+
 local function familyForPending(slotKey, pending)
     local family = Slots:Get(slotKey).family
     if family == "weapon" and pending.weaponType == WEAPONTYPE_SHIELD then
@@ -357,6 +374,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeCharacterDialog()
     self:InitializeChampionDialog()
     self:InitializeSupplyDialog()
+    self:InitializeChecklistDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -693,12 +711,139 @@ function Gamepad:ShowEditDialog()
     elseif self.activeView == "supplies" then
         ZO_Dialogs_ShowGamepadDialog(SUPPLY_DIALOG)
         return
+    elseif self.activeView == "checklist" then
+        ZO_Dialogs_ShowGamepadDialog(CHECKLIST_DIALOG)
+        return
+    elseif self.activeView == "comparison" then
+        return
     end
     if self:IsTargetEditable() then
         self.pendingSlot = nil
         self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:InitializeChecklistDialog()
+    ZO_Dialogs_RegisterCustomDialog(CHECKLIST_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local data = self:GetTargetData()
+            local setup = self.owner.data:GetCurrentSetup()
+            local item = data and data.checklistIndex and setup.checklist[data.checklistIndex]
+            self.pendingChecklist = {
+                index = data and data.checklistIndex,
+                category = item and item.category or "passive",
+                name = item and item.name or "",
+                targetRank = item and item.targetRank and tostring(item.targetRank) or "",
+                completed = item and item.completed or false,
+                note = item and item.note or "",
+            }
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_CHECKLIST },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_CHECKLIST_CATEGORY,
+                checklistCategoryChoices,
+                function() return self.pendingChecklist.category end,
+                function(value) self.pendingChecklist.category = value end
+            ),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_NAME, {
+                value = function() return self.pendingChecklist.name end,
+                changed = function(value) self.pendingChecklist.name = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_NAME),
+                maxChars = 100,
+            }),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_TARGET_RANK, {
+                value = function() return self.pendingChecklist.targetRank end,
+                changed = function(value) self.pendingChecklist.targetRank = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_TARGET_RANK),
+                maxChars = 2,
+                numeric = true,
+            }),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_CHECKLIST_STATUS,
+                checklistStatusChoices,
+                function() return self.pendingChecklist.completed end,
+                function(value) self.pendingChecklist.completed = value end
+            ),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_NOTES, {
+                value = function() return self.pendingChecklist.note end,
+                changed = function(value) self.pendingChecklist.note = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_NOTES),
+                maxChars = 4000,
+                multiline = true,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVE,
+                callback = function()
+                    local ok, message = self:SavePendingChecklist()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(CHECKLIST_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(CHECKLIST_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:SavePendingChecklist()
+    local pending = self.pendingChecklist
+    local name = zo_strtrim(pending.name or "")
+    local rankText = zo_strtrim(pending.targetRank or "")
+    local rank = rankText ~= "" and tonumber(rankText) or nil
+    local passive = pending.category == "passive"
+        and self.owner.skillCatalog:FindPassiveExact(name)
+        or nil
+    if name == "" or (rankText ~= "" and (not rank or rank ~= math.floor(rank)
+        or rank < 1 or rank > 50)) or (passive and rank and rank > passive.maxRank) then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHECKLIST)
+    end
+    local progression = passive and rank
+        and self.owner.skillCatalog:GetPassiveProgression(passive, rank)
+        or nil
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, result = self.owner.data:SetChecklistEntry(
+        build.id,
+        setup.id,
+        pending.index,
+        {
+            category = pending.category,
+            name = passive and passive.name or name,
+            targetRank = rank,
+            completed = pending.completed == true,
+            abilityId = progression and progression.abilityId
+                or passive and passive.abilityId,
+            icon = progression and progression.icon or passive and passive.icon or "",
+            note = pending.note or "",
+        }
+    )
+    if not ok then
+        return false, result
+    end
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVED,
+        passive and passive.name or name
+    ))
+    self:Refresh(true)
+    return true
 end
 
 function Gamepad:InitializeSupplyDialog()
@@ -1669,6 +1814,8 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

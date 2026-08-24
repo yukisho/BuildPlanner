@@ -334,6 +334,8 @@ function UI:Initialize()
     self:CreateCharacterPlanner()
     self:CreateChampionPlanner()
     self:CreateSuppliesPlanner()
+    self:CreateChecklistPlanner()
+    self:CreateComparisonPlanner()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -424,7 +426,8 @@ function UI:CreateBuildControls()
         end)
     end)
 
-    self.progressLabel = makeLabel(window, "", 660, 84, 300, "ZoFontGameSmall")
+    self.progressLabel = makeLabel(window, "", 660, 113, 300, "ZoFontGameSmall")
+    self.progressLabel:SetHeight(16)
     self.progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
     self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 52)
@@ -442,9 +445,15 @@ function UI:CreateBuildControls()
     self.suppliesTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLIES), 68)
     self.suppliesTab:SetAnchor(LEFT, self.championTab, RIGHT, 4, 0)
     self.suppliesTab:SetHandler("OnClicked", function() self:SetView("supplies") end)
+    self.checklistTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST), 72)
+    self.checklistTab:SetAnchor(TOPLEFT, window, TOPLEFT, 642, 85)
+    self.checklistTab:SetHandler("OnClicked", function() self:SetView("checklist") end)
+    self.compareTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE), 72)
+    self.compareTab:SetAnchor(LEFT, self.checklistTab, RIGHT, 4, 0)
+    self.compareTab:SetHandler("OnClicked", function() self:SetView("comparison") end)
 
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
-    divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 124)
+    divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 131)
     divider:SetDimensions(WINDOW_WIDTH - 28, 1)
     divider:SetColor(0.5, 0.42, 0.28, 0.7)
 end
@@ -642,24 +651,32 @@ end
 
 function UI:SetView(view)
     self.activeView = (view == "skills" or view == "character"
-        or view == "champion" or view == "supplies")
+        or view == "champion" or view == "supplies" or view == "checklist"
+        or view == "comparison")
         and view
         or "gear"
     local skills = self.activeView == "skills"
     local character = self.activeView == "character"
     local champion = self.activeView == "champion"
     local supplies = self.activeView == "supplies"
-    self.paperDoll:SetHidden(skills or character or champion or supplies)
-    self.editor:SetHidden(skills or character or champion or supplies)
+    local checklist = self.activeView == "checklist"
+    local comparison = self.activeView == "comparison"
+    local planningView = skills or character or champion or supplies or checklist or comparison
+    self.paperDoll:SetHidden(planningView)
+    self.editor:SetHidden(planningView)
     self.skillPanel:SetHidden(not skills)
     self.characterPanel:SetHidden(not character)
     self.championPanel:SetHidden(not champion)
     self.suppliesPanel:SetHidden(not supplies)
-    self.gearTab:SetAlpha((skills or character or champion or supplies) and 0.65 or 1)
+    self.checklistPanel:SetHidden(not checklist)
+    self.comparisonPanel:SetHidden(not comparison)
+    self.gearTab:SetAlpha(planningView and 0.65 or 1)
     self.skillsTab:SetAlpha(skills and 1 or 0.65)
     self.characterTab:SetAlpha(character and 1 or 0.65)
     self.championTab:SetAlpha(champion and 1 or 0.65)
     self.suppliesTab:SetAlpha(supplies and 1 or 0.65)
+    self.checklistTab:SetAlpha(checklist and 1 or 0.65)
+    self.compareTab:SetAlpha(comparison and 1 or 0.65)
     if skills then
         self:RefreshSkillBars()
         self:LoadSkillEditor()
@@ -669,6 +686,10 @@ function UI:SetView(view)
         self:RefreshChampionPlanner()
     elseif supplies then
         self:RefreshSuppliesPlanner()
+    elseif checklist then
+        self:RefreshChecklistPlanner()
+    elseif comparison then
+        self:RefreshComparisonPlanner()
     end
 end
 
@@ -1193,7 +1214,9 @@ function UI:CreateHelpDialog()
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES),
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE),
         22,
         52,
         656,
@@ -1481,6 +1504,10 @@ function UI:Refresh()
         self:RefreshChampionPlanner()
     elseif self.activeView == "supplies" then
         self:RefreshSuppliesPlanner()
+    elseif self.activeView == "checklist" then
+        self:RefreshChecklistPlanner()
+    elseif self.activeView == "comparison" then
+        self:RefreshComparisonPlanner()
     else
         self:LoadEditor()
     end
