@@ -11,6 +11,7 @@ local CODE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CODE"
 local HELP_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_HELP"
 local TRANSFER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_TRANSFER"
 local SHARE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SHARE"
+local SKILL_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SKILL"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -303,6 +304,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeHelpDialog()
     self:InitializeTransferDialog()
     self:InitializeShareDialog()
+    self:InitializeSkillDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -627,11 +629,105 @@ function Gamepad:SavePendingRequirement()
 end
 
 function Gamepad:ShowEditDialog()
+    if self.activeView == "skills" then
+        self:ShowSkillDialog()
+        return
+    end
     if self:IsTargetEditable() then
         self.pendingSlot = nil
         self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:InitializeSkillDialog()
+    ZO_Dialogs_RegisterCustomDialog(SKILL_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local data = self:GetTargetData()
+            local setup = self.owner.data:GetCurrentSetup()
+            local skill = data and setup.skillBars and setup.skillBars[data.skillBar]
+                and setup.skillBars[data.skillBar][data.skillSlot]
+            self.pendingSkillBar = data and data.skillBar
+            self.pendingSkillSlot = data and data.skillSlot
+            self.pendingAbilityId = skill and skill.abilityId
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_SKILLS },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_ABILITY,
+                function()
+                    local choices = {}
+                    local ultimate = self.pendingSkillSlot == 6
+                    for _, entry in ipairs(self.owner.skillCatalog.entries) do
+                        if entry.isUltimate == ultimate then
+                            choices[#choices + 1] = {
+                                label = entry.name,
+                                value = entry.abilityId,
+                            }
+                        end
+                    end
+                    return choices
+                end,
+                function() return self.pendingAbilityId end,
+                function(value) self.pendingAbilityId = value end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_SAVE_SKILL,
+                callback = function()
+                    local ok, message = self:SavePendingSkill()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(SKILL_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(SKILL_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:ShowSkillDialog()
+    ZO_Dialogs_ShowGamepadDialog(SKILL_DIALOG)
+end
+
+function Gamepad:SavePendingSkill()
+    local skill = self.owner.skillCatalog:FindById(self.pendingAbilityId)
+    if not skill then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SKILL)
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetSkill(
+        build.id,
+        setup.id,
+        self.pendingSkillBar,
+        self.pendingSkillSlot,
+        skill
+    )
+    if not ok then
+        return false, message
+    end
+    self:SetStatus(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SKILL_SAVED,
+        skill.name
+    ))
+    self:Refresh(true)
+    return true
 end
 
 function Gamepad:RemovePendingAlternative()
@@ -1083,6 +1179,7 @@ function Gamepad:InitializeHelpDialog()
         mainText = { text = function()
             return GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

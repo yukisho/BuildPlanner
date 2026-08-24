@@ -60,6 +60,15 @@ An owned primary or alternative satisfies the one planned slot. Inventory items
 are still assigned once across the setup, and exact matches are preferred before
 adjustable matches. Alternatives therefore never increase completion totals.
 
+Skill bars
+----------
+
+Each setup has front and back skill bars. A bar contains five active-skill
+positions and a sixth ultimate position. Planned skills store the ESO ability ID
+plus their localized name and icon as display fallbacks. Build Planner reads base
+abilities and both morphs from ESO's native skill data but never changes the
+player's equipped action bars.
+
 Shopping List export
 --------------------
 
@@ -83,11 +92,13 @@ Build sharing and backup
 
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
-acquisition routes, ordered alternatives, and the selected setup. Derived inventory matches and
-collection states are recalculated after import rather than copied.
+acquisition routes, ordered alternatives, skill bars, and the selected setup.
+Derived inventory matches and collection states are recalculated after import
+rather than copied.
 
-Build Planner writes format version 2 codes and continues to accept version 1
-codes created before equipment alternatives were added.
+Build Planner writes format version 3 codes and continues to accept version 1
+and version 2 codes created before equipment alternatives and skill bars were
+added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

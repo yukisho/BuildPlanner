@@ -1,3 +1,15 @@
+0.7.1
+- Added Gear and Skills views without changing the existing equipment paper doll.
+- Added front-bar and back-bar layouts with five active slots and one ultimate
+  slot on each bar.
+- Added active-skill and morph autocomplete from ESO's native skill data, with
+  ultimate-only filtering for the sixth slot.
+- Added planned skill icons, native keyboard and gamepad ability tooltips, and
+  save and clear actions that never alter the player's equipped action bars.
+- Added native gamepad skill-bar navigation and controller ability selection.
+- Preserved both skill bars through setup and build copies, migrations, and GBP
+  sharing while retaining support for version-1 and version-2 build codes.
+
 0.7.0
 - Added up to eight ordered fallback alternatives for each planned equipment slot.
 - Added Primary, Alternative, and New Alternative choices to the keyboard and

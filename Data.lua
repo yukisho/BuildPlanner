@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 3
+local SCHEMA_VERSION = 4
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
@@ -156,6 +156,45 @@ local function normalizeAlternative(slotKey, source, primary)
         return nil
     end
     return requirement
+end
+
+local function copySkill(source, slotIndex)
+    if type(source) ~= "table" then
+        return nil
+    end
+    local abilityId = tonumber(source.abilityId)
+    if not abilityId or abilityId ~= math.floor(abilityId) or abilityId < 1
+        or type(source.name) ~= "string" or type(source.icon) ~= "string"
+        or source.isUltimate ~= (slotIndex == 6) then
+        return nil
+    end
+    return {
+        abilityId = abilityId,
+        name = trim(source.name),
+        icon = source.icon,
+        isUltimate = source.isUltimate,
+    }
+end
+
+local function copySkillBars(source, strict)
+    local bars = { front = {}, back = {} }
+    source = type(source) == "table" and source or {}
+    for _, barKey in ipairs({ "front", "back" }) do
+        local bar = source[barKey]
+        if bar ~= nil and type(bar) ~= "table" then
+            return strict and nil or bars
+        end
+        for slotIndex, entry in pairs(bar or {}) do
+            slotIndex = tonumber(slotIndex)
+            local skill = slotIndex and copySkill(entry, slotIndex)
+            if skill and slotIndex >= 1 and slotIndex <= 6 then
+                bars[barKey][slotIndex] = skill
+            elseif strict then
+                return nil
+            end
+        end
+    end
+    return bars
 end
 
 local function readWholeNumber(value, minimum)
@@ -342,6 +381,7 @@ function Data:Migrate()
                 and setup.alternatives
                 or {}
             setup.alternativeGroups = nil
+            setup.skillBars = copySkillBars(setup.skillBars, false)
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -604,6 +644,7 @@ function Data:DuplicateBuild(id, name)
             defaultChampionPoints = sourceSetup.defaultChampionPoints,
             equipment = deepCopy(sourceSetup.equipment),
             alternatives = deepCopy(sourceSetup.alternatives),
+            skillBars = deepCopy(sourceSetup.skillBars) or { front = {}, back = {} },
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -715,6 +756,10 @@ function Data:ImportBuild(source)
                 alternatives[slotKey][#alternatives[slotKey] + 1] = requirement
             end
         end
+        local skillBars = copySkillBars(sourceSetup.skillBars, true)
+        if not skillBars then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
 
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
@@ -725,6 +770,7 @@ function Data:ImportBuild(source)
             defaultChampionPoints = setupChanges.defaultChampionPoints or 160,
             equipment = equipment,
             alternatives = alternatives,
+            skillBars = skillBars,
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -795,6 +841,7 @@ function Data:CreateSetup(buildId, name, source)
         defaultChampionPoints = source and source.defaultChampionPoints or 160,
         equipment = source and deepCopy(source.equipment) or {},
         alternatives = source and deepCopy(source.alternatives) or {},
+        skillBars = source and deepCopy(source.skillBars) or { front = {}, back = {} },
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -952,6 +999,35 @@ end
 
 function Data:GetAlternatives(setup, slotKey)
     return setup and setup.alternatives and setup.alternatives[slotKey] or {}
+end
+
+function Data:SetSkill(buildId, setupId, barKey, slotIndex, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    slotIndex = tonumber(slotIndex)
+    if not setup or (barKey ~= "front" and barKey ~= "back")
+        or not slotIndex or slotIndex ~= math.floor(slotIndex)
+        or slotIndex < 1 or slotIndex > 6 then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SKILL_SLOT)
+    end
+    setup.skillBars = setup.skillBars or { front = {}, back = {} }
+    if values == nil then
+        setup.skillBars[barKey][slotIndex] = nil
+    else
+        local skill = copySkill(values, slotIndex)
+        if not skill then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SKILL)
+        end
+        for otherSlot, otherSkill in pairs(setup.skillBars[barKey]) do
+            if otherSlot ~= slotIndex and otherSkill.abilityId == skill.abilityId then
+                return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SKILL_DUPLICATE)
+            end
+        end
+        setup.skillBars[barKey][slotIndex] = skill
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true
 end
 
 function Data:SetAlternative(buildId, setupId, slotKey, index, values)

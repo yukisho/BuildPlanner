@@ -227,6 +227,9 @@ function UI:New(owner)
         suggestions = {},
         suggestionOffset = 0,
         suggestionIndex = 1,
+        activeView = "gear",
+        selectedSkillBar = "front",
+        selectedSkillSlot = 1,
     }, { __index = self })
 end
 
@@ -289,6 +292,7 @@ function UI:Initialize()
     self:CreateBuildControls()
     self:CreateSlotRows()
     self:CreateEditor()
+    self:CreateSkillPlanner()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -299,6 +303,7 @@ function UI:Initialize()
 
     self.status = makeLabel(window, "", 18, 668, WINDOW_WIDTH - 36, "ZoFontGameSmall")
     self:Refresh()
+    self:SetView(self.activeView)
 end
 
 function UI:CreateBuildControls()
@@ -381,10 +386,137 @@ function UI:CreateBuildControls()
     self.progressLabel = makeLabel(window, "", 660, 84, 300, "ZoFontGameSmall")
     self.progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
+    self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 90)
+    self.gearTab:SetAnchor(TOPLEFT, window, TOPLEFT, 660, 47)
+    self.gearTab:SetHandler("OnClicked", function() self:SetView("gear") end)
+    self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 90)
+    self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 8, 0)
+    self.skillsTab:SetHandler("OnClicked", function() self:SetView("skills") end)
+
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
     divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 124)
     divider:SetDimensions(WINDOW_WIDTH - 28, 1)
     divider:SetColor(0.5, 0.42, 0.28, 0.7)
+end
+
+function UI:CreateSkillPlanner()
+    local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerSkills", self.window, CT_CONTROL)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetDimensions(942, 530)
+    panel:SetHidden(true)
+    self.skillPanel = panel
+
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    backdrop:SetAnchorFill(panel)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        backdrop,
+        { 0.018, 0.018, 0.026, 0.9 },
+        { 0.28, 0.24, 0.18, 0.85 }
+    )
+
+    self.skillButtons = { front = {}, back = {} }
+    for barNumber, barKey in ipairs({ "front", "back" }) do
+        local y = barNumber == 1 and 22 or 185
+        makeLabel(
+            panel,
+            GetString(barKey == "front"
+                and SI_GRAVVY_BUILD_PLANNER_FRONT_BAR
+                or SI_GRAVVY_BUILD_PLANNER_BACK_BAR),
+            22,
+            y,
+            440,
+            "ZoFontWinH3"
+        )
+        for slotIndex = 1, 6 do
+            local button = WINDOW_MANAGER:CreateControl(nil, panel, CT_BUTTON)
+            button:SetDimensions(62, 62)
+            button:SetAnchor(TOPLEFT, panel, TOPLEFT, 24 + ((slotIndex - 1) * 74), y + 42)
+            button:SetHandler("OnClicked", function()
+                self.selectedSkillBar = barKey
+                self.selectedSkillSlot = slotIndex
+                self:LoadSkillEditor()
+                self:RefreshSkillBars()
+            end)
+            button:SetHandler("OnMouseEnter", function(control)
+                self:ShowSkillTooltip(control, barKey, slotIndex)
+            end)
+            button:SetHandler("OnMouseExit", function() self:HideSkillTooltip() end)
+            local edge = WINDOW_MANAGER:CreateControlFromVirtual(nil, button, "ZO_DefaultBackdrop")
+            edge:SetAnchorFill(button)
+            edge:SetCenterColor(0.025, 0.025, 0.035, 0.96)
+            local icon = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
+            icon:SetAnchor(TOPLEFT, button, TOPLEFT, 4, 4)
+            icon:SetAnchor(BOTTOMRIGHT, button, BOTTOMRIGHT, -4, -4)
+            button.backdrop = edge
+            button.icon = icon
+            button.number = makeLabel(
+                button,
+                slotIndex == 6 and "U" or tostring(slotIndex),
+                2,
+                35,
+                22,
+                "ZoFontGameSmall"
+            )
+            self.skillButtons[barKey][slotIndex] = button
+        end
+    end
+
+    local divider = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+    divider:SetAnchor(TOPLEFT, panel, TOPLEFT, 488, 18)
+    divider:SetDimensions(1, 494)
+    divider:SetColor(0.5, 0.42, 0.28, 0.7)
+    self.skillEditorTitle = makeLabel(panel, "", 520, 24, 390, "ZoFontWinH3")
+    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_ABILITY), 520, 76, 100)
+    self.skillEdit = makeEdit(panel, "GravvyBuildPlannerSkillEdit", 520, 110, 390)
+    self.skillEdit:SetHandler("OnTextChanged", function() self:OnSkillTextChanged() end)
+    self.skillEdit:SetHandler("OnKeyDown", function(_, key) self:OnSkillKeyDown(key) end)
+    self.skillEdit:SetHandler("OnFocusLost", function() self:ResolveTypedSkill() end)
+    self.skillPreview = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+    self.skillPreview:SetDimensions(64, 64)
+    self.skillPreview:SetAnchor(TOPLEFT, panel, TOPLEFT, 520, 165)
+    self.skillName = makeLabel(panel, "", 600, 176, 310, "ZoFontGame")
+    local clear = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR_SKILL), 130)
+    clear:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -158, -22)
+    clear:SetHandler("OnClicked", function() self:ClearSkill() end)
+    local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_SKILL), 130)
+    save:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -18, -22)
+    save:SetHandler("OnClicked", function() self:SaveSkill() end)
+
+    local suggestions = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)
+    suggestions:SetDimensions(390, 152)
+    suggestions:SetAnchor(TOPLEFT, self.skillEdit, BOTTOMLEFT, 0, 2)
+    suggestions:SetHidden(true)
+    suggestions:SetDrawTier(DT_HIGH)
+    self.skillSuggestionPanel = suggestions
+    local suggestionBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
+        nil,
+        suggestions,
+        "ZO_DefaultBackdrop"
+    )
+    suggestionBackdrop:SetAnchorFill(suggestions)
+    self.skillSuggestionButtons = {}
+    for index = 1, 6 do
+        local button = makeButton(suggestions, "", 380)
+        button:SetHeight(24)
+        button:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
+        button:SetAnchor(TOPLEFT, suggestions, TOPLEFT, 5, 4 + ((index - 1) * 24))
+        button:SetHandler("OnClicked", function() self:ChooseSkillSuggestion(index) end)
+        self.skillSuggestionButtons[index] = button
+    end
+end
+
+function UI:SetView(view)
+    self.activeView = view == "skills" and "skills" or "gear"
+    local skills = self.activeView == "skills"
+    self.paperDoll:SetHidden(skills)
+    self.editor:SetHidden(skills)
+    self.skillPanel:SetHidden(not skills)
+    self.gearTab:SetAlpha(skills and 0.65 or 1)
+    self.skillsTab:SetAlpha(skills and 1 or 0.65)
+    if skills then
+        self:RefreshSkillBars()
+        self:LoadSkillEditor()
+    end
 end
 
 function UI:CreateSlotRows()
@@ -904,7 +1036,8 @@ function UI:CreateHelpDialog()
     local content = makeLabel(
         dialog,
         GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES),
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS),
         22,
         52,
         656,
@@ -1182,8 +1315,195 @@ function UI:Refresh()
     self:RefreshBuildCombo()
     self:RefreshSetupCombo()
     self:RefreshRows()
+    self:RefreshSkillBars()
     self:RefreshProgress()
-    self:LoadEditor()
+    if self.activeView == "skills" then
+        self:LoadSkillEditor()
+    else
+        self:LoadEditor()
+    end
+end
+
+function UI:RefreshSkillBars()
+    if not self.skillButtons then
+        return
+    end
+    local setup = self.owner.data:GetCurrentSetup()
+    local bars = setup.skillBars or { front = {}, back = {} }
+    for _, barKey in ipairs({ "front", "back" }) do
+        for slotIndex = 1, 6 do
+            local button = self.skillButtons[barKey][slotIndex]
+            local skill = bars[barKey] and bars[barKey][slotIndex]
+            button.icon:SetTexture(skill and skill.icon or nil)
+            local selected = barKey == self.selectedSkillBar
+                and slotIndex == self.selectedSkillSlot
+            button.backdrop:SetEdgeColor(
+                selected and 1 or 0.36,
+                selected and 0.76 or 0.32,
+                selected and 0.28 or 0.24,
+                1
+            )
+        end
+    end
+end
+
+function UI:LoadSkillEditor()
+    if not self.skillEdit then
+        return
+    end
+    local setup = self.owner.data:GetCurrentSetup()
+    local bar = setup.skillBars and setup.skillBars[self.selectedSkillBar] or {}
+    local skill = bar[self.selectedSkillSlot]
+    self.loadingSkill = true
+    self.selectedAbility = skill
+    self.skillEdit:SetText(skill and skill.name or "")
+    self.skillEditorTitle:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_SKILL_SLOT_TITLE,
+        GetString(self.selectedSkillBar == "front"
+            and SI_GRAVVY_BUILD_PLANNER_FRONT_BAR
+            or SI_GRAVVY_BUILD_PLANNER_BACK_BAR),
+        self.selectedSkillSlot == 6
+            and GetString(SI_GRAVVY_BUILD_PLANNER_ULTIMATE)
+            or tostring(self.selectedSkillSlot)
+    ))
+    self.skillPreview:SetTexture(skill and skill.icon or nil)
+    self.skillName:SetText(skill and skill.name or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED))
+    self.skillSuggestionPanel:SetHidden(true)
+    self.loadingSkill = false
+end
+
+function UI:OnSkillTextChanged()
+    if self.loadingSkill then
+        return
+    end
+    self.selectedAbility = nil
+    self.skillSuggestionData = self.owner.skillCatalog:Search(
+        self.skillEdit:GetText(),
+        self.selectedSkillSlot == 6,
+        20
+    )
+    self.skillSuggestionIndex = 1
+    self:RenderSkillSuggestions()
+end
+
+function UI:RenderSkillSuggestions()
+    local data = self.skillSuggestionData or {}
+    for index, button in ipairs(self.skillSuggestionButtons) do
+        local entry = data[index]
+        button:SetHidden(not entry)
+        if entry then
+            button:SetText(entry.name)
+            button:SetNormalFontColor(
+                index == self.skillSuggestionIndex and 1 or 0.85,
+                index == self.skillSuggestionIndex and 0.82 or 0.78,
+                index == self.skillSuggestionIndex and 0.4 or 0.62,
+                1
+            )
+        end
+    end
+    self.skillSuggestionPanel:SetHidden(#data == 0)
+end
+
+function UI:ChooseSkillSuggestion(index)
+    local entry = self.skillSuggestionData and self.skillSuggestionData[index]
+    if not entry then
+        return
+    end
+    self.selectedAbility = entry
+    self.loadingSkill = true
+    self.skillEdit:SetText(entry.name)
+    self.loadingSkill = false
+    self.skillPreview:SetTexture(entry.icon)
+    self.skillName:SetText(entry.name)
+    self.skillSuggestionPanel:SetHidden(true)
+end
+
+function UI:ResolveTypedSkill()
+    if self.selectedAbility then
+        return self.selectedAbility
+    end
+    local entry = self.owner.skillCatalog:FindExact(self.skillEdit:GetText())
+    if entry and entry.isUltimate == (self.selectedSkillSlot == 6) then
+        self.selectedAbility = entry
+        self.skillPreview:SetTexture(entry.icon)
+        self.skillName:SetText(entry.name)
+        return entry
+    end
+end
+
+function UI:OnSkillKeyDown(key)
+    if self.skillSuggestionPanel:IsHidden() then
+        return
+    end
+    local count = math.min(6, #(self.skillSuggestionData or {}))
+    if key == KEY_DOWN then
+        self.skillSuggestionIndex = math.min(count, self.skillSuggestionIndex + 1)
+        self:RenderSkillSuggestions()
+    elseif key == KEY_UP then
+        self.skillSuggestionIndex = math.max(1, self.skillSuggestionIndex - 1)
+        self:RenderSkillSuggestions()
+    elseif key == KEY_ENTER then
+        self:ChooseSkillSuggestion(self.skillSuggestionIndex)
+    elseif key == KEY_ESCAPE then
+        self.skillSuggestionPanel:SetHidden(true)
+    end
+end
+
+function UI:SaveSkill()
+    local skill = self:ResolveTypedSkill()
+    if not skill then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SKILL), true)
+        return
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetSkill(
+        build.id,
+        setup.id,
+        self.selectedSkillBar,
+        self.selectedSkillSlot,
+        skill
+    )
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self:RefreshSkillBars()
+    self:LoadSkillEditor()
+    self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SKILL_SAVED, skill.name))
+end
+
+function UI:ClearSkill()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetSkill(
+        build.id,
+        setup.id,
+        self.selectedSkillBar,
+        self.selectedSkillSlot,
+        nil
+    )
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self:RefreshSkillBars()
+    self:LoadSkillEditor()
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SKILL_CLEARED))
+end
+
+function UI:ShowSkillTooltip(control, barKey, slotIndex)
+    local setup = self.owner.data:GetCurrentSetup()
+    local skill = setup.skillBars and setup.skillBars[barKey]
+        and setup.skillBars[barKey][slotIndex]
+    if skill and SkillTooltip and InitializeTooltip then
+        InitializeTooltip(SkillTooltip, control, LEFT, -8, 0, RIGHT)
+        SkillTooltip:LayoutSimpleAbility(skill.abilityId)
+    end
+end
+
+function UI:HideSkillTooltip()
+    if SkillTooltip and ClearTooltip then
+        ClearTooltip(SkillTooltip)
+    end
 end
 
 function UI:EditSlot(slotKey)

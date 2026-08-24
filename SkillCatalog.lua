@@ -7,7 +7,7 @@ local function normalize(value)
 end
 
 function Catalog:New()
-    return setmetatable({ entries = {}, byName = {} }, { __index = self })
+    return setmetatable({ entries = {}, byName = {}, byId = {} }, { __index = self })
 end
 
 function Catalog:AddAbility(abilityId, isUltimate)
@@ -31,11 +31,13 @@ function Catalog:AddAbility(abilityId, isUltimate)
     }
     self.entries[#self.entries + 1] = entry
     self.byName[key] = entry
+    self.byId[abilityId] = entry
 end
 
 function Catalog:Refresh()
     self.entries = {}
     self.byName = {}
+    self.byId = {}
     if not SKILLS_DATA_MANAGER then
         return
     end
@@ -65,6 +67,10 @@ end
 
 function Catalog:FindExact(name)
     return self.byName[normalize(name)]
+end
+
+function Catalog:FindById(abilityId)
+    return self.byId[tonumber(abilityId)]
 end
 
 function Catalog:Search(text, ultimate, limit)

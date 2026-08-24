@@ -21,7 +21,7 @@ local slotStringIds = {
 }
 
 function Gamepad:New(owner)
-    return setmetatable({ owner = owner, dirty = true }, { __index = self })
+    return setmetatable({ owner = owner, dirty = true, activeView = "gear" }, { __index = self })
 end
 
 function Gamepad:Initialize()
@@ -93,7 +93,7 @@ end
 
 function Gamepad:IsTargetEditable()
     local data = self:GetTargetData()
-    return data and not data.occupied
+    return data and (self.activeView == "skills" or not data.occupied)
 end
 
 function Gamepad:GetTargetRoutes()
@@ -113,7 +113,11 @@ function Gamepad:InitializeKeybinds()
     self.keybinds = {
         alignment = KEYBIND_STRIP_ALIGN_LEFT,
         {
-            name = GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT),
+            name = function()
+                return GetString(self.activeView == "skills"
+                    and SI_GRAVVY_BUILD_PLANNER_EDIT_SKILL
+                    or SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
+            end,
             keybind = "UI_SHORTCUT_PRIMARY",
             enabled = function() return self:IsTargetEditable() end,
             callback = function() self:ShowEditDialog() end,
@@ -128,9 +132,19 @@ function Gamepad:InitializeKeybinds()
             callback = function() self:CycleTargetRoute() end,
         },
         {
-            name = GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR),
+            name = function()
+                return GetString(self.activeView == "skills"
+                    and SI_GRAVVY_BUILD_PLANNER_CLEAR_SKILL
+                    or SI_GRAVVY_BUILD_PLANNER_CLEAR)
+            end,
             keybind = "UI_SHORTCUT_TERTIARY",
             enabled = function()
+                if self.activeView == "skills" then
+                    local data = self:GetTargetData()
+                    local setup = self.owner.data:GetCurrentSetup()
+                    return data and setup.skillBars and setup.skillBars[data.skillBar]
+                        and setup.skillBars[data.skillBar][data.skillSlot] ~= nil
+                end
                 return self:IsTargetEditable() and self:GetTargetRequirement() ~= nil
             end,
             callback = function() self:ClearTargetSlot() end,
@@ -174,6 +188,15 @@ function Gamepad:InitializeKeybinds()
             name = GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE),
             keybind = "UI_SHORTCUT_RIGHT_STICK",
             callback = function() self:ShowManageDialog() end,
+        },
+        {
+            name = function()
+                return GetString(self.activeView == "gear"
+                    and SI_GRAVVY_BUILD_PLANNER_SKILLS
+                    or SI_GRAVVY_BUILD_PLANNER_GEAR)
+            end,
+            keybind = "UI_SHORTCUT_LEFT_STICK",
+            callback = function() self:TogglePlannerView() end,
         },
         KEYBIND_STRIP:GenerateGamepadBackButtonDescriptor(function() self:Hide() end),
     }
@@ -259,7 +282,7 @@ function Gamepad:Refresh(force)
         self.dirty = true
         return
     end
-    local selectedSlot = self:GetTargetSlot()
+    local selectedData = self:GetTargetData()
     local setup, build = self.owner.data:GetCurrentSetup()
     self.buildName:SetText(build.name)
     self.setupName:SetText(setup.name)
@@ -274,6 +297,43 @@ function Gamepad:Refresh(force)
 
     self.list:Clear()
     local selectedIndex
+    if self.activeView == "skills" then
+        local entryIndex = 0
+        for _, barKey in ipairs({ "front", "back" }) do
+            local bar = setup.skillBars and setup.skillBars[barKey] or {}
+            for slotIndex = 1, 6 do
+                entryIndex = entryIndex + 1
+                local label = zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_SKILL_SLOT_TITLE,
+                    GetString(barKey == "front"
+                        and SI_GRAVVY_BUILD_PLANNER_FRONT_BAR
+                        or SI_GRAVVY_BUILD_PLANNER_BACK_BAR),
+                    slotIndex == 6
+                        and GetString(SI_GRAVVY_BUILD_PLANNER_ULTIMATE)
+                        or tostring(slotIndex)
+                )
+                local entry = ZO_GamepadEntryData:New(label)
+                entry.skillBar = barKey
+                entry.skillSlot = slotIndex
+                entry:SetFontScaleOnSelection(false)
+                entry:SetShowUnselectedSublabels(true)
+                entry:AddSubLabel(bar[slotIndex] and bar[slotIndex].name
+                    or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED))
+                self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+                if selectedData and selectedData.skillBar == barKey
+                    and selectedData.skillSlot == slotIndex then
+                    selectedIndex = entryIndex
+                end
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(selectedIndex or 1)
+        self.dirty = false
+        self:RefreshPreview()
+        self:RefreshKeybinds()
+        return
+    end
+    local selectedSlot = selectedData and selectedData.slotKey
     for index, slotKey in ipairs(Slots.ORDER) do
         local mainHand = Slots:GetMainHand(slotKey)
         local mainRequirement = mainHand and setup.equipment[mainHand]
@@ -317,6 +377,12 @@ function Gamepad:Refresh(force)
     self.dirty = false
     self:RefreshPreview()
     self:RefreshKeybinds()
+end
+
+function Gamepad:TogglePlannerView()
+    self.activeView = self.activeView == "gear" and "skills" or "gear"
+    self:SetStatus("")
+    self:Refresh(true)
 end
 
 function Gamepad:SwitchSetup(direction)
@@ -377,6 +443,14 @@ function Gamepad:CycleTargetRoute()
 end
 
 function Gamepad:ClearTargetSlot()
+    if self.activeView == "skills" then
+        local data = self:GetTargetData()
+        local setup, build = self.owner.data:GetCurrentSetup()
+        self.owner.data:SetSkill(build.id, setup.id, data.skillBar, data.skillSlot, nil)
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SKILL_CLEARED))
+        self:Refresh(true)
+        return
+    end
     local slotKey = self:GetTargetSlot()
     local setup, build = self.owner.data:GetCurrentSetup()
     local ok, message = self.owner.data:SetEquipment(build.id, setup.id, slotKey, nil)
@@ -394,6 +468,16 @@ end
 
 function Gamepad:RefreshPreview()
     self:ClearPreview()
+    if self.activeView == "skills" then
+        local data = self:GetTargetData()
+        local setup = self.owner.data:GetCurrentSetup()
+        local skill = data and setup.skillBars and setup.skillBars[data.skillBar]
+            and setup.skillBars[data.skillBar][data.skillSlot]
+        if skill and GAMEPAD_TOOLTIPS and GAMEPAD_TOOLTIPS.LayoutSimpleAbility then
+            GAMEPAD_TOOLTIPS:LayoutSimpleAbility(GAMEPAD_LEFT_TOOLTIP, skill.abilityId)
+        end
+        return
+    end
     local slotKey = self:GetTargetSlot()
     local requirement = self:GetTargetRequirement()
     if not slotKey or not requirement or not GAMEPAD_TOOLTIPS then

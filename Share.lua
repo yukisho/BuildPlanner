@@ -3,7 +3,7 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 2
+local FORMAT_VERSION = 3
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
@@ -325,6 +325,31 @@ function Share.EncodeBuild(build)
                 end
             end
         end
+        for _, barKey in ipairs({ "front", "back" }) do
+            local bar = setup.skillBars and setup.skillBars[barKey] or {}
+            local mask = 0
+            for slotIndex = 1, 6 do
+                if bar[slotIndex] then
+                    mask = mask + (2 ^ (slotIndex - 1))
+                end
+            end
+            parts[#parts + 1] = string.char(mask)
+            for slotIndex = 1, 6 do
+                local skill = bar[slotIndex]
+                if skill then
+                    local abilityId = wholeNumber(skill.abilityId, 1, MAX_U32)
+                    local name = tostring(skill.name or "")
+                    local icon = tostring(skill.icon or "")
+                    if not abilityId or #name > MAX_STRING or #icon > MAX_STRING
+                        or skill.isUltimate ~= (slotIndex == 6) then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    appendU32(parts, abilityId)
+                    appendString(parts, name)
+                    appendString(parts, icon)
+                end
+            end
+        end
     end
 
     local body = table.concat(parts)
@@ -357,7 +382,7 @@ function Share.DecodeCode(code)
 
     local reader = makeReader(body)
     local version = reader:Byte()
-    if version ~= 1 and version ~= FORMAT_VERSION then
+    if version ~= 1 and version ~= 2 and version ~= FORMAT_VERSION then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION)
     end
     local build = { setups = {} }
@@ -388,6 +413,7 @@ function Share.DecodeCode(code)
             defaultChampionPoints = reader:U32(),
             equipment = {},
             alternatives = {},
+            skillBars = { front = {}, back = {} },
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -474,6 +500,30 @@ function Share.DecodeCode(code)
                         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
                     end
                     setup.alternatives[slotKey][#setup.alternatives[slotKey] + 1] = requirement
+                end
+            end
+        end
+        if version >= 3 then
+            for _, barKey in ipairs({ "front", "back" }) do
+                local mask = reader:Byte()
+                if not mask or mask > 63 then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                for slotIndex = 1, 6 do
+                    if math.floor(mask / (2 ^ (slotIndex - 1))) % 2 == 1 then
+                        local abilityId = reader:U32()
+                        local name = reader:String(MAX_STRING, false)
+                        local icon = reader:String(MAX_STRING, false)
+                        if not abilityId or abilityId < 1 or name == nil or icon == nil then
+                            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                        end
+                        setup.skillBars[barKey][slotIndex] = {
+                            abilityId = abilityId,
+                            name = name,
+                            icon = icon,
+                            isUltimate = slotIndex == 6,
+                        }
+                    end
                 end
             end
         end

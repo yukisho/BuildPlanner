@@ -285,6 +285,7 @@ KEYBIND_STRIP = {
 
 GAMEPAD_TOOLTIPS = {
     LayoutItemLink = function(self, _, link) self.link = link end,
+    LayoutSimpleAbility = function(self, _, abilityId) self.abilityId = abilityId end,
     ClearTooltip = function(self) self.link = nil end,
 }
 
@@ -428,6 +429,13 @@ function GetItemLinkName(link)
     return ""
 end
 function GetItemLinkIcon(link) return "icon:" .. link end
+local abilities = {
+    [1001] = { name = "Deep Fissure", icon = "deep-fissure.dds" },
+    [1002] = { name = "Subterranean Assault", icon = "subterranean-assault.dds" },
+    [1006] = { name = "Wild Guardian", icon = "wild-guardian.dds" },
+}
+function GetAbilityName(abilityId) return abilities[abilityId] and abilities[abilityId].name or "" end
+function GetAbilityIcon(abilityId) return abilities[abilityId] and abilities[abilityId].icon or "" end
 function GetUnitSilhouetteTexture() return "player-silhouette" end
 function ZO_Character_GetEmptyEquipSlotTexture(equipSlot)
     return "empty-slot:" .. tostring(equipSlot)
@@ -530,8 +538,10 @@ function GetSlotStackSize(bagId, slotIndex)
 end
 
 ItemTooltip = newControl("ItemTooltip")
+SkillTooltip = newControl("SkillTooltip")
 function ItemTooltip:SetLink(link) self.link = link end
 function ItemTooltip:AddLine(text) self.extraLine = text end
+function SkillTooltip:LayoutSimpleAbility(abilityId) self.abilityId = abilityId end
 function InitializeTooltip() end
 function ClearTooltip(tooltip) tooltip.link = nil end
 
@@ -540,6 +550,7 @@ dofile("ItemResolver.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
+dofile("SkillCatalog.lua")
 dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("UI.lua")
@@ -555,6 +566,10 @@ local owner = {
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
+owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
+owner.skillCatalog:AddAbility(1001, false)
+owner.skillCatalog:AddAbility(1002, false)
+owner.skillCatalog:AddAbility(1006, true)
 owner.accessibility = GravvyBuildPlannerAccessibility
 owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
@@ -566,6 +581,33 @@ expectEqual(#GravvyBuildPlannerSlots.ORDER, 14, "paper doll should retain all eq
 for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
     expect(ui.rows[slotKey] and ui.rows[slotKey].icon, slotKey .. " should have an icon control")
 end
+ui:SetView("skills")
+expect(not ui.skillPanel:IsHidden(), "keyboard users should be able to open the skill-bar planner")
+ui.skillEdit:SetText("Deep")
+ui:OnSkillTextChanged()
+expectEqual(#ui.skillSuggestionData, 1, "skill names should autocomplete from active abilities")
+ui:ChooseSkillSuggestion(1)
+ui:SaveSkill()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().skillBars.front[1].abilityId,
+    1001,
+    "keyboard skill choices should persist on the front bar"
+)
+ui:ShowSkillTooltip(ui.skillButtons.front[1], "front", 1)
+expectEqual(SkillTooltip.abilityId, 1001, "planned skills should use ESO's native ability tooltip")
+ui.selectedSkillSlot = 6
+ui:LoadSkillEditor()
+ui.skillEdit:SetText("Wild")
+ui:OnSkillTextChanged()
+ui:ChooseSkillSuggestion(1)
+ui:SaveSkill()
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().skillBars.front[6].abilityId,
+    1006,
+    "ultimate choices should persist in the sixth bar slot"
+)
+ui:SetView("gear")
+expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the paper doll")
 owner.share = GravvyBuildPlannerShare:New(owner)
 owner.share:Initialize()
 expect(owner.share.window:IsHidden(), "the build share window should start hidden")
@@ -1118,7 +1160,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    9,
+    10,
     "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
@@ -1126,6 +1168,30 @@ gamepad:Show()
 expect(not gamepad.control:IsHidden(), "gamepad mode should open the native planner")
 expectEqual(#gamepad.list.entries, 14, "the gamepad planner should show every equipment slot")
 expectEqual(gamepad:GetTargetSlot(), "head", "the native list should begin on the head slot")
+gamepad:TogglePlannerView()
+expectEqual(#gamepad.list.entries, 12, "the gamepad skill planner should show both six-slot bars")
+expectEqual(
+    gamepad:GetTargetData().skillBar,
+    "front",
+    "the gamepad skill planner should begin on the front bar"
+)
+expectEqual(
+    gamepad:GetTargetData().skillSlot,
+    1,
+    "the gamepad skill planner should begin on skill slot one"
+)
+gamepad.pendingSkillBar = "front"
+gamepad.pendingSkillSlot = 2
+gamepad.pendingAbilityId = 1002
+local skillSaved, skillError = gamepad:SavePendingSkill()
+expect(skillSaved, skillError)
+expectEqual(
+    BuildPlannerTestData:GetCurrentSetup().skillBars.front[2].abilityId,
+    1002,
+    "gamepad skill selection should persist planned abilities"
+)
+gamepad:TogglePlannerView()
+expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
 
 gamepad:LoadPendingRequirement()
 gamepad.pendingRequirement.setName = "Order's Wrath"

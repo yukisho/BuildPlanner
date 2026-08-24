@@ -155,6 +155,32 @@ ok = data:SetPreferredRoute(build.id, setup.id, "waist", "buy")
 expect(ok, "a supported acquisition route should be saved")
 expectEqual(setup.acquisition.waist.preferredRoute, "buy", "the preferred route should remain separate from equipment")
 expect(not data:SetPreferredRoute(build.id, setup.id, "waist", "teleport"), "unknown acquisition routes should be rejected")
+ok = data:SetSkill(build.id, setup.id, "front", 1, {
+    abilityId = 1001,
+    name = "Deep Fissure",
+    icon = "deep-fissure.dds",
+    isUltimate = false,
+})
+expect(ok, "front-bar active skills should be saved")
+expect(not data:SetSkill(build.id, setup.id, "front", 2, {
+    abilityId = 1001,
+    name = "Deep Fissure",
+    icon = "deep-fissure.dds",
+    isUltimate = false,
+}), "a skill should not occupy two positions on the same bar")
+ok = data:SetSkill(build.id, setup.id, "front", 6, {
+    abilityId = 1006,
+    name = "Wild Guardian",
+    icon = "wild-guardian.dds",
+    isUltimate = true,
+})
+expect(ok, "the sixth skill slot should accept an ultimate")
+expect(not data:SetSkill(build.id, setup.id, "back", 1, {
+    abilityId = 1006,
+    name = "Wild Guardian",
+    icon = "wild-guardian.dds",
+    isUltimate = true,
+}), "normal skill slots should reject ultimates")
 
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
@@ -251,6 +277,7 @@ local variant = data:DuplicateSetup(build.id, setup.id)
 expect(variant, "setup should be duplicated")
 expect(variant.equipment.waist ~= setup.equipment.waist, "equipment should be copied")
 expect(variant.alternatives ~= setup.alternatives, "slot alternatives should be copied independently")
+expect(variant.skillBars ~= setup.skillBars, "skill bars should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -286,6 +313,11 @@ expectEqual(
     "Order's Wrath",
     "share codes should retain ordered slot alternatives"
 )
+expectEqual(
+    decodedBuild.setups[1].skillBars.front[1].abilityId,
+    1001,
+    "share codes should retain planned skill bars"
+)
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -301,6 +333,11 @@ expectEqual(
     imported.setups[1].alternatives.waist[1].setName,
     "Order's Wrath",
     "import should preserve shared alternatives"
+)
+expectEqual(
+    imported.setups[1].skillBars.front[6].abilityId,
+    1006,
+    "import should preserve planned ultimates"
 )
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
@@ -349,7 +386,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 3, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 4, "migration should advance the saved-data schema")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {
