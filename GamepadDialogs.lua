@@ -16,6 +16,7 @@ local CHARACTER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHARACTER"
 local CHAMPION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHAMPION"
 local SUPPLY_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SUPPLY"
 local CHECKLIST_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHECKLIST"
+local REVISION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -363,6 +364,7 @@ end
 function Gamepad:InitializeDialogs()
     self:InitializeEditDialog()
     self:InitializeManageDialog()
+    self:InitializeRevisionDialog()
     self:InitializeNameDialog()
     self:InitializeConfirmDialog()
     self:InitializeExportDialog()
@@ -1421,6 +1423,9 @@ function Gamepad:InitializeManageDialog()
             actionEntry(SI_GRAVVY_BUILD_PLANNER_CAPTURE, function()
                 self:OpenCaptureFromManage()
             end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_REVISIONS, function()
+                self:OpenRevisionsFromManage()
+            end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_RENAME_BUILD, function()
                 self:OpenNameFromManage("renameBuild")
             end),
@@ -1508,12 +1513,154 @@ function Gamepad:OpenCaptureFromManage()
     end)
 end
 
+function Gamepad:GetRevisionChoices()
+    local build = self.owner.data:GetCurrentBuild()
+    local choices = {}
+    for _, revision in ipairs(self.owner.data:GetRevisions(build.id)) do
+        local patch = revision.patch ~= "" and (" - " .. revision.patch) or ""
+        choices[#choices + 1] = {
+            label = revision.name .. patch,
+            value = revision.id,
+        }
+    end
+    if #choices == 0 then
+        choices[1] = {
+            label = GetString(SI_GRAVVY_BUILD_PLANNER_REVISION_EMPTY),
+            value = 0,
+        }
+    end
+    return choices
+end
+
+function Gamepad:GetSelectedRevision()
+    local build = self.owner.data:GetCurrentBuild()
+    return self.owner.data:FindRevision(build, self.selectedRevisionId)
+end
+
+function Gamepad:InitializeRevisionDialog()
+    ZO_Dialogs_RegisterCustomDialog(REVISION_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local build = self.owner.data:GetCurrentBuild()
+            local revisions = self.owner.data:GetRevisions(build.id)
+            if not self.owner.data:FindRevision(build, self.selectedRevisionId) then
+                self.selectedRevisionId = revisions[1] and revisions[1].id or 0
+            end
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_REVISION_TITLE },
+        mainText = {
+            text = function()
+                local revision = self:GetSelectedRevision()
+                if not revision then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_REVISION_HELP)
+                end
+                return zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_REVISION_GAMEPAD_DETAIL,
+                    revision.name,
+                    revision.patch ~= "" and revision.patch
+                        or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED),
+                    #revision.snapshot.setups
+                )
+            end,
+        },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_REVISION_SELECT,
+                function() return self:GetRevisionChoices() end,
+                function() return self.selectedRevisionId end,
+                function(value) self.selectedRevisionId = value end
+            ),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_REVISION_SAVE, function()
+                self.pendingNameAction = "createRevision"
+                self.pendingName = ""
+                releaseAndOpen(REVISION_DIALOG, function()
+                    ZO_Dialogs_ShowGamepadDialog(NAME_DIALOG)
+                end)
+            end),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_REVISION_RESTORE,
+                function() self:ConfirmGamepadRevisionRestore() end,
+                function() return self:GetSelectedRevision() ~= nil end
+            ),
+            actionEntry(
+                SI_GRAVVY_BUILD_PLANNER_REVISION_DELETE,
+                function() self:ConfirmGamepadRevisionDelete() end,
+                function() return self:GetSelectedRevision() ~= nil end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CLOSE,
+                callback = cancelDialog(REVISION_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:OpenRevisionsFromManage()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(REVISION_DIALOG)
+    end)
+end
+
+function Gamepad:ConfirmGamepadRevisionRestore()
+    local revision = self:GetSelectedRevision()
+    if not revision then
+        return
+    end
+    local build = self.owner.data:GetCurrentBuild()
+    self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_REVISION_RESTORE)
+    self.pendingConfirmText = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_CONFIRM_RESTORE_REVISION,
+        revision.name
+    )
+    self.pendingConfirm = function()
+        return self.owner.data:RestoreRevision(build.id, revision.id)
+    end
+    releaseAndOpen(REVISION_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+    end)
+end
+
+function Gamepad:ConfirmGamepadRevisionDelete()
+    local revision = self:GetSelectedRevision()
+    if not revision then
+        return
+    end
+    local build = self.owner.data:GetCurrentBuild()
+    self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_REVISION_DELETE)
+    self.pendingConfirmText = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_CONFIRM_DELETE_REVISION,
+        revision.name
+    )
+    self.pendingConfirm = function()
+        return self.owner.data:DeleteRevision(build.id, revision.id)
+    end
+    releaseAndOpen(REVISION_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+    end)
+end
+
 function Gamepad:InitializeNameDialog()
     ZO_Dialogs_RegisterCustomDialog(NAME_DIALOG, {
         blockDialogReleaseOnPress = true,
         gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
         setup = function(dialog) dialog:setupFunc() end,
-        title = { text = SI_GRAVVY_BUILD_PLANNER_ENTER_NAME },
+        title = {
+            text = function()
+                return GetString(self.pendingNameAction == "createRevision"
+                    and SI_GRAVVY_BUILD_PLANNER_REVISION_NAME
+                    or SI_GRAVVY_BUILD_PLANNER_ENTER_NAME)
+            end,
+        },
         parametricList = {
             textFieldEntry(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME, {
                 value = function() return self.pendingName end,
@@ -1576,13 +1723,16 @@ function Gamepad:AcceptPendingName()
         result, message = self.owner.data:RenameSetup(build.id, setup.id, self.pendingName)
     elseif action == "duplicateSetup" then
         result, message = self.owner.data:DuplicateSetup(build.id, setup.id, self.pendingName)
+    elseif action == "createRevision" then
+        result, message = self.owner.data:CreateRevision(build.id, self.pendingName)
     end
     if not result then
         return false, message
     end
     self.owner.setCatalog:Refresh()
     self.owner.inventory:Refresh()
-    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_SAVED))
+    self:SetStatus(type(message) == "string" and message
+        or GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_SAVED))
     self:Refresh(true)
     return true
 end
@@ -1623,6 +1773,9 @@ function Gamepad:InitializeConfirmDialog()
                         return
                     end
                     self.owner.setCatalog:Refresh()
+                    if self.owner.consumableCatalog then
+                        self.owner.consumableCatalog:Refresh()
+                    end
                     self.owner.inventory:Refresh()
                     if message then
                         self:SetStatus(message)
@@ -1834,6 +1987,7 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

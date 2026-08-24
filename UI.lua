@@ -338,6 +338,15 @@ function UI:Initialize()
     self.captureButton:SetHandler("OnClicked", function()
         self:RequestCharacterCapture()
     end)
+    self.revisionButton = makeButton(
+        window,
+        GetString(SI_GRAVVY_BUILD_PLANNER_REVISIONS),
+        90
+    )
+    self.revisionButton:SetAnchor(TOPRIGHT, self.captureButton, TOPLEFT, -8, 0)
+    self.revisionButton:SetHandler("OnClicked", function()
+        self:OpenRevisionDialog()
+    end)
 
     self:CreateBuildControls()
     self:CreateSlotRows()
@@ -354,6 +363,7 @@ function UI:Initialize()
     self:CreateExportDialog()
     self:CreateCodeDialog()
     self:CreateHelpDialog()
+    self:CreateRevisionDialog()
     self:RegisterFocusEvent()
 
     self.status = makeLabel(
@@ -1011,7 +1021,14 @@ function UI:CreateNameDialog()
         { 0.035, 0.035, 0.045, 1 },
         { 0.5, 0.42, 0.28, 1 }
     )
-    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME), 18, 10, 350, "ZoFontWinH3")
+    self.nameDialogTitle = makeLabel(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_ENTER_NAME),
+        18,
+        10,
+        350,
+        "ZoFontWinH3"
+    )
     self.nameEdit = makeEdit(dialog, "GravvyBuildPlannerNameEdit", 18, 49, 354)
 
     local accept = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_NAME), 100)
@@ -1258,8 +1275,11 @@ function UI:CreateHelpDialog()
         helpPage(
             GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES),
             GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
+        ),
+        helpPage(
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
         ),
     }
     self.helpPage = 1
@@ -2593,8 +2613,11 @@ function UI:OnSetKeyDown(key)
     end
 end
 
-function UI:OpenNameDialog(initialValue, callback)
+function UI:OpenNameDialog(initialValue, callback, titleStringId)
     self.nameCallback = callback
+    self.nameDialogTitle:SetText(GetString(
+        titleStringId or SI_GRAVVY_BUILD_PLANNER_ENTER_NAME
+    ))
     self.nameEdit:SetText(initialValue or "")
     self.nameDialog:SetHidden(false)
     self.nameEdit:TakeFocus()
@@ -2609,6 +2632,9 @@ function UI:AcceptNameDialog()
     end
     self.nameDialog:SetHidden(true)
     self:FinishAction(result)
+    if type(message) == "string" and message ~= "" then
+        self:SetStatus(message)
+    end
 end
 
 function UI:OpenConfirm(message, callback, callbackRefreshesUI, acceptStringId)

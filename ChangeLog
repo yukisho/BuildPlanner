@@ -1,3 +1,11 @@
+0.7.16
+- Added named, build-specific revision checkpoints for adapting plans across
+  game updates, with the newest 20 revisions retained locally.
+- Added keyboard and native gamepad revision browsers with save, restore, and
+  delete actions. Restoring first keeps the replaced build as a new checkpoint.
+- Kept revision history out of copied, imported, and shared builds so GBP1 codes
+  remain compact and cannot contain nested backup histories.
+
 0.7.15
 - Enlarged the confirmation window and its message area so the character
   capture prompt wraps cleanly above the action buttons.

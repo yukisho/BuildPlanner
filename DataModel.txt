@@ -12,6 +12,19 @@ A build contains its name, class ID, role, game update, guide author, source URL
 notes, and an ordered list of setups. Build IDs are stable and unique within the
 account-wide saved data.
 
+Revision history
+----------------
+
+A build may keep up to 20 named revision checkpoints, newest first. Each
+checkpoint stores the game update, save time, selected setup, and a complete
+snapshot of that build's guide metadata and setups. Restoring a checkpoint keeps
+the current build ID, assigns fresh setup IDs through the normal import validator,
+and first saves the state being replaced as another named checkpoint.
+
+Revision history is local backup state. It is not copied when a build is
+duplicated or imported and is not included in GBP1 share codes. This prevents
+nested histories and keeps shared codes from growing with every checkpoint.
+
 Setup
 -----
 
@@ -148,7 +161,7 @@ order and defaults, equipment requirements, item links, notes, preferred
 acquisition routes, ordered alternatives, skill bars, character and Champion
 plans, consumable requirements, progression checklists, and the selected setup.
 Derived inventory matches and collection states are recalculated after import
-rather than copied.
+rather than copied. Local revision checkpoints are also excluded.
 
 Build Planner writes format version 7 codes and continues to accept versions 1
 through 6, created before equipment alternatives, skill bars, character plans,

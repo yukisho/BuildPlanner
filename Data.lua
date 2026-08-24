@@ -1,8 +1,10 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 8
+local SCHEMA_VERSION = 9
 local MAX_DELETED_ACTIONS = 20
+local MAX_REVISIONS = 20
+local MAX_REVISION_NAME = 100
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
 local MAX_SUBCLASS_NAME = 100
@@ -117,6 +119,27 @@ local function makeUniqueName(seen, baseName)
     end
     seen[zo_strlower(name)] = true
     return name
+end
+
+local function makeBuildSnapshot(build)
+    local selectedSetupIndex = 1
+    for index, setup in ipairs(build.setups) do
+        if setup.id == build.selectedSetupId then
+            selectedSetupIndex = index
+            break
+        end
+    end
+    return {
+        name = build.name,
+        classId = build.classId,
+        role = build.role,
+        patch = build.patch,
+        author = build.author,
+        sourceUrl = build.sourceUrl,
+        notes = build.notes,
+        selectedSetupIndex = selectedSetupIndex,
+        setups = deepCopy(build.setups),
+    }
 end
 
 local function copyRequirement(source)
@@ -655,6 +678,48 @@ function Data:Migrate()
         build.notes = normalizeNote(build.notes)
         build.createdAt = readWholeNumber(build.createdAt, 0) or now()
         build.updatedAt = readWholeNumber(build.updatedAt, 0) or build.createdAt
+        local revisions = {}
+        local usedRevisionIds = {}
+        local highestRevisionId = 0
+        if type(build.revisions) == "table" then
+            for _, sourceRevision in ipairs(build.revisions) do
+                if #revisions >= MAX_REVISIONS then
+                    break
+                end
+                local snapshot = type(sourceRevision) == "table"
+                    and sourceRevision.snapshot
+                local revisionName = type(sourceRevision) == "table"
+                    and trim(sourceRevision.name)
+                    or ""
+                if revisionName ~= "" and #revisionName <= MAX_REVISION_NAME
+                    and type(snapshot) == "table"
+                    and type(snapshot.setups) == "table"
+                    and #snapshot.setups > 0 then
+                    local revisionId = readWholeNumber(sourceRevision.id, 1)
+                    if not revisionId or usedRevisionIds[revisionId] then
+                        revisionId = highestRevisionId + 1
+                    end
+                    usedRevisionIds[revisionId] = true
+                    highestRevisionId = math.max(highestRevisionId, revisionId)
+                    snapshot = deepCopy(snapshot)
+                    snapshot.revisions = nil
+                    snapshot.nextRevisionId = nil
+                    revisions[#revisions + 1] = {
+                        id = revisionId,
+                        name = revisionName,
+                        patch = trim(sourceRevision.patch or snapshot.patch),
+                        createdAt = readWholeNumber(sourceRevision.createdAt, 0)
+                            or build.updatedAt,
+                        snapshot = snapshot,
+                    }
+                end
+            end
+        end
+        build.revisions = revisions
+        build.nextRevisionId = math.max(
+            readWholeNumber(build.nextRevisionId, 1) or 1,
+            highestRevisionId + 1
+        )
         local setups = {}
         if type(build.setups) == "table" then
             for _, setup in ipairs(build.setups) do
@@ -866,6 +931,8 @@ function Data:CreateBuild(name, values)
         sourceUrl = changes.sourceUrl or "",
         notes = changes.notes or "",
         setups = {},
+        revisions = {},
+        nextRevisionId = 1,
         createdAt = now(),
         updatedAt = now(),
     }
@@ -940,6 +1007,8 @@ function Data:DuplicateBuild(id, name)
         sourceUrl = source.sourceUrl,
         notes = source.notes,
         setups = {},
+        revisions = {},
+        nextRevisionId = 1,
         createdAt = timestamp,
         updatedAt = timestamp,
     }
@@ -999,6 +1068,8 @@ function Data:ImportBuild(source)
         sourceUrl = changes.sourceUrl or "",
         notes = changes.notes or "",
         setups = {},
+        revisions = {},
+        nextRevisionId = 1,
         createdAt = timestamp,
         updatedAt = timestamp,
     }
@@ -1124,6 +1195,133 @@ function Data:ImportBuild(source)
     self.saved.builds[#self.saved.builds + 1] = build
     self.saved.selectedBuildId = build.id
     return build
+end
+
+function Data:GetRevisions(buildId)
+    local build = self:FindBuild(buildId)
+    return build and build.revisions or {}
+end
+
+function Data:FindRevision(build, revisionId)
+    if not build then
+        return nil
+    end
+    for index, revision in ipairs(build.revisions or {}) do
+        if revision.id == revisionId then
+            return revision, index
+        end
+    end
+end
+
+function Data:RevisionNameExists(build, name)
+    for _, revision in ipairs(build.revisions or {}) do
+        if sameName(revision.name, name) then
+            return true
+        end
+    end
+    return false
+end
+
+function Data:GetUniqueRevisionName(build, baseName)
+    baseName = trim(baseName)
+    if #baseName > MAX_REVISION_NAME then
+        baseName = string.sub(baseName, 1, MAX_REVISION_NAME)
+    end
+    local name = baseName
+    local suffix = 2
+    while self:RevisionNameExists(build, name) do
+        local ending = " " .. tostring(suffix)
+        name = string.sub(baseName, 1, MAX_REVISION_NAME - #ending) .. ending
+        suffix = suffix + 1
+    end
+    return name
+end
+
+function Data:CreateRevision(buildId, name)
+    local build = self:FindBuild(buildId)
+    if not build then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_MISSING)
+    end
+    name = trim(name)
+    if name == "" or #name > MAX_REVISION_NAME then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_NAME)
+    end
+    if self:RevisionNameExists(build, name) then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_EXISTS)
+    end
+
+    local revision = {
+        id = build.nextRevisionId,
+        name = name,
+        patch = build.patch,
+        createdAt = now(),
+        snapshot = makeBuildSnapshot(build),
+    }
+    build.nextRevisionId = build.nextRevisionId + 1
+    table.insert(build.revisions, 1, revision)
+    while #build.revisions > MAX_REVISIONS do
+        table.remove(build.revisions)
+    end
+    return revision, zo_strformat(SI_GRAVVY_BUILD_PLANNER_REVISION_SAVED, name)
+end
+
+function Data:DeleteRevision(buildId, revisionId)
+    local build = self:FindBuild(buildId)
+    local revision, index = self:FindRevision(build, revisionId)
+    if not revision then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_MISSING)
+    end
+    table.remove(build.revisions, index)
+    return true, zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_REVISION_DELETED,
+        revision.name
+    )
+end
+
+function Data:RestoreRevision(buildId, revisionId)
+    local build = self:FindBuild(buildId)
+    local revision = self:FindRevision(build, revisionId)
+    if not revision then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_MISSING)
+    end
+
+    local imported, message = self:ImportBuild(deepCopy(revision.snapshot))
+    if not imported then
+        self.saved.selectedBuildId = build.id
+        return nil, message
+    end
+    local _, importedIndex = self:FindBuild(imported.id)
+    local backupName = self:GetUniqueRevisionName(build, zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_REVISION_BEFORE_RESTORE,
+        revision.name
+    ))
+    local backup, backupError = self:CreateRevision(build.id, backupName)
+    if not backup then
+        table.remove(self.saved.builds, importedIndex)
+        self.saved.selectedBuildId = build.id
+        return nil, backupError
+    end
+    if not self:FindRevision(build, revision.id) then
+        table.insert(build.revisions, 2, revision)
+        table.remove(build.revisions)
+    end
+
+    table.remove(self.saved.builds, importedIndex)
+    build.name = self:GetUniqueBuildName(revision.snapshot.name, build.id)
+    build.classId = imported.classId
+    build.role = imported.role
+    build.patch = imported.patch
+    build.author = imported.author
+    build.sourceUrl = imported.sourceUrl
+    build.notes = imported.notes
+    build.setups = imported.setups
+    build.selectedSetupId = imported.selectedSetupId
+    build.updatedAt = now()
+    self.saved.selectedBuildId = build.id
+    return build, zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_REVISION_RESTORED,
+        revision.name
+    )
 end
 
 function Data:SelectBuild(id)

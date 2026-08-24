@@ -749,6 +749,7 @@ dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("Comparison.lua")
 dofile("UI.lua")
+dofile("RevisionHistory.lua")
 dofile("ChampionPlanner.lua")
 dofile("SuppliesPlanner.lua")
 dofile("ChecklistPlanner.lua")
@@ -828,6 +829,7 @@ expectEqual(ui.routeLabel.width, 150,
 expectEqual(ui.routeContainer.anchor[4] + ui.routeContainer.width, 412,
     "the shifted route selector should retain the editor's right alignment")
 expect(ui.captureButton, "keyboard users should have a character capture action")
+expect(ui.revisionButton, "keyboard users should have a revision history action")
 local originalBuild = BuildPlannerTestData:GetCurrentBuild()
 local buildCount = #BuildPlannerTestData:GetBuilds()
 ui.captureButton.handlers.OnClicked()
@@ -1027,6 +1029,11 @@ expectEqual(
     SI_GRAVVY_BUILD_PLANNER_CAPTURE,
     "gamepad build management should expose character capture"
 )
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[3].text,
+    SI_GRAVVY_BUILD_PLANNER_REVISIONS,
+    "gamepad build management should expose revision history"
+)
 local gamepadBuildCount = #BuildPlannerTestData:GetBuilds()
 local gamepadCaptureAction = gamepadDialogs[
     "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
@@ -1039,6 +1046,12 @@ expectEqual(#BuildPlannerTestData:GetBuilds(), gamepadBuildCount,
 expectEqual(gamepad.pendingConfirmText,
     GetString(SI_GRAVVY_BUILD_PLANNER_CONFIRM_CAPTURE),
     "gamepad capture should explain what will be copied")
+local gamepadRevisionAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[3]
+gamepadRevisionAction.templateData.callback()
+expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION",
+    "gamepad users should be able to browse revision history")
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {
@@ -1172,7 +1185,7 @@ expect(ui.window:IsHidden(), "planner should start hidden")
 ui:ShowHelp()
 expect(not ui.helpDialog:IsHidden(), "in-game help should be available from the planner")
 expect(cameraUIMode, "standalone help should request ESO UI mode")
-expectEqual(#ui.helpPages, 3, "keyboard help should be split into readable pages")
+expectEqual(#ui.helpPages, 4, "keyboard help should be split into readable pages")
 expectEqual(owner.accessibility.fonts[ui.helpContent], "ZoFontGame",
     "keyboard help should use the larger normal game font")
 ui.helpNextButton.handlers.OnClicked()
@@ -1180,10 +1193,41 @@ expectEqual(ui.helpPage, 2, "keyboard help should advance to the next page")
 expect(ui.helpContent:GetText():find("CHARACTER\nChoose Character", 1, true),
     "the Character help heading should remain separate from its description")
 ui.helpNextButton.handlers.OnClicked()
+expect(ui.helpContent:GetText():find("COMPARE SETUPS", 1, true),
+    "the third help page should describe later planner sections")
+ui.helpNextButton.handlers.OnClicked()
 expect(ui.helpContent:GetText():find("CAPTURE CHARACTER", 1, true),
-    "the final help page should expose sections that previously overflowed")
+    "the final help page should explain character capture")
+expect(ui.helpContent:GetText():find("BUILD REVISIONS", 1, true),
+    "the final help page should explain revision checkpoints")
 ui:CloseHelp()
 expect(not cameraUIMode, "closing standalone help should release its UI mode")
+
+local revisionBuild = BuildPlannerTestData:GetCurrentBuild()
+local revisionCount = #BuildPlannerTestData:GetRevisions(revisionBuild.id)
+ui.revisionButton.handlers.OnClicked()
+expect(not ui.revisionDialog:IsHidden(),
+    "keyboard users should be able to open revision history")
+ui:SaveCurrentRevision()
+expectEqual(ui.nameDialogTitle:GetText(), "Revision name",
+    "revision checkpoints should use a specific naming prompt")
+ui.nameEdit:SetText("Keyboard checkpoint")
+ui:AcceptNameDialog()
+local keyboardRevision = BuildPlannerTestData:FindRevision(
+    revisionBuild,
+    ui.selectedRevisionId
+)
+expect(keyboardRevision and keyboardRevision.name == "Keyboard checkpoint",
+    "keyboard revision saves should create and select a checkpoint")
+expectEqual(#BuildPlannerTestData:GetRevisions(revisionBuild.id),
+    math.min(20, revisionCount + 1),
+    "keyboard revision saves should respect the history limit")
+ui:PageRevisions(1)
+if ui.revisionOffset > 0 then
+    expectEqual(ui.selectedRevisionId, ui.revisionRows[1].revisionId,
+        "revision paging should select a visible checkpoint")
+end
+ui.revisionDialog:SetHidden(true)
 BuildPlannerTestData:GetSettings().fontScale = 1.2
 owner.accessibility:Refresh()
 expect(ui.status.font:find("test%-font|22"), "font scaling should reapply registered control fonts")
@@ -1597,8 +1641,8 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    14,
-    "gamepad editing, management, sharing, export, and help dialogs should register"
+    15,
+    "gamepad editing, management, revisions, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
 gamepad:Show()

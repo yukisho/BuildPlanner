@@ -391,6 +391,7 @@ expect(
     "build copies should not share slot alternatives"
 )
 expectEqual(next(duplicate.setups[1].acquisition), nil, "build copy should not copy acquisition state")
+expectEqual(#duplicate.revisions, 0, "build copies should start with separate revision history")
 
 ok = data:DeleteBuild(duplicate.id)
 expect(ok, "build should be deleted")
@@ -478,6 +479,62 @@ expectEqual(data:ImportBuild({
 }), nil, "imports should reject a filled off-hand beside a two-handed weapon")
 expectEqual(data.saved.nextBuildId, nextBuildId, "contradictory imports should remain transactional")
 
+local revision, revisionMessage = data:CreateRevision(build.id, "Update 50 baseline")
+expect(revision, revisionMessage)
+expectEqual(#data:GetRevisions(build.id), 1, "named revisions should be stored on their build")
+expectEqual(revision.snapshot.selectedSetupIndex, 2,
+    "revision snapshots should retain the selected setup")
+expectEqual(data:CreateRevision(build.id, "Update 50 baseline"), nil,
+    "revision names should be unique within a build")
+local buildCodeWithHistory = GravvyBuildPlannerShare.EncodeBuild(build)
+local decodedWithoutHistory = GravvyBuildPlannerShare.DecodeCode(buildCodeWithHistory)
+expectEqual(decodedWithoutHistory.revisions, nil,
+    "revision history should remain local instead of inflating share codes")
+
+data:UpdateBuild(build.id, { patch = "Update 51" })
+data:SetEquipment(build.id, setup.id, "waist", {
+    setName = "Changed Set",
+    armorType = 1,
+})
+local restored, restoredMessage = data:RestoreRevision(build.id, revision.id)
+expect(restored, restoredMessage)
+expectEqual(restored.id, build.id, "restoring should preserve the build identity")
+expectEqual(restored.patch, "Update 50", "restoring should recover build metadata")
+expectEqual(restored.setups[1].equipment.waist.setName, "Whorl of the Depths",
+    "restoring should recover setup contents")
+expectEqual(#restored.revisions, 2,
+    "restoring should preserve a backup of the replaced build")
+expectEqual(restored.revisions[1].snapshot.patch, "Update 51",
+    "the automatic backup should contain the pre-restore state")
+
+local brokenRevision = data:CreateRevision(build.id, "Broken checkpoint")
+brokenRevision.snapshot.setups = {}
+local buildsBeforeBrokenRestore = #data:GetBuilds()
+expectEqual(data:RestoreRevision(build.id, brokenRevision.id), nil,
+    "invalid revision snapshots should fail validation")
+expectEqual(#data:GetBuilds(), buildsBeforeBrokenRestore,
+    "failed restores should not leave a temporary imported build")
+expectEqual(build.patch, "Update 50",
+    "failed restores should not alter the current build")
+expect(data:DeleteRevision(build.id, brokenRevision.id),
+    "saved revisions should be removable")
+
+for index = 1, 22 do
+    data:CreateRevision(build.id, "Checkpoint " .. tostring(index))
+end
+expectEqual(#data:GetRevisions(build.id), 20,
+    "revision history should discard its oldest entries at the limit")
+local oldestRevision = data:GetRevisions(build.id)[20]
+local restoredAtLimit, restoredAtLimitMessage = data:RestoreRevision(
+    build.id,
+    oldestRevision.id
+)
+expect(restoredAtLimit, restoredAtLimitMessage)
+expect(data:FindRevision(restoredAtLimit, oldestRevision.id),
+    "restoring the oldest full-history checkpoint should not evict it")
+expectEqual(#data:GetRevisions(build.id), 20,
+    "automatic restore backups should retain the history limit")
+
 TEST_SAVED = {
     nextBuildId = 1,
     nextSetupId = 1,
@@ -508,7 +565,9 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 8, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 9, "migration should advance the saved-data schema")
+expectEqual(#repaired.saved.builds[1].revisions, 0,
+    "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
 expectEqual(repaired.saved.builds[1].setups[1].champion.craft.slottables[4], 0,
     "migration should add Champion defaults")
