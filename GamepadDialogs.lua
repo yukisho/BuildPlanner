@@ -13,6 +13,7 @@ local TRANSFER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_TRANSFER"
 local SHARE_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SHARE"
 local SKILL_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SKILL"
 local CHARACTER_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHARACTER"
+local CHAMPION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHAMPION"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -343,6 +344,7 @@ function Gamepad:InitializeDialogs()
     self:InitializeShareDialog()
     self:InitializeSkillDialog()
     self:InitializeCharacterDialog()
+    self:InitializeChampionDialog()
 end
 
 function Gamepad:InitializeEditDialog()
@@ -673,12 +675,184 @@ function Gamepad:ShowEditDialog()
     elseif self.activeView == "character" then
         ZO_Dialogs_ShowGamepadDialog(CHARACTER_DIALOG)
         return
+    elseif self.activeView == "champion" then
+        ZO_Dialogs_ShowGamepadDialog(CHAMPION_DIALOG)
+        return
     end
     if self:IsTargetEditable() then
         self.pendingSlot = nil
         self.pendingAlternativeIndex = nil
         ZO_Dialogs_ShowGamepadDialog(EDIT_DIALOG)
     end
+end
+
+function Gamepad:InitializeChampionDialog()
+    ZO_Dialogs_RegisterCustomDialog(CHAMPION_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            local data = self:GetTargetData()
+            local setup = self.owner.data:GetCurrentSetup()
+            local disciplineKey = data and data.championDiscipline or "warfare"
+            local discipline = setup.champion[disciplineKey]
+            local allocation
+            for _, entry in ipairs(discipline.allocations) do
+                if entry.skillId == (data and data.championSkillId) then
+                    allocation = entry
+                    break
+                end
+            end
+            local slotIndex = 0
+            if allocation then
+                for index = 1, 4 do
+                    if discipline.slottables[index] == allocation.skillId then
+                        slotIndex = index
+                        break
+                    end
+                end
+            end
+            self.pendingChampion = {
+                discipline = disciplineKey,
+                skillId = allocation and allocation.skillId,
+                originalSkillId = allocation and allocation.skillId,
+                points = allocation and tostring(allocation.points) or "",
+                slotIndex = slotIndex,
+            }
+            dialog:setupFunc()
+        end,
+        title = { text = SI_GRAVVY_BUILD_PLANNER_CHAMPION },
+        parametricList = {
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_CHAMPION_STAR,
+                function()
+                    local choices = {}
+                    for _, entry in ipairs(
+                        self.owner.championCatalog.byDiscipline[self.pendingChampion.discipline] or {}
+                    ) do
+                        choices[#choices + 1] = { label = entry.name, value = entry.skillId }
+                    end
+                    return choices
+                end,
+                function() return self.pendingChampion.skillId end,
+                function(value)
+                    self.pendingChampion.skillId = value
+                    local entry = self.owner.championCatalog:FindById(value)
+                    if entry and self.pendingChampion.points == "" then
+                        self.pendingChampion.points = tostring(entry.maxPoints)
+                    end
+                    if entry and not entry.isSlottable then
+                        self.pendingChampion.slotIndex = 0
+                    end
+                end
+            ),
+            textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS, {
+                value = function() return self.pendingChampion.points end,
+                changed = function(value) self.pendingChampion.points = value end,
+                defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS),
+                maxChars = 4,
+                numeric = true,
+            }),
+            dropdownEntry(
+                SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT,
+                {
+                    { label = GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_NOT_SLOTTED), value = 0 },
+                    { label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT_NUMBER, 1), value = 1 },
+                    { label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT_NUMBER, 2), value = 2 },
+                    { label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT_NUMBER, 3), value = 3 },
+                    { label = zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT_NUMBER, 4), value = 4 },
+                },
+                function() return self.pendingChampion.slotIndex end,
+                function(value) self.pendingChampion.slotIndex = value end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_CHAMPION_SAVE,
+                callback = function()
+                    local ok, message = self:SavePendingChampion()
+                    if not ok then
+                        showError(message)
+                        return
+                    end
+                    ZO_Dialogs_ReleaseDialogOnButtonPress(CHAMPION_DIALOG)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(CHAMPION_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:SavePendingChampion()
+    local pending = self.pendingChampion
+    local entry = self.owner.championCatalog:FindById(pending.skillId)
+    local points = tonumber(pending.points)
+    if not entry or entry.discipline ~= pending.discipline
+        or not points or points ~= math.floor(points)
+        or points < 1 or points > entry.maxPoints then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION)
+    end
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local ok, message = self.owner.data:SetChampionAllocation(
+        build.id,
+        setup.id,
+        pending.discipline,
+        {
+            skillId = entry.skillId,
+            name = entry.name,
+            icon = entry.icon,
+            points = points,
+            isSlottable = entry.isSlottable,
+        }
+    )
+    if not ok then
+        return false, message
+    end
+    if pending.originalSkillId and pending.originalSkillId ~= entry.skillId then
+        self.owner.data:SetChampionAllocation(
+            build.id,
+            setup.id,
+            pending.discipline,
+            { skillId = pending.originalSkillId, remove = true }
+        )
+    end
+    local discipline = setup.champion[pending.discipline]
+    for slotIndex = 1, 4 do
+        if discipline.slottables[slotIndex] == entry.skillId
+            and slotIndex ~= pending.slotIndex then
+            self.owner.data:SetChampionSlottable(
+                build.id,
+                setup.id,
+                pending.discipline,
+                slotIndex,
+                nil
+            )
+        end
+    end
+    if entry.isSlottable and pending.slotIndex > 0 then
+        ok, message = self.owner.data:SetChampionSlottable(
+            build.id,
+            setup.id,
+            pending.discipline,
+            pending.slotIndex,
+            entry.skillId
+        )
+        if not ok then
+            return false, message
+        end
+    end
+    self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SAVED, entry.name))
+    self:Refresh(true)
+    return true
 end
 
 function Gamepad:InitializeCharacterDialog()
@@ -1354,6 +1528,7 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

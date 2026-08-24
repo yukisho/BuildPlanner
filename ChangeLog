@@ -1,3 +1,13 @@
+0.7.3
+- Added Craft, Warfare, and Fitness Champion Point planning to each setup.
+- Added Champion Star autocomplete from ESO's native Champion data, point caps,
+  icons, and native keyboard and gamepad tooltips.
+- Added passive-star allocations and four ordered slottable positions for each
+  discipline without changing the player's live Champion bar.
+- Added keyboard paging and a native gamepad allocation editor for larger plans.
+- Preserved Champion plans through migrations, setup and build copies, and GBP
+  format-version 5 sharing while retaining imports from versions 1 through 4.
+
 0.7.2
 - Added a Character view for setup-specific Health, Magicka, and Stamina
   allocations, with live totals and validation against ESO's 64-point limit.

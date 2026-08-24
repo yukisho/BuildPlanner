@@ -46,6 +46,9 @@ BAG_WORN = 1
 BAG_BACKPACK = 2
 BAG_BANK = 3
 BAG_SUBSCRIBER_BANK = 4
+CHAMPION_DISCIPLINE_TYPE_WORLD = 1
+CHAMPION_DISCIPLINE_TYPE_COMBAT = 2
+CHAMPION_DISCIPLINE_TYPE_CONDITIONING = 3
 
 EQUIP_TYPE_HEAD = 1
 EQUIP_TYPE_SHOULDERS = 2
@@ -78,6 +81,50 @@ end
 function GetItemTraitTypeCategory(traitType)
     return traitType - 20
 end
+
+function GetAbilityIcon(abilityId)
+    return "champion-" .. tostring(abilityId) .. ".dds"
+end
+
+local function championSkill(skillId, abilityId, name, maxPoints, slottable)
+    return {
+        GetId = function() return skillId end,
+        GetAbilityId = function() return abilityId end,
+        GetRawName = function() return name end,
+        GetMaxPossiblePoints = function() return maxPoints end,
+        IsTypeSlottable = function() return slottable end,
+        GetNextJumpPoint = function(_, points) return math.min(maxPoints, points + 1) end,
+    }
+end
+
+local championDisciplines = {
+    {
+        GetType = function() return CHAMPION_DISCIPLINE_TYPE_WORLD end,
+        ChampionSkillDataIterator = function()
+            return ipairs({ championSkill(3001, 4001, "Homemaker", 50, true) })
+        end,
+    },
+    {
+        GetType = function() return CHAMPION_DISCIPLINE_TYPE_COMBAT end,
+        ChampionSkillDataIterator = function()
+            return ipairs({
+                championSkill(3002, 4002, "Fighting Finesse", 50, true),
+                championSkill(3003, 4003, "Precision", 20, false),
+            })
+        end,
+    },
+    {
+        GetType = function() return CHAMPION_DISCIPLINE_TYPE_CONDITIONING end,
+        ChampionSkillDataIterator = function()
+            return ipairs({ championSkill(3004, 4004, "Boundless Vitality", 50, true) })
+        end,
+    },
+}
+CHAMPION_DATA_MANAGER = {
+    ChampionDisciplineDataIterator = function()
+        return ipairs(championDisciplines)
+    end,
+}
 
 TOPLEFT = "TOPLEFT"
 TOPRIGHT = "TOPRIGHT"
@@ -286,6 +333,7 @@ KEYBIND_STRIP = {
 GAMEPAD_TOOLTIPS = {
     LayoutItemLink = function(self, _, link) self.link = link end,
     LayoutSimpleAbility = function(self, _, abilityId) self.abilityId = abilityId end,
+    LayoutChampionSkill = function(self, _, skillData) self.championSkillId = skillData:GetId() end,
     ClearTooltip = function(self) self.link = nil end,
 }
 
@@ -539,9 +587,16 @@ end
 
 ItemTooltip = newControl("ItemTooltip")
 SkillTooltip = newControl("SkillTooltip")
+ChampionSkillTooltip = newControl("ChampionSkillTooltip")
 function ItemTooltip:SetLink(link) self.link = link end
 function ItemTooltip:AddLine(text) self.extraLine = text end
 function SkillTooltip:LayoutSimpleAbility(abilityId) self.abilityId = abilityId end
+function ChampionSkillTooltip:SetChampionSkill(skillId, points, nextPoint, slotted)
+    self.skillId = skillId
+    self.points = points
+    self.nextPoint = nextPoint
+    self.slotted = slotted
+end
 function InitializeTooltip() end
 function ClearTooltip(tooltip) tooltip.link = nil end
 
@@ -551,9 +606,11 @@ dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
 dofile("SkillCatalog.lua")
+dofile("ChampionCatalog.lua")
 dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("UI.lua")
+dofile("ChampionPlanner.lua")
 dofile("Settings.lua")
 dofile("Gamepad.lua")
 dofile("GamepadDialogs.lua")
@@ -570,6 +627,8 @@ owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
 owner.skillCatalog:AddAbility(1002, false)
 owner.skillCatalog:AddAbility(1006, true)
+owner.championCatalog = GravvyBuildPlannerChampionCatalog:New()
+owner.championCatalog:Refresh()
 local nativeSkillTooltipUsed = false
 owner.skillCatalog:FindById(1001).progression = {
     SetKeyboardTooltip = function(_, tooltip, showCost, showUpgrade, showAdvised, showBadMorph)
@@ -654,6 +713,22 @@ expectEqual(
     "Grave Lord",
     "keyboard character planning should persist subclass lines"
 )
+ui:SetView("champion")
+expect(not ui.championPanel:IsHidden(), "keyboard users should be able to open the Champion planner")
+ui:SetChampionDiscipline("warfare")
+ui.championStarEdit:SetText("Fighting")
+ui:OnChampionTextChanged()
+expectEqual(#ui.championSuggestionData, 1, "Champion Stars should autocomplete by discipline")
+ui:ChooseChampionSuggestion(1)
+ui.championPointsEdit:SetText("50")
+ui.championSlotCombo.selectedValue = 1
+ui:SaveChampionAllocation()
+local keyboardChampion = BuildPlannerTestData:GetCurrentSetup().champion.warfare
+expectEqual(keyboardChampion.slottables[1], 3002,
+    "keyboard Champion planning should preserve slottable positions")
+ui:ShowChampionTooltip(ui.championSlotButtons[1], 3002)
+expectEqual(ChampionSkillTooltip.skillId, 3002,
+    "planned Champion Stars should use ESO's native Champion tooltip")
 ui:SetView("gear")
 expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the paper doll")
 owner.share = GravvyBuildPlannerShare:New(owner)
@@ -1208,7 +1283,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    11,
+    12,
     "gamepad editing, management, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
@@ -1257,6 +1332,20 @@ expectEqual(
     64,
     "gamepad character planning should persist attributes"
 )
+gamepad:TogglePlannerView()
+expect(#gamepad.list.entries >= 3, "the gamepad Champion planner should show all three disciplines")
+expectEqual(gamepad:GetTargetData().championDiscipline, "craft",
+    "Champion navigation should begin with Craft")
+gamepad.pendingChampion = {
+    discipline = "warfare",
+    skillId = 3002,
+    points = "50",
+    slotIndex = 2,
+}
+local championSaved, championError = gamepad:SavePendingChampion()
+expect(championSaved, championError)
+expectEqual(BuildPlannerTestData:GetCurrentSetup().champion.warfare.slottables[2], 3002,
+    "gamepad Champion planning should preserve slottable positions")
 gamepad:TogglePlannerView()
 expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
 

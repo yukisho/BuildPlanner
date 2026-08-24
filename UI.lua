@@ -332,6 +332,7 @@ function UI:Initialize()
     self:CreateEditor()
     self:CreateSkillPlanner()
     self:CreateCharacterPlanner()
+    self:CreateChampionPlanner()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -425,15 +426,18 @@ function UI:CreateBuildControls()
     self.progressLabel = makeLabel(window, "", 660, 84, 300, "ZoFontGameSmall")
     self.progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
-    self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 90)
-    self.gearTab:SetAnchor(TOPLEFT, window, TOPLEFT, 660, 47)
+    self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 65)
+    self.gearTab:SetAnchor(TOPLEFT, window, TOPLEFT, 645, 47)
     self.gearTab:SetHandler("OnClicked", function() self:SetView("gear") end)
-    self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 90)
-    self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 8, 0)
+    self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 65)
+    self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 6, 0)
     self.skillsTab:SetHandler("OnClicked", function() self:SetView("skills") end)
-    self.characterTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER), 100)
-    self.characterTab:SetAnchor(LEFT, self.skillsTab, RIGHT, 8, 0)
+    self.characterTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER), 85)
+    self.characterTab:SetAnchor(LEFT, self.skillsTab, RIGHT, 6, 0)
     self.characterTab:SetHandler("OnClicked", function() self:SetView("character") end)
+    self.championTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION), 82)
+    self.championTab:SetAnchor(LEFT, self.characterTab, RIGHT, 6, 0)
+    self.championTab:SetHandler("OnClicked", function() self:SetView("champion") end)
 
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
     divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 124)
@@ -633,21 +637,28 @@ function UI:CreateSkillPlanner()
 end
 
 function UI:SetView(view)
-    self.activeView = (view == "skills" or view == "character") and view or "gear"
+    self.activeView = (view == "skills" or view == "character" or view == "champion")
+        and view
+        or "gear"
     local skills = self.activeView == "skills"
     local character = self.activeView == "character"
-    self.paperDoll:SetHidden(skills or character)
-    self.editor:SetHidden(skills or character)
+    local champion = self.activeView == "champion"
+    self.paperDoll:SetHidden(skills or character or champion)
+    self.editor:SetHidden(skills or character or champion)
     self.skillPanel:SetHidden(not skills)
     self.characterPanel:SetHidden(not character)
-    self.gearTab:SetAlpha((skills or character) and 0.65 or 1)
+    self.championPanel:SetHidden(not champion)
+    self.gearTab:SetAlpha((skills or character or champion) and 0.65 or 1)
     self.skillsTab:SetAlpha(skills and 1 or 0.65)
     self.characterTab:SetAlpha(character and 1 or 0.65)
+    self.championTab:SetAlpha(champion and 1 or 0.65)
     if skills then
         self:RefreshSkillBars()
         self:LoadSkillEditor()
     elseif character then
         self:LoadCharacterEditor()
+    elseif champion then
+        self:RefreshChampionPlanner()
     end
 end
 
@@ -1170,7 +1181,8 @@ function UI:CreateHelpDialog()
         GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER),
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION),
         22,
         52,
         656,
@@ -1454,6 +1466,8 @@ function UI:Refresh()
         self:LoadSkillEditor()
     elseif self.activeView == "character" then
         self:LoadCharacterEditor()
+    elseif self.activeView == "champion" then
+        self:RefreshChampionPlanner()
     else
         self:LoadEditor()
     end

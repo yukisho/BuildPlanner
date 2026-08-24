@@ -3,7 +3,7 @@ GravvyBuildPlannerShare = {}
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 4
+local FORMAT_VERSION = 5
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = 100
 local MAX_STRING = 512
@@ -11,6 +11,8 @@ local MAX_NOTE = 4000
 local MAX_LINK = 2048
 local MAX_SUBCLASS_NAME = 100
 local MAX_RACE_ID = 10
+local MAX_CHAMPION_ALLOCATIONS = 200
+local MAX_CHAMPION_POINTS = 1000
 local MAX_U32 = 4294967295
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
@@ -374,6 +376,50 @@ function Share.EncodeBuild(build)
             end
             appendString(parts, lineName)
         end
+
+        local champion = setup.champion or {}
+        local seenChampionSkills = {}
+        for _, disciplineKey in ipairs({ "craft", "warfare", "fitness" }) do
+            local discipline = champion[disciplineKey] or {}
+            local allocations = discipline.allocations or {}
+            if type(allocations) ~= "table" or #allocations > MAX_CHAMPION_ALLOCATIONS then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            appendU16(parts, #allocations)
+            local slottableIds = {}
+            for _, allocation in ipairs(allocations) do
+                local skillId = wholeNumber(allocation.skillId, 1, MAX_U32)
+                local points = wholeNumber(allocation.points, 1, MAX_CHAMPION_POINTS)
+                local name = tostring(allocation.name or "")
+                local icon = tostring(allocation.icon or "")
+                if not skillId or seenChampionSkills[skillId] or not points
+                    or name == "" or #name > MAX_SUBCLASS_NAME or #icon > MAX_STRING
+                    or type(allocation.isSlottable) ~= "boolean" then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seenChampionSkills[skillId] = true
+                slottableIds[skillId] = allocation.isSlottable
+                appendU32(parts, skillId)
+                appendU16(parts, points)
+                parts[#parts + 1] = string.char(allocation.isSlottable and 1 or 0)
+                appendString(parts, name)
+                appendString(parts, icon)
+            end
+            local seenSlots = {}
+            for slotIndex = 1, 4 do
+                local skillId = wholeNumber(
+                    discipline.slottables and discipline.slottables[slotIndex] or 0,
+                    0,
+                    MAX_U32
+                )
+                if not skillId or (skillId > 0
+                    and (not slottableIds[skillId] or seenSlots[skillId])) then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seenSlots[skillId] = skillId > 0 or nil
+                appendU32(parts, skillId)
+            end
+        end
     end
 
     local body = table.concat(parts)
@@ -406,7 +452,7 @@ function Share.DecodeCode(code)
 
     local reader = makeReader(body)
     local version = reader:Byte()
-    if version ~= 1 and version ~= 2 and version ~= 3 and version ~= FORMAT_VERSION then
+    if not version or version < 1 or version > FORMAT_VERSION then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION)
     end
     local build = { setups = {} }
@@ -444,6 +490,11 @@ function Share.DecodeCode(code)
                 mundus = 0,
                 curse = 0,
                 subclassLines = { "", "", "" },
+            },
+            champion = {
+                craft = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+                warfare = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+                fitness = { allocations = {}, slottables = { 0, 0, 0, 0 } },
             },
             acquisition = {},
         }
@@ -583,6 +634,52 @@ function Share.DecodeCode(code)
                     return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
                 end
                 setup.character.subclassLines[index] = lineName
+            end
+        end
+        if version >= 5 then
+            local seenChampionSkills = {}
+            for _, disciplineKey in ipairs({ "craft", "warfare", "fitness" }) do
+                local discipline = setup.champion[disciplineKey]
+                local allocationCount = reader:U16()
+                if not allocationCount or allocationCount > MAX_CHAMPION_ALLOCATIONS then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                local allocationsById = {}
+                for _ = 1, allocationCount do
+                    local skillId = reader:U32()
+                    local points = reader:U16()
+                    local flags = reader:Byte()
+                    local name = reader:String(MAX_SUBCLASS_NAME, true)
+                    local icon = reader:String(MAX_STRING, false)
+                    if not skillId or skillId < 1 or seenChampionSkills[skillId]
+                        or not points or points < 1 or points > MAX_CHAMPION_POINTS
+                        or flags == nil or flags > 1 or not name or icon == nil then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    local allocation = {
+                        skillId = skillId,
+                        points = points,
+                        name = name,
+                        icon = icon,
+                        isSlottable = flags == 1,
+                    }
+                    seenChampionSkills[skillId] = true
+                    allocationsById[skillId] = allocation
+                    discipline.allocations[#discipline.allocations + 1] = allocation
+                end
+                local seenSlots = {}
+                for slotIndex = 1, 4 do
+                    local skillId = reader:U32()
+                    local allocation = skillId and skillId > 0 and allocationsById[skillId]
+                    if skillId == nil or (skillId > 0 and (not allocation
+                        or not allocation.isSlottable or seenSlots[skillId])) then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    if skillId > 0 then
+                        seenSlots[skillId] = true
+                    end
+                    discipline.slottables[slotIndex] = skillId
+                end
             end
         end
         build.setups[#build.setups + 1] = setup

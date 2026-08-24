@@ -118,6 +118,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_EDIT_SKILL)
                 elseif self.activeView == "character" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SAVE_CHARACTER)
+                elseif self.activeView == "champion" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SAVE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
             end,
@@ -136,9 +138,12 @@ function Gamepad:InitializeKeybinds()
         },
         {
             name = function()
-                return GetString(self.activeView == "skills"
-                    and SI_GRAVVY_BUILD_PLANNER_CLEAR_SKILL
-                    or SI_GRAVVY_BUILD_PLANNER_CLEAR)
+                if self.activeView == "skills" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR_SKILL)
+                elseif self.activeView == "champion" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_REMOVE)
+                end
+                return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR)
             end,
             keybind = "UI_SHORTCUT_TERTIARY",
             visible = function() return self.activeView ~= "character" end,
@@ -148,6 +153,9 @@ function Gamepad:InitializeKeybinds()
                     local setup = self.owner.data:GetCurrentSetup()
                     return data and setup.skillBars and setup.skillBars[data.skillBar]
                         and setup.skillBars[data.skillBar][data.skillSlot] ~= nil
+                elseif self.activeView == "champion" then
+                    local data = self:GetTargetData()
+                    return data and data.championSkillId ~= nil
                 end
                 return self:IsTargetEditable() and self:GetTargetRequirement() ~= nil
             end,
@@ -199,6 +207,8 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS)
                 elseif self.activeView == "skills" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER)
+                elseif self.activeView == "character" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GEAR)
             end,
@@ -397,6 +407,64 @@ function Gamepad:Refresh(force)
         self:RefreshKeybinds()
         return
     end
+    if self.activeView == "champion" then
+        local selectedDiscipline = selectedData and selectedData.championDiscipline
+        local selectedSkillId = selectedData and selectedData.championSkillId
+        local entryIndex = 0
+        for _, disciplineKey in ipairs({ "craft", "warfare", "fitness" }) do
+            local discipline = setup.champion[disciplineKey]
+            entryIndex = entryIndex + 1
+            local addEntry = ZO_GamepadEntryData:New(zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_CHAMPION_ADD_DISCIPLINE,
+                GetString(disciplineKey == "craft"
+                    and SI_GRAVVY_BUILD_PLANNER_CHAMPION_CRAFT
+                    or disciplineKey == "warfare"
+                        and SI_GRAVVY_BUILD_PLANNER_CHAMPION_WARFARE
+                        or SI_GRAVVY_BUILD_PLANNER_CHAMPION_FITNESS)
+            ))
+            addEntry.championDiscipline = disciplineKey
+            addEntry:SetFontScaleOnSelection(false)
+            self.list:AddEntry("ZO_GamepadMenuEntryTemplate", addEntry)
+            if selectedDiscipline == disciplineKey and not selectedSkillId then
+                selectedIndex = entryIndex
+            end
+            for _, allocation in ipairs(discipline.allocations) do
+                entryIndex = entryIndex + 1
+                local catalogEntry = self.owner.championCatalog:FindById(allocation.skillId)
+                local entry = ZO_GamepadEntryData:New(
+                    catalogEntry and catalogEntry.name or allocation.name
+                )
+                entry.championDiscipline = disciplineKey
+                entry.championSkillId = allocation.skillId
+                entry:SetFontScaleOnSelection(false)
+                entry:SetShowUnselectedSublabels(true)
+                entry:AddSubLabel(zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS_ASSIGNED,
+                    allocation.points
+                ))
+                for slotIndex = 1, 4 do
+                    if discipline.slottables[slotIndex] == allocation.skillId then
+                        entry:AddSubLabel(zo_strformat(
+                            SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT_NUMBER,
+                            slotIndex
+                        ))
+                        break
+                    end
+                end
+                self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
+                if selectedDiscipline == disciplineKey
+                    and selectedSkillId == allocation.skillId then
+                    selectedIndex = entryIndex
+                end
+            end
+        end
+        self.list:Commit()
+        self.list:SetSelectedIndex(selectedIndex or 1)
+        self.dirty = false
+        self:RefreshPreview()
+        self:RefreshKeybinds()
+        return
+    end
     local selectedSlot = selectedData and selectedData.slotKey
     for index, slotKey in ipairs(Slots.ORDER) do
         local mainHand = Slots:GetMainHand(slotKey)
@@ -448,6 +516,8 @@ function Gamepad:TogglePlannerView()
         self.activeView = "skills"
     elseif self.activeView == "skills" then
         self.activeView = "character"
+    elseif self.activeView == "character" then
+        self.activeView = "champion"
     else
         self.activeView = "gear"
     end
@@ -521,6 +591,21 @@ function Gamepad:ClearTargetSlot()
         self:Refresh(true)
         return
     end
+    if self.activeView == "champion" then
+        local data = self:GetTargetData()
+        if data and data.championSkillId then
+            local setup, build = self.owner.data:GetCurrentSetup()
+            self.owner.data:SetChampionAllocation(
+                build.id,
+                setup.id,
+                data.championDiscipline,
+                { skillId = data.championSkillId, remove = true }
+            )
+            self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_REMOVED))
+            self:Refresh(true)
+        end
+        return
+    end
     local slotKey = self:GetTargetSlot()
     local setup, build = self.owner.data:GetCurrentSetup()
     local ok, message = self.owner.data:SetEquipment(build.id, setup.id, slotKey, nil)
@@ -549,6 +634,15 @@ function Gamepad:RefreshPreview()
         return
     end
     if self.activeView == "character" then
+        return
+    end
+    if self.activeView == "champion" then
+        local data = self:GetTargetData()
+        local entry = data and data.championSkillId
+            and self.owner.championCatalog:FindById(data.championSkillId)
+        if entry and entry.skillData and GAMEPAD_TOOLTIPS.LayoutChampionSkill then
+            GAMEPAD_TOOLTIPS:LayoutChampionSkill(GAMEPAD_LEFT_TOOLTIP, entry.skillData)
+        end
         return
     end
     local slotKey = self:GetTargetSlot()

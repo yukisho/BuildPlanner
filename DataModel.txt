@@ -79,6 +79,17 @@ names remain localized by the game. Curse uses a small None, Vampire, or
 Werewolf value, and three free-text class skill-line fields support both regular
 and subclassed guide layouts.
 
+Champion plan
+-------------
+
+Each setup has Craft, Warfare, and Fitness Champion disciplines. A discipline
+stores an ordered list of allocated stars with the stable Champion skill ID,
+localized display fallback, icon, point count, and whether the star is
+slottable. Four fixed slottable positions reference those allocations by ID.
+Passive stars cannot be slotted, and one star cannot be duplicated between
+disciplines. The catalog and native tooltips come from ESO's Champion data;
+Build Planner never spends points or changes the live Champion bar.
+
 Shopping List export
 --------------------
 
@@ -102,14 +113,14 @@ Build sharing and backup
 
 GBP1 codes contain one complete build. They preserve guide metadata, setup
 order and defaults, equipment requirements, item links, notes, preferred
-acquisition routes, ordered alternatives, skill bars, character plans, and the
-selected setup.
+acquisition routes, ordered alternatives, skill bars, character and Champion
+plans, and the selected setup.
 Derived inventory matches and collection states are recalculated after import
 rather than copied.
 
-Build Planner writes format version 4 codes and continues to accept version 1,
-version 2, and version 3 codes created before equipment alternatives, skill
-bars, and character plans were added.
+Build Planner writes format version 5 codes and continues to accept versions 1
+through 4, created before equipment alternatives, skill bars, character plans,
+and Champion plans were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

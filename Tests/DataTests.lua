@@ -128,6 +128,7 @@ expectEqual(data:GetSettings().fontScale, 1, "default font scale")
 expectEqual(data:GetSettings().highContrast, false, "high contrast should be opt-in")
 expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes should be opt-in")
 expectEqual(firstSetup.character.attributes.health, 0, "new setups should have an empty character plan")
+expectEqual(firstSetup.champion.warfare.slottables[1], 0, "new setups should have empty Champion slots")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -207,6 +208,34 @@ expect(not data:UpdateCharacter(build.id, setup.id, {
     attributes = { health = 20, magicka = 20, stamina = 25 },
 }), "attribute plans should reject totals above 64")
 expectEqual(setup.character.attributes.stamina, 50, "failed character updates should not change saved data")
+
+ok = data:SetChampionAllocation(build.id, setup.id, "warfare", {
+    skillId = 2001,
+    name = "Wrathful Strikes",
+    icon = "wrathful.dds",
+    points = 50,
+    isSlottable = true,
+})
+expect(ok, "Champion allocations should be saved")
+ok = data:SetChampionSlottable(build.id, setup.id, "warfare", 2, 2001)
+expect(ok, "slottable Champion Stars should retain their position")
+ok = data:SetChampionAllocation(build.id, setup.id, "warfare", {
+    skillId = 2002,
+    name = "Precision",
+    icon = "precision.dds",
+    points = 20,
+    isSlottable = false,
+})
+expect(ok, "passive Champion allocations should be saved")
+expect(not data:SetChampionSlottable(build.id, setup.id, "warfare", 1, 2002),
+    "passive Champion Stars should not be slotted")
+expect(not data:SetChampionAllocation(build.id, setup.id, "craft", {
+    skillId = 2001,
+    name = "Wrathful Strikes",
+    icon = "wrathful.dds",
+    points = 50,
+    isSlottable = true,
+}), "a Champion Star should not be duplicated across disciplines")
 
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
@@ -305,6 +334,7 @@ expect(variant.equipment.waist ~= setup.equipment.waist, "equipment should be co
 expect(variant.alternatives ~= setup.alternatives, "slot alternatives should be copied independently")
 expect(variant.skillBars ~= setup.skillBars, "skill bars should be copied independently")
 expect(variant.character ~= setup.character, "character plans should be copied independently")
+expect(variant.champion ~= setup.champion, "Champion plans should be copied independently")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -348,6 +378,10 @@ expectEqual(
 expectEqual(decodedBuild.setups[1].character.raceId, 9, "share codes should retain race choices")
 expectEqual(decodedBuild.setups[1].character.attributes.stamina, 50, "share codes should retain attributes")
 expectEqual(decodedBuild.setups[1].character.subclassLines[3], "Grave Lord", "share codes should retain subclass lines")
+expectEqual(decodedBuild.setups[1].champion.warfare.allocations[1].skillId, 2001,
+    "share codes should retain Champion allocations")
+expectEqual(decodedBuild.setups[1].champion.warfare.slottables[2], 2001,
+    "share codes should retain Champion slot positions")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -370,6 +404,8 @@ expectEqual(
     "import should preserve planned ultimates"
 )
 expectEqual(imported.setups[1].character.mundus, 10, "import should preserve character plans")
+expectEqual(imported.setups[1].champion.warfare.allocations[2].points, 20,
+    "import should preserve passive Champion allocations")
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local nextBuildId = data.saved.nextBuildId
@@ -417,8 +453,10 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 5, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 6, "migration should advance the saved-data schema")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
+expectEqual(repaired.saved.builds[1].setups[1].champion.craft.slottables[4], 0,
+    "migration should add Champion defaults")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {

@@ -1,12 +1,14 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 5
+local SCHEMA_VERSION = 6
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
 local MAX_SUBCLASS_NAME = 100
 local MAX_RACE_ID = 10
+local MAX_CHAMPION_ALLOCATIONS = 200
+local MAX_CHAMPION_POINTS = 1000
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local validAcquisitionRoutes = {
     buy = true,
@@ -282,6 +284,93 @@ local function copyCharacterPlan(source, strict)
     return plan
 end
 
+local function blankChampionPlan()
+    return {
+        craft = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+        warfare = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+        fitness = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+    }
+end
+
+local function copyChampionAllocation(source)
+    if type(source) ~= "table" then
+        return nil
+    end
+    local skillId = readWholeNumber(source.skillId, 1)
+    local points = readWholeNumber(source.points, 1)
+    if not skillId or not points or points > MAX_CHAMPION_POINTS
+        or type(source.name) ~= "string" or trim(source.name) == ""
+        or #source.name > MAX_SUBCLASS_NAME
+        or type(source.icon) ~= "string"
+        or #source.icon > 512
+        or type(source.isSlottable) ~= "boolean" then
+        return nil
+    end
+    return {
+        skillId = skillId,
+        name = trim(source.name),
+        icon = source.icon,
+        points = points,
+        isSlottable = source.isSlottable,
+    }
+end
+
+local function copyChampionPlan(source, strict)
+    local plan = blankChampionPlan()
+    if source == nil then
+        return plan
+    end
+    if type(source) ~= "table" then
+        return invalidCharacterPlan(strict, plan)
+    end
+    local seenSkills = {}
+    for _, disciplineKey in ipairs({ "craft", "warfare", "fitness" }) do
+        local sourceDiscipline = source[disciplineKey]
+        if sourceDiscipline ~= nil and type(sourceDiscipline) ~= "table" then
+            return invalidCharacterPlan(strict, plan)
+        end
+        sourceDiscipline = sourceDiscipline or {}
+        local sourceAllocations = sourceDiscipline.allocations
+        if sourceAllocations ~= nil and type(sourceAllocations) ~= "table" then
+            return invalidCharacterPlan(strict, plan)
+        end
+        if #(sourceAllocations or {}) > MAX_CHAMPION_ALLOCATIONS then
+            return invalidCharacterPlan(strict, plan)
+        end
+        local discipline = plan[disciplineKey]
+        local allocationsById = {}
+        for _, sourceAllocation in ipairs(sourceAllocations or {}) do
+            local allocation = copyChampionAllocation(sourceAllocation)
+            if not allocation or seenSkills[allocation.skillId] then
+                return invalidCharacterPlan(strict, plan)
+            end
+            seenSkills[allocation.skillId] = true
+            allocationsById[allocation.skillId] = allocation
+            discipline.allocations[#discipline.allocations + 1] = allocation
+        end
+
+        local sourceSlottables = sourceDiscipline.slottables
+        if sourceSlottables ~= nil and type(sourceSlottables) ~= "table" then
+            return invalidCharacterPlan(strict, plan)
+        end
+        local seenSlots = {}
+        for slotIndex = 1, 4 do
+            local sourceSkillId = sourceSlottables and sourceSlottables[slotIndex] or 0
+            local skillId = readWholeNumber(sourceSkillId or 0, 0)
+            local allocation = skillId and skillId > 0 and allocationsById[skillId]
+            if not skillId or (skillId > 0
+                and (not allocation or not allocation.isSlottable or seenSlots[skillId])) then
+                return invalidCharacterPlan(strict, plan)
+            end
+            if skillId > 0 then
+                seenSlots[skillId] = true
+            end
+            discipline.slottables[slotIndex] = skillId
+        end
+    end
+    return plan
+end
+
 local function copyBuildChanges(values)
     if type(values) ~= "table" then
         return nil
@@ -460,6 +549,7 @@ function Data:Migrate()
             setup.alternativeGroups = nil
             setup.skillBars = copySkillBars(setup.skillBars, false)
             setup.character = copyCharacterPlan(setup.character, false)
+            setup.champion = copyChampionPlan(setup.champion, false)
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -724,6 +814,7 @@ function Data:DuplicateBuild(id, name)
             alternatives = deepCopy(sourceSetup.alternatives),
             skillBars = deepCopy(sourceSetup.skillBars) or { front = {}, back = {} },
             character = copyCharacterPlan(sourceSetup.character, false),
+            champion = copyChampionPlan(sourceSetup.champion, false),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -843,6 +934,10 @@ function Data:ImportBuild(source)
         if not character then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
+        local champion = copyChampionPlan(sourceSetup.champion, true)
+        if not champion then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
 
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
@@ -855,6 +950,7 @@ function Data:ImportBuild(source)
             alternatives = alternatives,
             skillBars = skillBars,
             character = character,
+            champion = champion,
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -927,6 +1023,7 @@ function Data:CreateSetup(buildId, name, source)
         alternatives = source and deepCopy(source.alternatives) or {},
         skillBars = source and deepCopy(source.skillBars) or { front = {}, back = {} },
         character = source and copyCharacterPlan(source.character, false) or blankCharacterPlan(),
+        champion = source and copyChampionPlan(source.champion, false) or blankChampionPlan(),
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -1129,6 +1226,101 @@ function Data:UpdateCharacter(buildId, setupId, values)
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true, character
+end
+
+function Data:SetChampionAllocation(buildId, setupId, disciplineKey, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    local discipline = setup and setup.champion and setup.champion[disciplineKey]
+    if not discipline then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION)
+    end
+    local skillId = values and readWholeNumber(values.skillId, 1)
+    if not skillId then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION)
+    end
+    local existingIndex
+    for index, allocation in ipairs(discipline.allocations) do
+        if allocation.skillId == skillId then
+            existingIndex = index
+            break
+        end
+    end
+    if values.remove == true then
+        if existingIndex then
+            table.remove(discipline.allocations, existingIndex)
+            for index = 1, 4 do
+                if discipline.slottables[index] == skillId then
+                    discipline.slottables[index] = 0
+                end
+            end
+        end
+    else
+        local allocation = copyChampionAllocation(values)
+        if not allocation then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION)
+        end
+        for key, otherDiscipline in pairs(setup.champion) do
+            if key ~= disciplineKey then
+                for _, other in ipairs(otherDiscipline.allocations) do
+                    if other.skillId == skillId then
+                        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION_DUPLICATE)
+                    end
+                end
+            end
+        end
+        if existingIndex then
+            discipline.allocations[existingIndex] = allocation
+        elseif #discipline.allocations < MAX_CHAMPION_ALLOCATIONS then
+            discipline.allocations[#discipline.allocations + 1] = allocation
+        else
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION_LIMIT)
+        end
+        if not allocation.isSlottable then
+            for index = 1, 4 do
+                if discipline.slottables[index] == skillId then
+                    discipline.slottables[index] = 0
+                end
+            end
+        end
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true
+end
+
+function Data:SetChampionSlottable(buildId, setupId, disciplineKey, slotIndex, skillId)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    local discipline = setup and setup.champion and setup.champion[disciplineKey]
+    slotIndex = readWholeNumber(slotIndex, 1)
+    if not discipline or not slotIndex or slotIndex > 4 then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION_SLOT)
+    end
+    if skillId == nil then
+        discipline.slottables[slotIndex] = 0
+    else
+        skillId = readWholeNumber(skillId, 1)
+        local allocation
+        for _, entry in ipairs(discipline.allocations) do
+            if entry.skillId == skillId then
+                allocation = entry
+                break
+            end
+        end
+        if not allocation or not allocation.isSlottable then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION_SLOT)
+        end
+        for index, otherSkillId in ipairs(discipline.slottables) do
+            if otherSkillId == skillId and index ~= slotIndex then
+                return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHAMPION_DUPLICATE)
+            end
+        end
+        discipline.slottables[slotIndex] = skillId
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true
 end
 
 function Data:SetAlternative(buildId, setupId, slotKey, index, values)
