@@ -3,11 +3,13 @@ GravvyBuildPlannerUI = {}
 local UI = GravvyBuildPlannerUI
 local Slots = GravvyBuildPlannerSlots
 local WINDOW_WIDTH = 980
-local WINDOW_HEIGHT = 700
+local WINDOW_HEIGHT = 728
 local SUGGESTION_ROWS = 6
 local DEFAULT_VALUE = -1
 local AUTOMATIC_ROUTE = "automatic"
 local EMPTY_SKILL_TEXTURE = "EsoUI/Art/ActionBar/abilityInset.dds"
+
+UI.CONTENT_TOP = 160
 
 local slotStringIds = {
     head = SI_GRAVVY_BUILD_PLANNER_SLOT_HEAD,
@@ -351,7 +353,14 @@ function UI:Initialize()
     self:CreateHelpDialog()
     self:RegisterFocusEvent()
 
-    self.status = makeLabel(window, "", 18, 668, WINDOW_WIDTH - 36, "ZoFontGameSmall")
+    self.status = makeLabel(
+        window,
+        "",
+        18,
+        WINDOW_HEIGHT - 32,
+        WINDOW_WIDTH - 36,
+        "ZoFontGameSmall"
+    )
     self:Refresh()
     self:SetView(self.activeView)
 end
@@ -433,41 +442,41 @@ function UI:CreateBuildControls()
         end)
     end)
 
-    self.progressLabel = makeLabel(window, "", 660, 113, 300, "ZoFontGameSmall")
+    self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 64)
+    self.gearTab:SetAnchor(TOPLEFT, window, TOPLEFT, 18, 119)
+    self.gearTab:SetHandler("OnClicked", function() self:SetView("gear") end)
+    self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 64)
+    self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 10, 0)
+    self.skillsTab:SetHandler("OnClicked", function() self:SetView("skills") end)
+    self.characterTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER), 84)
+    self.characterTab:SetAnchor(LEFT, self.skillsTab, RIGHT, 10, 0)
+    self.characterTab:SetHandler("OnClicked", function() self:SetView("character") end)
+    self.championTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION), 84)
+    self.championTab:SetAnchor(LEFT, self.characterTab, RIGHT, 10, 0)
+    self.championTab:SetHandler("OnClicked", function() self:SetView("champion") end)
+    self.suppliesTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLIES), 80)
+    self.suppliesTab:SetAnchor(LEFT, self.championTab, RIGHT, 10, 0)
+    self.suppliesTab:SetHandler("OnClicked", function() self:SetView("supplies") end)
+    self.checklistTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST), 88)
+    self.checklistTab:SetAnchor(LEFT, self.suppliesTab, RIGHT, 10, 0)
+    self.checklistTab:SetHandler("OnClicked", function() self:SetView("checklist") end)
+    self.compareTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE), 80)
+    self.compareTab:SetAnchor(LEFT, self.checklistTab, RIGHT, 10, 0)
+    self.compareTab:SetHandler("OnClicked", function() self:SetView("comparison") end)
+
+    self.progressLabel = makeLabel(window, "", 660, 125, 300, "ZoFontGameSmall")
     self.progressLabel:SetHeight(16)
     self.progressLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
-    self.gearTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_GEAR), 52)
-    self.gearTab:SetAnchor(TOPLEFT, window, TOPLEFT, 642, 47)
-    self.gearTab:SetHandler("OnClicked", function() self:SetView("gear") end)
-    self.skillsTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SKILLS), 52)
-    self.skillsTab:SetAnchor(LEFT, self.gearTab, RIGHT, 4, 0)
-    self.skillsTab:SetHandler("OnClicked", function() self:SetView("skills") end)
-    self.characterTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER), 68)
-    self.characterTab:SetAnchor(LEFT, self.skillsTab, RIGHT, 4, 0)
-    self.characterTab:SetHandler("OnClicked", function() self:SetView("character") end)
-    self.championTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION), 68)
-    self.championTab:SetAnchor(LEFT, self.characterTab, RIGHT, 4, 0)
-    self.championTab:SetHandler("OnClicked", function() self:SetView("champion") end)
-    self.suppliesTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLIES), 68)
-    self.suppliesTab:SetAnchor(LEFT, self.championTab, RIGHT, 4, 0)
-    self.suppliesTab:SetHandler("OnClicked", function() self:SetView("supplies") end)
-    self.checklistTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST), 72)
-    self.checklistTab:SetAnchor(TOPLEFT, window, TOPLEFT, 642, 85)
-    self.checklistTab:SetHandler("OnClicked", function() self:SetView("checklist") end)
-    self.compareTab = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE), 72)
-    self.compareTab:SetAnchor(LEFT, self.checklistTab, RIGHT, 4, 0)
-    self.compareTab:SetHandler("OnClicked", function() self:SetView("comparison") end)
-
     local divider = WINDOW_MANAGER:CreateControl(nil, window, CT_TEXTURE)
-    divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, 131)
+    divider:SetAnchor(TOPLEFT, window, TOPLEFT, 14, UI.CONTENT_TOP - 6)
     divider:SetDimensions(WINDOW_WIDTH - 28, 1)
     divider:SetColor(0.5, 0.42, 0.28, 0.7)
 end
 
 function UI:CreateCharacterPlanner()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerCharacter", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(942, 530)
     panel:SetHidden(true)
     self.characterPanel = panel
@@ -552,7 +561,7 @@ end
 
 function UI:CreateSkillPlanner()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerSkills", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(942, 530)
     panel:SetHidden(true)
     self.skillPanel = panel
@@ -702,7 +711,7 @@ end
 
 function UI:CreateSlotRows()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerPaperDoll", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(490, 530)
     self.paperDoll = panel
 
@@ -796,7 +805,7 @@ end
 
 function UI:CreateEditor()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerEditor", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPRIGHT, self.window, TOPRIGHT, -18, 137)
+    panel:SetAnchor(TOPRIGHT, self.window, TOPRIGHT, -18, self.CONTENT_TOP)
     panel:SetDimensions(430, 530)
     self.editor = panel
 
@@ -913,13 +922,19 @@ function UI:CreateEditor()
         "ZoFontGameSmall"
     )
     self.acquisitionLabel = makeLabel(panel, "", 14, 418, 402, "ZoFontGameSmall")
-    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE), 14, 450, 105)
+    self.routeLabel = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_ROUTE),
+        14,
+        450,
+        150
+    )
     self.routeCombo, self.routeContainer = makeCombo(
         panel,
         "GravvyBuildPlannerRouteCombo",
-        122,
+        170,
         450,
-        290
+        242
     )
 
     local save = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_SAVE), 120)

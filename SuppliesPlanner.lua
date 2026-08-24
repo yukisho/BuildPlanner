@@ -94,7 +94,7 @@ end
 
 function UI:CreateSuppliesPlanner()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerSupplies", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(942, 530)
     panel:SetHidden(true)
     self.suppliesPanel = panel

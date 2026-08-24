@@ -83,7 +83,7 @@ end
 
 function UI:CreateChampionPlanner()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerChampion", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(942, 530)
     panel:SetHidden(true)
     self.championPanel = panel
@@ -173,7 +173,13 @@ function UI:CreateChampionPlanner()
     self.championStarEdit:SetHandler("OnTextChanged", function() self:OnChampionTextChanged() end)
     self.championStarEdit:SetHandler("OnKeyDown", function(_, key) self:OnChampionKeyDown(key) end)
     self.championStarEdit:SetHandler("OnFocusLost", function() self:ResolveChampionStar() end)
-    makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_POINTS), 514, 144, 100)
+    self.championPointsLabel = makeLabel(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_STAR_POINTS),
+        514,
+        144,
+        100
+    )
     self.championPointsEdit = makeEdit(panel, "GravvyBuildPlannerChampionPoints", 620, 144, 90, true, 4)
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHAMPION_SLOT), 514, 188, 100)
     self.championSlotCombo, self.championSlotContainer = makeCombo(

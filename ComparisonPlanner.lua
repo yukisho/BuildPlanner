@@ -1,5 +1,8 @@
 local UI = GravvyBuildPlannerUI
 local ROW_COUNT = 10
+local PANEL_WIDTH = 942
+local TABLE_INSET = 18
+local TABLE_WIDTH = PANEL_WIDTH - (TABLE_INSET * 2)
 
 local function makeLabel(parent, text, x, y, width, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
@@ -34,8 +37,8 @@ end
 
 function UI:CreateComparisonPlanner()
     local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerComparison", self.window, CT_CONTROL)
-    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
-    panel:SetDimensions(942, 530)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
+    panel:SetDimensions(PANEL_WIDTH, 530)
     panel:SetHidden(true)
     self.comparisonPanel = panel
     self.comparisonOffset = 0
@@ -53,10 +56,17 @@ function UI:CreateComparisonPlanner()
     self.comparisonCountLabel = makeLabel(panel, "", 660, 16, 250, "ZoFontGameSmall")
     self.comparisonCountLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
-    local header = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
-    header:SetAnchor(TOPLEFT, panel, TOPLEFT, 18, 58)
-    header:SetDimensions(906, 34)
-    header:SetCenterColor(0.08, 0.07, 0.05, 0.95)
+    local header = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)
+    header:SetAnchor(TOPLEFT, panel, TOPLEFT, TABLE_INSET, 58)
+    header:SetDimensions(TABLE_WIDTH, 34)
+    self.comparisonHeader = header
+    local headerBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
+        nil,
+        header,
+        "ZO_DefaultBackdrop"
+    )
+    headerBackdrop:SetAnchorFill(header)
+    headerBackdrop:SetCenterColor(0.08, 0.07, 0.05, 0.95)
     makeLabel(header, GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_COLUMN_CHANGE), 8, 2, 280, "ZoFontGameBold")
     self.comparisonLeftHeader = makeLabel(header, "", 294, 2, 292, "ZoFontGameBold")
     self.comparisonRightHeader = makeLabel(header, "", 594, 2, 302, "ZoFontGameBold")
@@ -64,8 +74,14 @@ function UI:CreateComparisonPlanner()
     self.comparisonRows = {}
     for rowIndex = 1, ROW_COUNT do
         local row = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)
-        row:SetAnchor(TOPLEFT, panel, TOPLEFT, 18, 96 + ((rowIndex - 1) * 39))
-        row:SetDimensions(906, 37)
+        row:SetAnchor(
+            TOPLEFT,
+            panel,
+            TOPLEFT,
+            TABLE_INSET,
+            96 + ((rowIndex - 1) * 39)
+        )
+        row:SetDimensions(TABLE_WIDTH, 37)
         local rowBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, row, "ZO_DefaultBackdrop")
         rowBackdrop:SetAnchorFill(row)
         rowBackdrop:SetCenterColor(

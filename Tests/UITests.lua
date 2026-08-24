@@ -231,7 +231,7 @@ local function newControl(name, parent)
     end
     function control:SetDimensions(width, height) self.width, self.height = width, height end
     function control:SetHeight(height) self.height = height end
-    function control:SetAnchor() end
+    function control:SetAnchor(...) self.anchor = { ... } end
     function control:ClearAnchors() end
     function control:SetAnchorFill() end
     function control:SetClampedToScreen() end
@@ -813,6 +813,20 @@ owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+expectEqual(ui.window.height, 728,
+    "keyboard window should make room for the dedicated navigation row")
+expectEqual(ui.gearTab.anchor[5], 119,
+    "section navigation should sit below the setup controls")
+expectEqual(ui.checklistTab.anchor[2], ui.suppliesTab,
+    "all section actions should remain on the same navigation row")
+expectEqual(ui.characterPanel.anchor[5], ui.CONTENT_TOP,
+    "planner panels should begin below the navigation row")
+expectEqual(ui.championPointsLabel:GetText(), "Points",
+    "Champion Star points should use their own short editor label")
+expectEqual(ui.routeLabel.width, 150,
+    "the Preferred route label should have enough room to render")
+expectEqual(ui.routeContainer.anchor[4] + ui.routeContainer.width, 412,
+    "the shifted route selector should retain the editor's right alignment")
 expect(ui.captureButton, "keyboard users should have a character capture action")
 local originalBuild = BuildPlannerTestData:GetCurrentBuild()
 local buildCount = #BuildPlannerTestData:GetBuilds()
@@ -967,6 +981,10 @@ expectEqual(#BuildPlannerTestData:GetCurrentSetup().checklist, 2,
     "keyboard progression steps should persist")
 ui:SetView("comparison")
 expect(not ui.comparisonPanel:IsHidden(), "keyboard users should be able to compare setups")
+expectEqual(ui.comparisonHeader.width, ui.comparisonRows[1].width,
+    "comparison header and rows should share the same width")
+expectEqual(ui.comparisonHeader.width, ui.comparisonPanel.width - 36,
+    "comparison content should retain equal panel insets")
 expect(ui.comparisonSetupId, "comparison should select another setup automatically")
 expect(#ui.comparisonDifferences > 0, "comparison should include only changed setup fields")
 expect(not ui.comparisonRows[1]:IsHidden(), "changed fields should be visible in the comparison table")

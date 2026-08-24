@@ -1,3 +1,20 @@
+0.7.10
+- Widened the Preferred route label column and kept the route selector aligned
+  with the editor's right edge so the label is no longer clipped.
+
+0.7.9
+- Separated the Champion Star point label from the equipment Champion Points
+  label so the editor shows the intended short text without clipping.
+
+0.7.8
+- Kept the comparison header and result rows inside the panel's matching left
+  and right insets so the header border no longer overruns the right edge.
+
+0.7.7
+- Moved the planner sections onto a dedicated navigation row below the build
+  and setup controls so all seven sections remain readable without wrapping.
+- Added room for the navigation row without reducing the planner workspace.
+
 0.7.6
 - Added one-click character snapshots that create a separate build from equipped
   gear, both action bars, attributes, race, Mundus Stone, curse, active class
