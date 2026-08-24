@@ -17,6 +17,7 @@ function addon:Initialize()
     self.acquisition = GravvyBuildPlannerAcquisition:New(self.itemResolver)
     self.inventory = GravvyBuildPlannerInventory:New(self)
     self.shopping = GravvyBuildPlannerShoppingIntegration:New(self)
+    self.capture = GravvyBuildPlannerCharacterCapture:New(self)
     self.accessibility = GravvyBuildPlannerAccessibility
     self.accessibility:Initialize(self)
     self.ui = GravvyBuildPlannerUI:New(self)

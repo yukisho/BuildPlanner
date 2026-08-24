@@ -53,6 +53,20 @@ BAG_SUBSCRIBER_BANK = 4
 CHAMPION_DISCIPLINE_TYPE_WORLD = 1
 CHAMPION_DISCIPLINE_TYPE_COMBAT = 2
 CHAMPION_DISCIPLINE_TYPE_CONDITIONING = 3
+HOTBAR_CATEGORY_PRIMARY = 1
+HOTBAR_CATEGORY_BACKUP = 2
+HOTBAR_CATEGORY_CHAMPION = 3
+ACTION_TYPE_NOTHING = 0
+ACTION_TYPE_ABILITY = 1
+ACTION_TYPE_CHAMPION_SKILL = 2
+ACTION_TYPE_CRAFTED_ABILITY = 3
+ATTRIBUTE_HEALTH = 1
+ATTRIBUTE_MAGICKA = 2
+ATTRIBUTE_STAMINA = 3
+CURSE_TYPE_NONE = 0
+CURSE_TYPE_VAMPIRE = 1
+CURSE_TYPE_WEREWOLF = 2
+MUNDUS_STONE_INVALID = 0
 
 EQUIP_TYPE_HEAD = 1
 EQUIP_TYPE_SHOULDERS = 2
@@ -90,6 +104,7 @@ function GetAbilityIcon(abilityId)
     return "champion-" .. tostring(abilityId) .. ".dds"
 end
 
+local championPoints = { [3001] = 10, [3002] = 50, [3003] = 20, [3004] = 30 }
 local function championSkill(skillId, abilityId, name, maxPoints, slottable)
     return {
         GetId = function() return skillId end,
@@ -97,6 +112,7 @@ local function championSkill(skillId, abilityId, name, maxPoints, slottable)
         GetRawName = function() return name end,
         GetMaxPossiblePoints = function() return maxPoints end,
         IsTypeSlottable = function() return slottable end,
+        GetNumSavedPoints = function() return championPoints[skillId] or 0 end,
         GetNextJumpPoint = function(_, points) return math.min(maxPoints, points + 1) end,
     }
 end
@@ -485,6 +501,7 @@ function GetItemLinkIcon(link) return "icon:" .. link end
 local abilities = {
     [1001] = { name = "Deep Fissure", icon = "deep-fissure.dds" },
     [1002] = { name = "Subterranean Assault", icon = "subterranean-assault.dds" },
+    [1005] = { name = "Wield Soul", icon = "wield-soul.dds" },
     [1006] = { name = "Wild Guardian", icon = "wild-guardian.dds" },
     [5001] = { name = "Advanced Species", icon = "advanced-species.dds" },
     [5002] = { name = "Advanced Species", icon = "advanced-species.dds" },
@@ -492,6 +509,82 @@ local abilities = {
 function GetAbilityName(abilityId) return abilities[abilityId] and abilities[abilityId].name or "" end
 function GetAbilityIcon(abilityId) return abilities[abilityId] and abilities[abilityId].icon or "" end
 function GetUnitSilhouetteTexture() return "player-silhouette" end
+function GetRawUnitName() return "Test Warden" end
+function GetUnitClassId() return 5 end
+function GetUnitRaceId() return 9 end
+function GetAttributeSpentPoints(attribute)
+    return ({ [ATTRIBUTE_HEALTH] = 4, [ATTRIBUTE_MAGICKA] = 10,
+        [ATTRIBUTE_STAMINA] = 50 })[attribute] or 0
+end
+function GetPlayerCurseType() return CURSE_TYPE_VAMPIRE end
+function GetUnitActiveMundusStoneBuffIndices() return 1 end
+function GetUnitBuffInfo()
+    return "The Thief", 0, 0, 0, 0, "", "", 0, 0, 0, 9001, false, false
+end
+function GetAbilityMundusStoneType(abilityId)
+    return abilityId == 9001 and 10 or MUNDUS_STONE_INVALID
+end
+function GetMaxLevel() return 50 end
+function GetChampionPointsPlayerProgressionCap() return 160 end
+
+local classSkillLines = {}
+for _, name in ipairs({ "Animal Companions", "Winter's Embrace", "Grave Lord" }) do
+    classSkillLines[#classSkillLines + 1] = {
+        IsClassSkillLine = function() return true end,
+        IsActive = function() return true end,
+        IsClassMastery = function() return false end,
+        GetName = function() return name end,
+        SkillIterator = function() return ipairs({}) end,
+    }
+end
+SKILLS_DATA_MANAGER = {
+    SkillTypeIterator = function()
+        return ipairs({ {
+            SkillLineIterator = function() return ipairs(classSkillLines) end,
+        } })
+    end,
+}
+
+local actionBarAbilities = {
+    [HOTBAR_CATEGORY_PRIMARY] = { [3] = 1001, [4] = 7001, [8] = 1006 },
+    [HOTBAR_CATEGORY_BACKUP] = { [3] = 1002 },
+}
+local championBar = { [20] = 3001, [24] = 3002, [28] = 3004 }
+function GetAssignableAbilityBarStartAndEndSlots() return 3, 8 end
+function GetAssignableChampionBarStartAndEndSlots() return 20, 31 end
+function GetRequiredChampionDisciplineIdForSlot(slotIndex)
+    if slotIndex < 24 then return 1 end
+    if slotIndex < 28 then return 2 end
+    return 3
+end
+function GetChampionDisciplineType(disciplineId)
+    return ({ [1] = CHAMPION_DISCIPLINE_TYPE_WORLD,
+        [2] = CHAMPION_DISCIPLINE_TYPE_COMBAT,
+        [3] = CHAMPION_DISCIPLINE_TYPE_CONDITIONING })[disciplineId]
+end
+function GetSlotBoundId(slotIndex, hotbarCategory)
+    if hotbarCategory == HOTBAR_CATEGORY_CHAMPION then
+        return championBar[slotIndex] or 0
+    end
+    return actionBarAbilities[hotbarCategory]
+        and actionBarAbilities[hotbarCategory][slotIndex]
+        or 0
+end
+function GetSlotType(slotIndex, hotbarCategory)
+    if hotbarCategory == HOTBAR_CATEGORY_CHAMPION then
+        return championBar[slotIndex] and ACTION_TYPE_CHAMPION_SKILL
+            or ACTION_TYPE_NOTHING
+    end
+    if hotbarCategory == HOTBAR_CATEGORY_PRIMARY and slotIndex == 4 then
+        return ACTION_TYPE_CRAFTED_ABILITY
+    end
+    return GetSlotBoundId(slotIndex, hotbarCategory) > 0
+        and ACTION_TYPE_ABILITY
+        or ACTION_TYPE_NOTHING
+end
+function GetCraftedAbilityRepresentativeAbilityId(craftedAbilityId)
+    return craftedAbilityId == 7001 and 1005 or 0
+end
 function ZO_Character_GetEmptyEquipSlotTexture(equipSlot)
     return "empty-slot:" .. tostring(equipSlot)
 end
@@ -580,11 +673,47 @@ function GetEnchantSearchCategoryType(enchantId)
     end
 end
 
+itemLinks["capture:head"] = {
+    itemId = 1201,
+    name = "Highland Sentinel Hat",
+    equipType = EQUIP_TYPE_HEAD,
+    armorType = ARMORTYPE_LIGHT,
+    weaponType = WEAPONTYPE_NONE,
+    enchantId = 501,
+    setId = 12,
+    setName = "Overland Test Set",
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
+    quality = ITEM_QUALITY_ARTIFACT,
+    level = 50,
+    championPoints = 160,
+}
+itemLinks["capture:twohand"] = {
+    itemId = 9201,
+    name = "Arena Greatsword",
+    equipType = EQUIP_TYPE_TWO_HAND,
+    armorType = ARMORTYPE_NONE,
+    weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+    enchantId = 503,
+    setId = 92,
+    setName = "Arena Test Set",
+    traitType = ITEM_TRAIT_TYPE_WEAPON_PRECISE,
+    quality = ITEM_QUALITY_ARTIFACT,
+    level = 50,
+    championPoints = 160,
+}
+
+local equippedBySlot = {
+    [EQUIP_SLOT_HEAD] = "capture:head",
+    [EQUIP_SLOT_MAIN_HAND] = "capture:twohand",
+}
 local testBags = {}
 function GetBagSize(bagId)
     return #(testBags[bagId] or {})
 end
 function GetItemLink(bagId, slotIndex)
+    if bagId == BAG_WORN and equippedBySlot[slotIndex] then
+        return equippedBySlot[slotIndex]
+    end
     local bag = testBags[bagId] or {}
     return bag[slotIndex + 1] or ""
 end
@@ -612,6 +741,7 @@ dofile("ItemResolver.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
+dofile("CharacterCapture.lua")
 dofile("SkillCatalog.lua")
 dofile("ChampionCatalog.lua")
 dofile("ConsumableCatalog.lua")
@@ -635,6 +765,7 @@ local owner = {
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
+owner.capture = GravvyBuildPlannerCharacterCapture:New(owner)
 owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
 owner.skillCatalog:AddAbility(1002, false)
@@ -682,6 +813,40 @@ owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+expect(ui.captureButton, "keyboard users should have a character capture action")
+local originalBuild = BuildPlannerTestData:GetCurrentBuild()
+local buildCount = #BuildPlannerTestData:GetBuilds()
+ui.captureButton.handlers.OnClicked()
+local capturedSetup, capturedBuild = BuildPlannerTestData:GetCurrentSetup()
+expectEqual(#BuildPlannerTestData:GetBuilds(), buildCount + 1,
+    "capture should create one separate build")
+expectEqual(capturedBuild.classId, 5, "capture should retain the live class")
+expectEqual(capturedSetup.equipment.head.itemId, 1201,
+    "capture should retain exact equipped item identity")
+expect(capturedSetup.equipment.frontMain.occupiesOffHand,
+    "captured two-handed weapons should occupy their off-hand")
+expectEqual(capturedSetup.skillBars.front[1].abilityId, 1001,
+    "capture should retain front-bar abilities")
+expectEqual(capturedSetup.skillBars.front[2].abilityId, 1005,
+    "capture should resolve crafted abilities to their representative ability")
+expectEqual(capturedSetup.skillBars.front[6].abilityId, 1006,
+    "capture should retain the front-bar ultimate")
+expectEqual(capturedSetup.skillBars.back[1].abilityId, 1002,
+    "capture should retain back-bar abilities")
+expectEqual(capturedSetup.character.attributes.stamina, 50,
+    "capture should retain assigned attribute points")
+expectEqual(capturedSetup.character.mundus, 10,
+    "capture should retain the active Mundus Stone")
+expectEqual(capturedSetup.character.subclassLines[3], "Grave Lord",
+    "capture should retain active class skill lines")
+expectEqual(capturedSetup.champion.warfare.allocations[1].points, 50,
+    "capture should retain saved Champion allocations")
+expectEqual(capturedSetup.champion.warfare.slottables[1], 3002,
+    "capture should retain ordered Champion slottables")
+expect(ui.status:GetText():find("2 gear pieces", 1, true),
+    "capture should report the captured equipment count")
+BuildPlannerTestData:SelectBuild(originalBuild.id)
+ui:Refresh()
 expect(ui.paperDoll, "keyboard equipment should use a paper-doll panel")
 expectEqual(ui.paperDollSilhouette.texture, "player-silhouette", "paper doll should use ESO's player silhouette")
 expectEqual(#GravvyBuildPlannerSlots.ORDER, 14, "paper doll should retain all equipment slots")
@@ -822,6 +987,11 @@ GravvyBuildPlannerGamepadWindow:SetHidden(true)
 local gamepad = GravvyBuildPlannerGamepad:New(owner)
 owner.gamepad = gamepad
 gamepad:Initialize()
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[2].text,
+    SI_GRAVVY_BUILD_PLANNER_CAPTURE,
+    "gamepad build management should expose character capture"
+)
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {

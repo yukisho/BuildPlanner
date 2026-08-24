@@ -1,3 +1,14 @@
+0.7.6
+- Added one-click character snapshots that create a separate build from equipped
+  gear, both action bars, attributes, race, Mundus Stone, curse, active class
+  skill lines, and saved Champion Point allocations and slottables.
+- Preserved exact equipped item links, traits, enchantments, quality, level, and
+  two-handed weapon occupancy in the captured setup.
+- Added Capture to the keyboard header and native gamepad build-management menu,
+  with localized counts for the gear, skills, and Champion Stars copied.
+- Kept capture transactional through the validated build importer so an invalid
+  snapshot cannot leave a partial build behind.
+
 0.7.5
 - Added setup-specific Passive Skill, Skill Line, Unlock, and Other progression
   checklists with target ranks, notes, and completion tracking.

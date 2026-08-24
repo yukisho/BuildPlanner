@@ -1418,6 +1418,9 @@ function Gamepad:InitializeManageDialog()
             actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_NEW_BUILD, function()
                 self:OpenNameFromManage("newBuild")
             end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_CAPTURE, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:CaptureCharacter() end)
+            end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_RENAME_BUILD, function()
                 self:OpenNameFromManage("renameBuild")
             end),
@@ -1492,6 +1495,18 @@ end
 
 function Gamepad:ShowManageDialog()
     ZO_Dialogs_ShowGamepadDialog(MANAGE_DIALOG)
+end
+
+function Gamepad:CaptureCharacter()
+    local build, message = self.owner.capture:Capture()
+    if not build then
+        showError(message)
+        return
+    end
+    self.owner.setCatalog:Refresh()
+    self.owner.inventory:Refresh()
+    self:SetStatus(message)
+    self:Refresh(true)
 end
 
 function Gamepad:InitializeNameDialog()
@@ -1816,6 +1831,7 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

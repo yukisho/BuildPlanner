@@ -326,6 +326,13 @@ function UI:Initialize()
     local share = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE), 90)
     share:SetAnchor(TOPRIGHT, help, TOPLEFT, -8, 0)
     share:SetHandler("OnClicked", function() self.owner.share:Open() end)
+    self.captureButton = makeButton(
+        window,
+        GetString(SI_GRAVVY_BUILD_PLANNER_CAPTURE),
+        100
+    )
+    self.captureButton:SetAnchor(TOPRIGHT, share, TOPLEFT, -8, 0)
+    self.captureButton:SetHandler("OnClicked", function() self:CaptureCharacter() end)
 
     self:CreateBuildControls()
     self:CreateSlotRows()
@@ -1216,7 +1223,8 @@ function UI:CreateHelpDialog()
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
             .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE),
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
+            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
         22,
         52,
         656,
@@ -2559,6 +2567,20 @@ function UI:FinishAction(result, message)
     end
     self:Refresh()
     self:SetStatus("")
+end
+
+function UI:CaptureCharacter()
+    local build, message = self.owner.capture:Capture()
+    if not build then
+        self:SetStatus(message, true)
+        return
+    end
+    self.owner.setCatalog:Refresh()
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
+    end
+    self:Refresh()
+    self:SetStatus(message)
 end
 
 function UI:UndoDeletion()
