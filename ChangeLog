@@ -1,3 +1,25 @@
+0.7.15
+- Enlarged the confirmation window and its message area so the character
+  capture prompt wraps cleanly above the action buttons.
+
+0.7.14
+- Increased the keyboard Help page text to the normal game font for easier
+  reading while retaining the three-page layout.
+- Added confirmation prompts before keyboard or gamepad character capture.
+
+0.7.13
+- Replaced the unsupported owned-item checkmark character with ESO's native
+  accept icon so completed gear no longer shows as a green rectangle.
+- Used the same native completion icon in keyboard and gamepad checklists.
+
+0.7.12
+- Widened and rebalanced the Share window actions so Current Build Code and the
+  localized Select and Import labels display in full.
+
+0.7.11
+- Split keyboard help into three pages so later sections no longer overflow the
+  fixed text area or clip the Character heading and description.
+
 0.7.10
 - Widened the Preferred route label column and kept the route selector aligned
   with the editor's right edge so the label is no longer clipped.

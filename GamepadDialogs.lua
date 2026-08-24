@@ -1419,7 +1419,7 @@ function Gamepad:InitializeManageDialog()
                 self:OpenNameFromManage("newBuild")
             end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_CAPTURE, function()
-                releaseAndOpen(MANAGE_DIALOG, function() self:CaptureCharacter() end)
+                self:OpenCaptureFromManage()
             end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_RENAME_BUILD, function()
                 self:OpenNameFromManage("renameBuild")
@@ -1497,16 +1497,15 @@ function Gamepad:ShowManageDialog()
     ZO_Dialogs_ShowGamepadDialog(MANAGE_DIALOG)
 end
 
-function Gamepad:CaptureCharacter()
-    local build, message = self.owner.capture:Capture()
-    if not build then
-        showError(message)
-        return
+function Gamepad:OpenCaptureFromManage()
+    self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_CAPTURE)
+    self.pendingConfirmText = GetString(SI_GRAVVY_BUILD_PLANNER_CONFIRM_CAPTURE)
+    self.pendingConfirm = function()
+        return self.owner.capture:Capture()
     end
-    self.owner.setCatalog:Refresh()
-    self.owner.inventory:Refresh()
-    self:SetStatus(message)
-    self:Refresh(true)
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+    end)
 end
 
 function Gamepad:InitializeNameDialog()
@@ -1625,6 +1624,9 @@ function Gamepad:InitializeConfirmDialog()
                     end
                     self.owner.setCatalog:Refresh()
                     self.owner.inventory:Refresh()
+                    if message then
+                        self:SetStatus(message)
+                    end
                     self:Refresh(true)
                 end,
             },

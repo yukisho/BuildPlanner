@@ -1,6 +1,7 @@
 local UI = GravvyBuildPlannerUI
 local ROW_COUNT = 10
 local EMPTY_TEXTURE = "EsoUI/Art/Skills/skill_typeIcon_class_up.dds"
+local COMPLETE_MARKER = "|t16:16:EsoUI/Art/Buttons/accept_up.dds|t"
 
 local categoryStringIds = {
     passive = SI_GRAVVY_BUILD_PLANNER_CHECKLIST_PASSIVE,
@@ -232,7 +233,7 @@ function UI:RefreshChecklistPlanner()
         row.targetRank = entry and entry.targetRank
         row:SetHidden(not entry)
         if entry then
-            local marker = entry.completed and "✓" or "○"
+            local marker = entry.completed and COMPLETE_MARKER or "-"
             local rank = entry.targetRank and (" · " .. zo_strformat(
                 SI_GRAVVY_BUILD_PLANNER_CHECKLIST_RANK_VALUE,
                 entry.targetRank

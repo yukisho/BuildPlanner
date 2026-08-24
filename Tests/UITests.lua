@@ -831,6 +831,17 @@ expect(ui.captureButton, "keyboard users should have a character capture action"
 local originalBuild = BuildPlannerTestData:GetCurrentBuild()
 local buildCount = #BuildPlannerTestData:GetBuilds()
 ui.captureButton.handlers.OnClicked()
+expect(not ui.confirmDialog:IsHidden(),
+    "keyboard capture should ask for confirmation")
+expectEqual(ui.confirmDialog.width, 540,
+    "capture confirmation should have room for localized prompt text")
+expectEqual(ui.confirmText.height, 130,
+    "capture confirmation text should wrap above the action buttons")
+expectEqual(#BuildPlannerTestData:GetBuilds(), buildCount,
+    "opening capture confirmation should not create a build")
+expectEqual(ui.confirmAccept:GetText(), "Capture",
+    "capture confirmation should use a specific accept action")
+ui:AcceptConfirm()
 local capturedSetup, capturedBuild = BuildPlannerTestData:GetCurrentSetup()
 expectEqual(#BuildPlannerTestData:GetBuilds(), buildCount + 1,
     "capture should create one separate build")
@@ -997,6 +1008,12 @@ expect(not ui.paperDoll:IsHidden(), "switching back to Gear should restore the p
 owner.share = GravvyBuildPlannerShare:New(owner)
 owner.share:Initialize()
 expect(owner.share.window:IsHidden(), "the build share window should start hidden")
+expectEqual(owner.share.exportButton.width, 160,
+    "the Current Build Code action should display without clipping")
+expectEqual(owner.share.selectCodeButton.width, 180,
+    "the localized Select Code action should have enough room")
+expectEqual(owner.share.importButton.width, 150,
+    "the localized Import Code action should have enough room")
 owner.share:Open()
 expect(owner.share.codeEdit:GetText():sub(1, 5) == "GBP1:", "the share window should generate the current build code")
 owner.share:Hide()
@@ -1010,6 +1027,18 @@ expectEqual(
     SI_GRAVVY_BUILD_PLANNER_CAPTURE,
     "gamepad build management should expose character capture"
 )
+local gamepadBuildCount = #BuildPlannerTestData:GetBuilds()
+local gamepadCaptureAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[2]
+gamepadCaptureAction.templateData.callback()
+expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_CONFIRM",
+    "gamepad capture should open the native confirmation dialog")
+expectEqual(#BuildPlannerTestData:GetBuilds(), gamepadBuildCount,
+    "gamepad confirmation should appear before creating a build")
+expectEqual(gamepad.pendingConfirmText,
+    GetString(SI_GRAVVY_BUILD_PLANNER_CONFIRM_CAPTURE),
+    "gamepad capture should explain what will be copied")
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {
@@ -1143,6 +1172,16 @@ expect(ui.window:IsHidden(), "planner should start hidden")
 ui:ShowHelp()
 expect(not ui.helpDialog:IsHidden(), "in-game help should be available from the planner")
 expect(cameraUIMode, "standalone help should request ESO UI mode")
+expectEqual(#ui.helpPages, 3, "keyboard help should be split into readable pages")
+expectEqual(owner.accessibility.fonts[ui.helpContent], "ZoFontGame",
+    "keyboard help should use the larger normal game font")
+ui.helpNextButton.handlers.OnClicked()
+expectEqual(ui.helpPage, 2, "keyboard help should advance to the next page")
+expect(ui.helpContent:GetText():find("CHARACTER\nChoose Character", 1, true),
+    "the Character help heading should remain separate from its description")
+ui.helpNextButton.handlers.OnClicked()
+expect(ui.helpContent:GetText():find("CAPTURE CHARACTER", 1, true),
+    "the final help page should expose sections that previously overflowed")
 ui:CloseHelp()
 expect(not cameraUIMode, "closing standalone help should release its UI mode")
 BuildPlannerTestData:GetSettings().fontScale = 1.2
@@ -1381,9 +1420,16 @@ BuildPlannerTestData:SetAlternative(currentBuild.id, setup.id, "feet", nil, {
     traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
 })
 owner.inventory:Refresh()
+ui:RefreshRows()
 local headMatch = owner.inventory:GetMatch(setup.id, "head")
 expect(headMatch and headMatch.exact, "equipped exact pieces should satisfy a planned slot")
 expectEqual(headMatch.location, "equipped", "equipped matches should retain their location")
+expectEqual(ui.rows.head.status:GetText(), "",
+    "owned gear should not use an unsupported text glyph")
+expect(not ui.rows.head.statusIcon:IsHidden(),
+    "owned gear should show ESO's native completion icon")
+expectEqual(ui.rows.head.statusIcon.texture, "EsoUI/Art/Buttons/accept_up.dds",
+    "owned gear should use the built-in accept texture")
 local handMatch = owner.inventory:GetMatch(setup.id, "hands")
 expect(handMatch and not handMatch.exact, "repairable pieces should be kept as adjustable matches")
 expectEqual(#handMatch.differences, 3, "adjustable match should report trait, enchantment, and quality")

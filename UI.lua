@@ -8,6 +8,7 @@ local SUGGESTION_ROWS = 6
 local DEFAULT_VALUE = -1
 local AUTOMATIC_ROUTE = "automatic"
 local EMPTY_SKILL_TEXTURE = "EsoUI/Art/ActionBar/abilityInset.dds"
+local COMPLETE_TEXTURE = "EsoUI/Art/Buttons/accept_up.dds"
 
 UI.CONTENT_TOP = 160
 
@@ -334,7 +335,9 @@ function UI:Initialize()
         100
     )
     self.captureButton:SetAnchor(TOPRIGHT, share, TOPLEFT, -8, 0)
-    self.captureButton:SetHandler("OnClicked", function() self:CaptureCharacter() end)
+    self.captureButton:SetHandler("OnClicked", function()
+        self:RequestCharacterCapture()
+    end)
 
     self:CreateBuildControls()
     self:CreateSlotRows()
@@ -799,6 +802,13 @@ function UI:CreateSlotRows()
         status:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
         status:SetDrawTier(DT_HIGH)
         button.status = status
+        local statusIcon = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
+        statusIcon:SetDimensions(16, 16)
+        statusIcon:SetAnchor(TOPRIGHT, button, TOPRIGHT, -1, 1)
+        statusIcon:SetTexture(COMPLETE_TEXTURE)
+        statusIcon:SetHidden(true)
+        statusIcon:SetDrawTier(DT_HIGH)
+        button.statusIcon = statusIcon
         self.rows[slotKey] = button
     end
 end
@@ -1016,7 +1026,7 @@ end
 
 function UI:CreateConfirmDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerConfirmDialog")
-    dialog:SetDimensions(430, 165)
+    dialog:SetDimensions(540, 210)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -1031,15 +1041,19 @@ function UI:CreateConfirmDialog()
         { 0.035, 0.035, 0.045, 1 },
         { 0.55, 0.25, 0.2, 1 }
     )
-    self.confirmText = makeLabel(dialog, "", 20, 16, 390, "ZoFontWinH3")
-    self.confirmText:SetHeight(70)
+    self.confirmText = makeLabel(dialog, "", 20, 16, 500, "ZoFontWinH3")
+    self.confirmText:SetHeight(130)
     self.confirmText:SetVerticalAlignment(TEXT_ALIGN_TOP)
 
-    local accept = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_DELETE), 100)
-    accept:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
-    accept:SetHandler("OnClicked", function() self:AcceptConfirm() end)
+    self.confirmAccept = makeButton(
+        dialog,
+        GetString(SI_DIALOG_CONFIRM),
+        100
+    )
+    self.confirmAccept:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
+    self.confirmAccept:SetHandler("OnClicked", function() self:AcceptConfirm() end)
     local cancel = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CANCEL), 100)
-    cancel:SetAnchor(RIGHT, accept, LEFT, -8, 0)
+    cancel:SetAnchor(RIGHT, self.confirmAccept, LEFT, -8, 0)
     cancel:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
 end
 
@@ -1229,31 +1243,79 @@ function UI:CreateHelpDialog()
         664,
         "ZoFontWinH2"
     )
-    local content = makeLabel(
+    local function helpPage(...)
+        local text = table.concat({ ... })
+        return (text:gsub("^%s+", ""))
+    end
+    self.helpPages = {
+        helpPage(GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)),
+        helpPage(
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
+        ),
+        helpPage(
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
+        ),
+    }
+    self.helpPage = 1
+    self.helpContent = makeLabel(
         dialog,
-        GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
-            .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
+        "",
         22,
         52,
         656,
-        "ZoFontGameSmall"
+        "ZoFontGame"
     )
-    content:SetVerticalAlignment(TEXT_ALIGN_TOP)
-    content:SetHeight(580)
+    self.helpContent:SetVerticalAlignment(TEXT_ALIGN_TOP)
+    self.helpContent:SetHeight(580)
 
     local close = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 100)
     close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
     close:SetHandler("OnClicked", function() self:CloseHelp() end)
+    self.helpPreviousButton = makeButton(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_PREVIOUS),
+        100
+    )
+    self.helpPreviousButton:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -14)
+    self.helpPreviousButton:SetHandler("OnClicked", function() self:PageHelp(-1) end)
+    self.helpNextButton = makeButton(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_NEXT),
+        100
+    )
+    self.helpNextButton:SetAnchor(LEFT, self.helpPreviousButton, RIGHT, 8, 0)
+    self.helpNextButton:SetHandler("OnClicked", function() self:PageHelp(1) end)
+    self.helpPageLabel = makeLabel(dialog, "", 282, 656, 136, "ZoFontGameSmall")
+    self.helpPageLabel:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    self:RefreshHelp()
+end
+
+function UI:RefreshHelp()
+    self.helpPage = zo_clamp(self.helpPage or 1, 1, #self.helpPages)
+    self.helpContent:SetText(self.helpPages[self.helpPage])
+    self.helpPageLabel:SetText(zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_HELP_PAGE,
+        self.helpPage,
+        #self.helpPages
+    ))
+    self.helpPreviousButton:SetEnabled(self.helpPage > 1)
+    self.helpNextButton:SetEnabled(self.helpPage < #self.helpPages)
+end
+
+function UI:PageHelp(direction)
+    self.helpPage = zo_clamp(self.helpPage + direction, 1, #self.helpPages)
+    self:RefreshHelp()
 end
 
 function UI:ShowHelp()
+    self.helpPage = 1
+    self:RefreshHelp()
     self.helpDialog:SetHidden(false)
     if self.window:IsHidden() then
         self.helpRequestedMouse = true
@@ -1475,13 +1537,13 @@ function UI:RefreshRows()
 
         local marker = ""
         local edge = { 0.36, 0.32, 0.24, 0.95 }
+        row.statusIcon:SetHidden(true)
         if requirement and not occupied then
             local match = self.owner.inventory
                 and self.owner.inventory:GetMatch(setup.id, slotKey)
             if match and match.exact then
-                marker = "✓"
                 edge = { 0.3, 0.78, 0.3, 1 }
-                row.status:SetColor(0.45, 1, 0.45, 1)
+                row.statusIcon:SetHidden(false)
             elseif match then
                 marker = "~"
                 edge = { 0.95, 0.65, 0.2, 1 }
@@ -2549,10 +2611,11 @@ function UI:AcceptNameDialog()
     self:FinishAction(result)
 end
 
-function UI:OpenConfirm(message, callback, callbackRefreshesUI)
+function UI:OpenConfirm(message, callback, callbackRefreshesUI, acceptStringId)
     self.confirmCallback = callback
     self.confirmCallbackRefreshesUI = callbackRefreshesUI == true
     self.confirmText:SetText(message)
+    self.confirmAccept:SetText(GetString(acceptStringId or SI_DIALOG_CONFIRM))
     self.confirmDialog:SetHidden(false)
 end
 
@@ -2584,11 +2647,19 @@ function UI:FinishAction(result, message)
     self:SetStatus("")
 end
 
+function UI:RequestCharacterCapture()
+    self:OpenConfirm(
+        GetString(SI_GRAVVY_BUILD_PLANNER_CONFIRM_CAPTURE),
+        function() return self:CaptureCharacter() end,
+        true,
+        SI_GRAVVY_BUILD_PLANNER_CAPTURE
+    )
+end
+
 function UI:CaptureCharacter()
     local build, message = self.owner.capture:Capture()
     if not build then
-        self:SetStatus(message, true)
-        return
+        return nil, message
     end
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
@@ -2596,6 +2667,7 @@ function UI:CaptureCharacter()
     end
     self:Refresh()
     self:SetStatus(message)
+    return build, message
 end
 
 function UI:UndoDeletion()

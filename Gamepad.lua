@@ -2,6 +2,7 @@ GravvyBuildPlannerGamepad = {}
 
 local Gamepad = GravvyBuildPlannerGamepad
 local Slots = GravvyBuildPlannerSlots
+local COMPLETE_MARKER = "|t16:16:EsoUI/Art/Buttons/accept_up.dds|t "
 
 local slotStringIds = {
     head = SI_GRAVVY_BUILD_PLANNER_SLOT_HEAD,
@@ -557,7 +558,7 @@ function Gamepad:Refresh(force)
         addEntry:SetFontScaleOnSelection(false)
         self.list:AddEntry("ZO_GamepadMenuEntryTemplate", addEntry)
         for index, item in ipairs(setup.checklist) do
-            local marker = item.completed and "✓ " or "○ "
+            local marker = item.completed and COMPLETE_MARKER or "- "
             local entry = ZO_GamepadEntryData:New(marker .. item.name)
             entry.checklistIndex = index
             entry.abilityId = item.abilityId

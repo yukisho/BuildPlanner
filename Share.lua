@@ -924,15 +924,27 @@ function Share:Initialize()
     self.codeEdit = edit
 
     self.status = makeLabel(window, "", 18, 302, 664, "ZoFontGameSmall")
-    local export = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_EXPORT), 120)
-    export:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 18, -16)
-    export:SetHandler("OnClicked", function() self:ExportCurrent() end)
-    local selectCode = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_SELECT), 100)
-    selectCode:SetAnchor(LEFT, export, RIGHT, 8, 0)
-    selectCode:SetHandler("OnClicked", function() self:SelectCode() end)
-    local import = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORT), 120)
-    import:SetAnchor(LEFT, selectCode, RIGHT, 8, 0)
-    import:SetHandler("OnClicked", function() self:ImportCode() end)
+    self.exportButton = makeButton(
+        window,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_EXPORT),
+        160
+    )
+    self.exportButton:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 18, -16)
+    self.exportButton:SetHandler("OnClicked", function() self:ExportCurrent() end)
+    self.selectCodeButton = makeButton(
+        window,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_SELECT),
+        180
+    )
+    self.selectCodeButton:SetAnchor(LEFT, self.exportButton, RIGHT, 8, 0)
+    self.selectCodeButton:SetHandler("OnClicked", function() self:SelectCode() end)
+    self.importButton = makeButton(
+        window,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_IMPORT),
+        150
+    )
+    self.importButton:SetAnchor(LEFT, self.selectCodeButton, RIGHT, 8, 0)
+    self.importButton:SetHandler("OnClicked", function() self:ImportCode() end)
     local close = makeButton(window, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 80)
     close:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -18, -16)
     close:SetHandler("OnClicked", function() self:Hide() end)
