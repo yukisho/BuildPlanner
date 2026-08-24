@@ -4,7 +4,6 @@ local UI = GravvyBuildPlannerUI
 local Slots = GravvyBuildPlannerSlots
 local WINDOW_WIDTH = 980
 local WINDOW_HEIGHT = 700
-local SLOT_ROW_HEIGHT = 35
 local SUGGESTION_ROWS = 6
 local DEFAULT_VALUE = -1
 local AUTOMATIC_ROUTE = "automatic"
@@ -389,14 +388,95 @@ function UI:CreateBuildControls()
 end
 
 function UI:CreateSlotRows()
-    for index, slotKey in ipairs(Slots.ORDER) do
-        local button = makeButton(self.window, "", 490)
-        button:SetHeight(31)
-        button:SetHorizontalAlignment(TEXT_ALIGN_LEFT)
-        button:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137 + ((index - 1) * SLOT_ROW_HEIGHT))
-        button:SetHandler("OnClicked", function() self:EditSlot(slotKey) end)
-        button:SetHandler("OnMouseEnter", function(control) self:ShowSlotTooltip(slotKey, control) end)
+    local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerPaperDoll", self.window, CT_CONTROL)
+    panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, 137)
+    panel:SetDimensions(490, 530)
+    self.paperDoll = panel
+
+    local panelBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    panelBackdrop:SetAnchorFill(panel)
+    GravvyBuildPlannerAccessibility:RegisterBackdrop(
+        panelBackdrop,
+        { 0.018, 0.018, 0.026, 0.78 },
+        { 0.28, 0.24, 0.18, 0.75 }
+    )
+
+    local function addSection(title, y)
+        local divider = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+        divider:SetTexture("EsoUI/Art/CharacterWindow/characterWindow_leftSide_divider.dds")
+        divider:SetDimensions(460, 4)
+        divider:SetAnchor(TOPLEFT, panel, TOPLEFT, 15, y)
+        local label = makeLabel(panel, title, 16, y + 3, 200, "ZoFontHeader")
+        label:SetHeight(25)
+    end
+
+    addSection(GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_ARMOR), 0)
+    addSection(GetString(SI_GRAVVY_BUILD_PLANNER_JEWELRY), 292)
+    addSection(GetString(SI_GRAVVY_BUILD_PLANNER_WEAPONS), 382)
+
+    local silhouette = WINDOW_MANAGER:CreateControl(nil, panel, CT_TEXTURE)
+    silhouette:SetDimensions(64, 250)
+    silhouette:SetAnchor(TOP, panel, TOP, 0, 110)
+    if GetUnitSilhouetteTexture then
+        silhouette:SetTexture(GetUnitSilhouetteTexture("player"))
+    end
+    silhouette:SetAlpha(0.9)
+    self.paperDollSilhouette = silhouette
+
+    local positions = {
+        head = { 219, 31 },
+        shoulders = { 88, 91 },
+        hands = { 88, 158 },
+        legs = { 88, 225 },
+        chest = { 350, 91 },
+        waist = { 350, 158 },
+        feet = { 350, 225 },
+        neck = { 150, 326 },
+        ring1 = { 219, 326 },
+        ring2 = { 288, 326 },
+        frontMain = { 150, 412 },
+        frontOff = { 219, 412 },
+        backMain = { 150, 468 },
+        backOff = { 219, 468 },
+    }
+
+    local frontBar = makeLabel(panel, "1", 119, 422, 24, "ZoFontWinH3")
+    frontBar:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    local backBar = makeLabel(panel, "2", 119, 478, 24, "ZoFontWinH3")
+    backBar:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+
+    for _, slotKey in ipairs(Slots.ORDER) do
+        local position = positions[slotKey]
+        local button = WINDOW_MANAGER:CreateControl(
+            "GravvyBuildPlannerPaperDoll" .. slotKey,
+            panel,
+            CT_BUTTON
+        )
+        button:SetDimensions(52, 52)
+        button:SetAnchor(TOPLEFT, panel, TOPLEFT, position[1], position[2])
+        button:SetHandler("OnClicked", function()
+            self:EditSlot(button.occupiedBy or slotKey)
+        end)
+        button:SetHandler("OnMouseEnter", function(control)
+            self:ShowSlotTooltip(slotKey, control)
+        end)
         button:SetHandler("OnMouseExit", function() self:HideItemTooltip() end)
+
+        local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, button, "ZO_DefaultBackdrop")
+        backdrop:SetAnchorFill(button)
+        backdrop:SetCenterColor(0.025, 0.025, 0.035, 0.96)
+        backdrop:SetEdgeColor(0.36, 0.32, 0.24, 0.95)
+        button.backdrop = backdrop
+
+        local icon = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
+        icon:SetAnchor(TOPLEFT, button, TOPLEFT, 3, 3)
+        icon:SetAnchor(BOTTOMRIGHT, button, BOTTOMRIGHT, -3, -3)
+        button.icon = icon
+
+        local status = makeLabel(button, "", 34, -3, 20, "ZoFontWinH4")
+        status:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+        status:SetDrawTier(DT_HIGH)
+        button.status = status
         self.rows[slotKey] = button
     end
 end
@@ -1005,8 +1085,54 @@ function UI:RefreshRows()
         else
             summary = self:GetRequirementSummary(setup.equipment[slotKey])
         end
-        row:SetText(slotName(slotKey) .. ":  " .. summary)
-        row:SetEnabled(not occupied)
+        local requirement = occupied and mainRequirement or setup.equipment[slotKey]
+        local itemLink = requirement and requirement.itemLink
+        if requirement and (not itemLink or itemLink == "") then
+            local resolved = self.owner.itemResolver:Resolve(slotKey, requirement, setup)
+            itemLink = resolved and resolved.itemLink
+        end
+        local definition = Slots:Get(slotKey)
+        local emptyTexture = ZO_Character_GetEmptyEquipSlotTexture
+            and ZO_Character_GetEmptyEquipSlotTexture(definition.equipSlot)
+            or nil
+        row.icon:SetTexture(itemLink and itemLink ~= "" and GetItemLinkIcon(itemLink) or emptyTexture)
+        row.icon:SetAlpha(occupied and 0.45 or 1)
+        if row.icon.SetDesaturation then
+            row.icon:SetDesaturation(occupied and 1 or 0)
+        end
+
+        local marker = ""
+        local edge = { 0.36, 0.32, 0.24, 0.95 }
+        if requirement and not occupied then
+            local match = self.owner.inventory and self.owner.inventory:GetMatch(
+                setup.id,
+                slotKey,
+                requirement,
+                setup
+            )
+            if match and match.exact then
+                marker = "✓"
+                edge = { 0.3, 0.78, 0.3, 1 }
+                row.status:SetColor(0.45, 1, 0.45, 1)
+            elseif match then
+                marker = "~"
+                edge = { 0.95, 0.65, 0.2, 1 }
+                row.status:SetColor(1, 0.78, 0.3, 1)
+            else
+                marker = "!"
+                edge = { 0.8, 0.3, 0.25, 1 }
+                row.status:SetColor(1, 0.45, 0.4, 1)
+            end
+        end
+        row.occupiedBy = occupied and mainHand or nil
+        if self.selectedSlot == slotKey or row.occupiedBy == self.selectedSlot then
+            edge = { 1, 0.76, 0.28, 1 }
+        end
+        row.backdrop:SetEdgeColor(edge[1], edge[2], edge[3], edge[4])
+        row.status:SetText(marker)
+        row.slotSummary = slotName(slotKey) .. ":  " .. summary
+        row:SetText("")
+        row:SetEnabled(true)
         row:SetAlpha(occupied and 0.55 or 1)
     end
 end
@@ -1022,6 +1148,7 @@ end
 function UI:EditSlot(slotKey)
     self.selectedSlot = slotKey
     self:LoadEditor()
+    self:RefreshRows()
 end
 
 function UI:LoadEditor()
@@ -1349,6 +1476,7 @@ end
 
 function UI:RefreshOwnedStatus()
     if self.window and not self.window:IsHidden() then
+        self:RefreshRows()
         self:RefreshProgress()
         self:RefreshEditorPreview()
     end
@@ -1372,9 +1500,15 @@ end
 
 function UI:ShowSlotTooltip(slotKey, control)
     local setup = self.owner.data:GetCurrentSetup()
-    local requirement = setup.equipment[slotKey]
-    if requirement and requirement.itemLink and requirement.itemLink ~= "" then
-        self:ShowItemTooltip(control, requirement.itemLink, requirement)
+    local displaySlot = control.occupiedBy or slotKey
+    local requirement = setup.equipment[displaySlot]
+    local itemLink = requirement and requirement.itemLink
+    if requirement and (not itemLink or itemLink == "") then
+        local resolved = self.owner.itemResolver:Resolve(displaySlot, requirement, setup)
+        itemLink = resolved and resolved.itemLink
+    end
+    if itemLink and itemLink ~= "" then
+        self:ShowItemTooltip(control, itemLink, requirement)
     end
 end
 

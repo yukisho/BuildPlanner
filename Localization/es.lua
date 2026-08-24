@@ -133,6 +133,7 @@ local strings = {
     SI_GRAVVY_BUILD_PLANNER_ANY_TYPE = "Cualquier tipo",
     SI_GRAVVY_BUILD_PLANNER_ANY_TRAIT = "Cualquier rasgo",
     SI_GRAVVY_BUILD_PLANNER_JEWELRY = "Joyería",
+    SI_GRAVVY_BUILD_PLANNER_WEAPONS = "Armas",
     SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED = "Sin planificar",
     SI_GRAVVY_BUILD_PLANNER_INCOMPLETE = "Requisito incompleto",
     SI_GRAVVY_BUILD_PLANNER_OCCUPIED = "Usado por <<1>>",

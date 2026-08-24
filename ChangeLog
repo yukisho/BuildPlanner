@@ -1,4 +1,8 @@
 0.6.0
+- Replaced the keyboard equipment list with an ESO-style paper-doll layout
+  using the native player silhouette and empty-slot artwork.
+- Arranged armor, jewelry, and both weapon bars like the Character window while
+  preserving slot editing, tooltips, two-handed occupancy, and progress markers.
 - Added checksummed GBP1 codes for backing up or sharing a complete build.
 - Added transactional build import with fresh IDs, safe duplicate names, and no
   partial SavedVariables changes when a code is invalid.

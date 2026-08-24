@@ -428,6 +428,10 @@ function GetItemLinkName(link)
     return ""
 end
 function GetItemLinkIcon(link) return "icon:" .. link end
+function GetUnitSilhouetteTexture() return "player-silhouette" end
+function ZO_Character_GetEmptyEquipSlotTexture(equipSlot)
+    return "empty-slot:" .. tostring(equipSlot)
+end
 function GetItemLinkTraitInfo(link) return itemLinks[link].traitType end
 function GetItemLinkDisplayQuality(link) return itemLinks[link].quality end
 function GetItemLinkSetInfo(link)
@@ -556,6 +560,12 @@ owner.accessibility:Initialize(owner)
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+expect(ui.paperDoll, "keyboard equipment should use a paper-doll panel")
+expectEqual(ui.paperDollSilhouette.texture, "player-silhouette", "paper doll should use ESO's player silhouette")
+expectEqual(#GravvyBuildPlannerSlots.ORDER, 14, "paper doll should retain all equipment slots")
+for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
+    expect(ui.rows[slotKey] and ui.rows[slotKey].icon, slotKey .. " should have an icon control")
+end
 owner.share = GravvyBuildPlannerShare:New(owner)
 owner.share:Initialize()
 expect(owner.share.window:IsHidden(), "the build share window should start hidden")
