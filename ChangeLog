@@ -1,3 +1,8 @@
+0.7.17
+- Kept the Compare setup dropdown above the results table and explicitly
+  finalized its refreshed entries so every other setup in the current build is
+  visible and selectable.
+
 0.7.16
 - Added named, build-specific revision checkpoints for adapting plans across
   game updates, with the newest 20 revisions retained locally.

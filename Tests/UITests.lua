@@ -237,7 +237,7 @@ local function newControl(name, parent)
     function control:SetClampedToScreen() end
     function control:SetMouseEnabled() end
     function control:SetMovable() end
-    function control:SetDrawTier() end
+    function control:SetDrawTier(value) self.drawTier = value end
     function control:SetCenterColor(...) self.centerColor = { ... } end
     function control:SetEdgeColor(...) self.edgeColor = { ... } end
     function control:SetFont(value) self.font = value end
@@ -280,13 +280,18 @@ function WINDOW_MANAGER:CreateControlFromVirtual(name, parent)
 end
 
 function ZO_ComboBox_ObjectFromContainer(container)
-    local combo = { container = container, items = {} }
+    local combo = {
+        container = container,
+        items = {},
+        m_dropdown = newControl(container.name .. "Dropdown", container),
+    }
     function combo:SetSortsItems() end
     function combo:ClearItems() self.items = {} end
     function combo:CreateItemEntry(label, callback)
         return { label = label, callback = callback }
     end
     function combo:AddItem(item) self.items[#self.items + 1] = item end
+    function combo:UpdateItems() self.itemsUpdated = true end
     function combo:SetSelectedItem(label) self.selectedLabel = label end
     function combo:SetEnabled(value) self.enabled = value end
     return combo
@@ -999,6 +1004,13 @@ expectEqual(ui.comparisonHeader.width, ui.comparisonRows[1].width,
 expectEqual(ui.comparisonHeader.width, ui.comparisonPanel.width - 36,
     "comparison content should retain equal panel insets")
 expect(ui.comparisonSetupId, "comparison should select another setup automatically")
+expectEqual(#ui.comparisonSetupCombo.items,
+    #BuildPlannerTestData:GetCurrentBuild().setups - 1,
+    "comparison should list every other setup in the current build")
+expect(ui.comparisonSetupCombo.itemsUpdated,
+    "comparison should finalize its refreshed dropdown entries")
+expectEqual(ui.comparisonSetupCombo.m_dropdown.drawTier, DT_HIGH,
+    "comparison choices should render above the results table")
 expect(#ui.comparisonDifferences > 0, "comparison should include only changed setup fields")
 expect(not ui.comparisonRows[1]:IsHidden(), "changed fields should be visible in the comparison table")
 expectEqual(#GravvyBuildPlannerComparison:Build(

@@ -32,6 +32,9 @@ local function makeCombo(parent, name, x, y, width)
     container:SetDimensions(width, 30)
     local combo = ZO_ComboBox_ObjectFromContainer(container)
     combo:SetSortsItems(false)
+    if combo.m_dropdown then
+        combo.m_dropdown:SetDrawTier(DT_HIGH)
+    end
     return combo
 end
 
@@ -136,8 +139,11 @@ function UI:RefreshComparisonPlanner()
             self.comparisonSetupCombo:AddItem(self.comparisonSetupCombo:CreateItemEntry(
                 setup.name,
                 function() self:SetComparisonTarget(setupId) end
-            ))
+            ), ZO_COMBOBOX_SUPPRESS_UPDATE)
         end
+    end
+    if self.comparisonSetupCombo.UpdateItems then
+        self.comparisonSetupCombo:UpdateItems()
     end
     self.comparisonSetupCombo:SetSelectedItem(target and target.name or "")
     self.comparisonLeftHeader:SetText(zo_strformat(
