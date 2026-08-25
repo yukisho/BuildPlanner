@@ -1,3 +1,14 @@
+0.7.19
+- Fixed setup comparison crashing on different Mundus Stones by using ESO's
+  localized Mundus string table instead of an unavailable API function.
+- Added regression coverage for builds that differ in their Mundus choice.
+
+0.7.18
+- Fixed the Compare panel control name replacing the comparison engine at run
+  time, which stopped setup choices and differences from being populated.
+- Made UI tests mirror ESO's named-control globals so similar collisions are
+  caught before an in-game build.
+
 0.7.17
 - Kept the Compare setup dropdown above the results table and explicitly
   finalized its refreshed entries so every other setup in the current build is

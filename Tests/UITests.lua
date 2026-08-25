@@ -270,13 +270,19 @@ end
 
 WINDOW_MANAGER = {}
 function WINDOW_MANAGER:CreateTopLevelWindow(name)
-    return newControl(name)
+    local control = newControl(name)
+    if name then _G[name] = control end
+    return control
 end
 function WINDOW_MANAGER:CreateControl(name, parent)
-    return newControl(name, parent)
+    local control = newControl(name, parent)
+    if name then _G[name] = control end
+    return control
 end
 function WINDOW_MANAGER:CreateControlFromVirtual(name, parent)
-    return newControl(name, parent)
+    local control = newControl(name, parent)
+    if name then _G[name] = control end
+    return control
 end
 
 function ZO_ComboBox_ObjectFromContainer(container)
@@ -816,9 +822,14 @@ owner.skillCatalog:FindById(1001).progression = {
 }
 owner.accessibility = GravvyBuildPlannerAccessibility
 owner.accessibility:Initialize(owner)
+local comparisonEngine = GravvyBuildPlannerComparison
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
+expectEqual(GravvyBuildPlannerComparison, comparisonEngine,
+    "creating the comparison panel should not replace the comparison engine")
+expectEqual(GravvyBuildPlannerComparisonPanel, ui.comparisonPanel,
+    "the comparison panel should use its own global control name")
 expectEqual(ui.window.height, 728,
     "keyboard window should make room for the dedicated navigation row")
 expectEqual(ui.gearTab.anchor[5], 119,
@@ -1013,6 +1024,27 @@ expectEqual(ui.comparisonSetupCombo.m_dropdown.drawTier, DT_HIGH,
     "comparison choices should render above the results table")
 expect(#ui.comparisonDifferences > 0, "comparison should include only changed setup fields")
 expect(not ui.comparisonRows[1]:IsHidden(), "changed fields should be visible in the comparison table")
+local comparisonCurrent, comparisonBuild = BuildPlannerTestData:GetCurrentSetup()
+local comparisonTarget = BuildPlannerTestData:FindSetup(
+    comparisonBuild,
+    ui.comparisonSetupId
+)
+local originalTargetMundus = comparisonTarget.character.mundus
+comparisonTarget.character.mundus = comparisonCurrent.character.mundus == 10 and 0 or 10
+local mundusDifferences = GravvyBuildPlannerComparison:Build(
+    comparisonCurrent,
+    comparisonTarget
+)
+local foundMundusDifference = false
+for _, difference in ipairs(mundusDifferences) do
+    if difference.label == GetString(SI_GRAVVY_BUILD_PLANNER_MUNDUS) then
+        foundMundusDifference = true
+        break
+    end
+end
+comparisonTarget.character.mundus = originalTargetMundus
+expect(foundMundusDifference,
+    "comparison should format differing Mundus Stones with ESO's string table")
 expectEqual(#GravvyBuildPlannerComparison:Build(
     BuildPlannerTestData:GetCurrentSetup(),
     BuildPlannerTestData:GetCurrentSetup()

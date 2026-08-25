@@ -290,8 +290,10 @@ function Comparison:Build(left, right)
     if leftCharacter.mundus ~= rightCharacter.mundus then
         add(rows, SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHARACTER,
             GetString(SI_GRAVVY_BUILD_PLANNER_MUNDUS),
-            leftCharacter.mundus > 0 and GetMundusStoneName(leftCharacter.mundus) or nil,
-            rightCharacter.mundus > 0 and GetMundusStoneName(rightCharacter.mundus) or nil)
+            leftCharacter.mundus > 0
+                and GetString("SI_MUNDUSSTONE", leftCharacter.mundus) or nil,
+            rightCharacter.mundus > 0
+                and GetString("SI_MUNDUSSTONE", rightCharacter.mundus) or nil)
     end
     if leftCharacter.curse ~= rightCharacter.curse then
         local curseIds = {

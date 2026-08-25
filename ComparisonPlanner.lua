@@ -39,7 +39,11 @@ local function makeCombo(parent, name, x, y, width)
 end
 
 function UI:CreateComparisonPlanner()
-    local panel = WINDOW_MANAGER:CreateControl("GravvyBuildPlannerComparison", self.window, CT_CONTROL)
+    local panel = WINDOW_MANAGER:CreateControl(
+        "GravvyBuildPlannerComparisonPanel",
+        self.window,
+        CT_CONTROL
+    )
     panel:SetAnchor(TOPLEFT, self.window, TOPLEFT, 18, self.CONTENT_TOP)
     panel:SetDimensions(PANEL_WIDTH, 530)
     panel:SetHidden(true)
