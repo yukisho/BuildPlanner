@@ -17,6 +17,7 @@ local CHAMPION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHAMPION"
 local SUPPLY_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SUPPLY"
 local CHECKLIST_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHECKLIST"
 local REVISION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION"
+local STAT_IMPACT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_STAT_IMPACT"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -364,6 +365,7 @@ end
 function Gamepad:InitializeDialogs()
     self:InitializeEditDialog()
     self:InitializeManageDialog()
+    self:InitializeStatImpactDialog()
     self:InitializeRevisionDialog()
     self:InitializeNameDialog()
     self:InitializeConfirmDialog()
@@ -1423,6 +1425,9 @@ function Gamepad:InitializeManageDialog()
             actionEntry(SI_GRAVVY_BUILD_PLANNER_CAPTURE, function()
                 self:OpenCaptureFromManage()
             end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowStatImpactDialog() end)
+            end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_REVISIONS, function()
                 self:OpenRevisionsFromManage()
             end),
@@ -1511,6 +1516,145 @@ function Gamepad:OpenCaptureFromManage()
     releaseAndOpen(MANAGE_DIALOG, function()
         ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
     end)
+end
+
+function Gamepad:GetStatImpactSetup()
+    local build = self.owner.data:GetCurrentBuild()
+    local setup = self.statImpactSetupId
+        and self.owner.data:FindSetup(build, self.statImpactSetupId)
+    if not setup then
+        setup = self.owner.data:GetCurrentSetup()
+        self.statImpactSetupId = setup.id
+    end
+    return setup, build
+end
+
+function Gamepad:GetStatImpactText()
+    local setup = self:GetStatImpactSetup()
+    local bar = self.statImpactBar == "back" and "back" or "front"
+    local report = self.owner.statImpact:BuildReport(setup, bar)
+    local snapshotValues = report.snapshot and report.snapshot.values or {}
+    local comparable = not report.liveBar or report.liveBar == report.bar
+    local lines = {
+        GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_HELP),
+        "",
+        setup.name .. " · " .. GetString(bar == "back"
+            and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+            or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
+        "",
+        GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_EXACT_TITLE),
+    }
+    for _, row in ipairs(self.owner.statImpact:GetStatRows()) do
+        local liveValue = report.live[row.key]
+        local snapshotValue = snapshotValues[row.key]
+        lines[#lines + 1] = GetString(row.label)
+            .. ": " .. self.owner.statImpact:FormatValue(row, liveValue)
+            .. " → " .. self.owner.statImpact:FormatValue(row, snapshotValue)
+            .. " (" .. (comparable
+                and self.owner.statImpact:FormatChange(row, liveValue, snapshotValue)
+                or "—") .. ")"
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_EFFECTS_TITLE)
+    lines[#lines + 1] = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_COVERAGE,
+        report.resolved,
+        report.planned,
+        GetString(bar == "back"
+            and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+            or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+    )
+    for index = 1, math.min(6, #report.effects) do
+        local effect = report.effects[index]
+        lines[#lines + 1] = effect.label .. ": " .. effect.description
+    end
+    if #report.effects > 6 then
+        lines[#lines + 1] = zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_MORE_EFFECTS,
+            #report.effects - 6
+        )
+    elseif #report.effects == 0 then
+        lines[#lines + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_EFFECTS)
+    end
+    return table.concat(lines, "\n")
+end
+
+function Gamepad:ShowStatImpactDialog(setupId)
+    local build = self.owner.data:GetCurrentBuild()
+    local setup = setupId and self.owner.data:FindSetup(build, setupId)
+    if not setup and self.activeView == "comparison" then
+        setup = self.comparisonSetupId
+            and self.owner.data:FindSetup(build, self.comparisonSetupId)
+    end
+    setup = setup or self.owner.data:GetCurrentSetup()
+    self.statImpactSetupId = setup.id
+    self.statImpactBar = self.statImpactBar == "back" and "back" or "front"
+    ZO_Dialogs_ShowGamepadDialog(STAT_IMPACT_DIALOG)
+end
+
+function Gamepad:ReopenStatImpactDialog()
+    releaseAndOpen(STAT_IMPACT_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(STAT_IMPACT_DIALOG)
+    end)
+end
+
+function Gamepad:OpenStatImpactCapture()
+    local setup, build = self:GetStatImpactSetup()
+    local bar = self.statImpactBar
+    local liveBar = self.owner.statImpact:GetLiveBar()
+    if liveBar and liveBar ~= bar then
+        showError(zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SWITCH_TO_BAR,
+            GetString(bar == "back"
+                and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+        ))
+        return
+    end
+    self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_ACTION)
+    self.pendingConfirmText = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONFIRM_CAPTURE,
+        setup.name
+    )
+    self.pendingConfirm = function()
+        local ok, message = self.owner.data:SetStatSnapshot(
+            build.id,
+            setup.id,
+            bar,
+            self.owner.statImpact:MakeSnapshot()
+        )
+        return ok, ok and zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED,
+            setup.name
+        ) or message
+    end
+    releaseAndOpen(STAT_IMPACT_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
+    end)
+end
+
+function Gamepad:InitializeStatImpactDialog()
+    ZO_Dialogs_RegisterCustomDialog(STAT_IMPACT_DIALOG, {
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_TITLE },
+        mainText = { text = function() return self:GetStatImpactText() end },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SWITCH_BAR,
+                callback = function()
+                    self.statImpactBar = self.statImpactBar == "back" and "front" or "back"
+                    self:ReopenStatImpactDialog()
+                end,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_ACTION,
+                callback = function() self:OpenStatImpactCapture() end,
+            },
+            { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
+        },
+    })
 end
 
 function Gamepad:GetRevisionChoices()
@@ -1986,6 +2130,7 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
         end },

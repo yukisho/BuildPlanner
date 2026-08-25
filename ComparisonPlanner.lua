@@ -60,7 +60,16 @@ function UI:CreateComparisonPlanner()
 
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_WITH), 22, 16, 120)
     self.comparisonSetupCombo = makeCombo(panel, "GravvyBuildPlannerComparisonSetup", 142, 16, 300)
-    self.comparisonCountLabel = makeLabel(panel, "", 660, 16, 250, "ZoFontGameSmall")
+    self.statImpactButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT),
+        132
+    )
+    self.statImpactButton:SetAnchor(TOPLEFT, panel, TOPLEFT, 462, 17)
+    self.statImpactButton:SetHandler("OnClicked", function()
+        self:OpenStatImpact(self.comparisonSetupId)
+    end)
+    self.comparisonCountLabel = makeLabel(panel, "", 606, 16, 304, "ZoFontGameSmall")
     self.comparisonCountLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
     local header = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)

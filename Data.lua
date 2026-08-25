@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 9
+local SCHEMA_VERSION = 10
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
 local MAX_REVISION_NAME = 100
@@ -36,6 +36,23 @@ local validChecklistCategories = {
     skillLine = true,
     unlock = true,
     other = true,
+}
+local validStatSnapshotKeys = {
+    maxMagicka = true,
+    magickaRecovery = true,
+    maxHealth = true,
+    healthRecovery = true,
+    maxStamina = true,
+    staminaRecovery = true,
+    spellDamage = true,
+    spellCritical = true,
+    spellPenetration = true,
+    weaponDamage = true,
+    weaponCritical = true,
+    physicalPenetration = true,
+    spellResistance = true,
+    physicalResistance = true,
+    criticalResistance = true,
 }
 
 local defaults = {
@@ -247,6 +264,48 @@ local function readWholeNumber(value, minimum)
         return nil
     end
     return value
+end
+
+local function copyStatSnapshot(source)
+    if source == nil then
+        return nil
+    end
+    if type(source) ~= "table" or type(source.values) ~= "table" then
+        return nil
+    end
+    local values = {}
+    for key, value in pairs(source.values) do
+        value = tonumber(value)
+        if validStatSnapshotKeys[key] and value and value >= 0 and value <= 1000000000 then
+            values[key] = value
+        end
+    end
+    if next(values) == nil then
+        return nil
+    end
+    local characterName = type(source.characterName) == "string"
+        and trim(source.characterName)
+        or ""
+    if #characterName > 100 then
+        characterName = string.sub(characterName, 1, 100)
+    end
+    return {
+        characterName = characterName,
+        createdAt = readWholeNumber(source.createdAt, 0) or now(),
+        values = values,
+    }
+end
+
+local function copyStatSnapshots(source, legacy)
+    local snapshots = {}
+    if type(source) == "table" then
+        snapshots.front = copyStatSnapshot(source.front)
+        snapshots.back = copyStatSnapshot(source.back)
+    end
+    if not snapshots.front and legacy then
+        snapshots.front = copyStatSnapshot(legacy)
+    end
+    return next(snapshots) and snapshots or nil
 end
 
 local function blankCharacterPlan()
@@ -758,6 +817,8 @@ function Data:Migrate()
             setup.champion = copyChampionPlan(setup.champion, false)
             setup.consumables = copyConsumables(setup.consumables, false)
             setup.checklist = copyChecklist(setup.checklist, false)
+            setup.statSnapshots = copyStatSnapshots(setup.statSnapshots, setup.statSnapshot)
+            setup.statSnapshot = nil
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
             setup.slotStates = nil
             setup.createdAt = readWholeNumber(setup.createdAt, 0) or now()
@@ -1290,6 +1351,12 @@ function Data:RestoreRevision(buildId, revisionId)
         self.saved.selectedBuildId = build.id
         return nil, message
     end
+    for index, importedSetup in ipairs(imported.setups) do
+        local sourceSetup = revision.snapshot.setups[index]
+        importedSetup.statSnapshots = sourceSetup
+            and copyStatSnapshots(sourceSetup.statSnapshots, sourceSetup.statSnapshot)
+            or nil
+    end
     local _, importedIndex = self:FindBuild(imported.id)
     local backupName = self:GetUniqueRevisionName(build, zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_REVISION_BEFORE_RESTORE,
@@ -1442,6 +1509,40 @@ function Data:UpdateSetup(buildId, setupId, values)
     end
     for key, value in pairs(changes) do
         setup[key] = value
+    end
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, setup
+end
+
+function Data:SetStatSnapshot(buildId, setupId, bar, snapshot)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup or (bar ~= "front" and bar ~= "back") then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    local copy = copyStatSnapshot(snapshot)
+    if not copy then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_UNAVAILABLE)
+    end
+    setup.statSnapshots = setup.statSnapshots or {}
+    setup.statSnapshots[bar] = copy
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, setup
+end
+
+function Data:ClearStatSnapshot(buildId, setupId, bar)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    if not setup or (bar ~= "front" and bar ~= "back") then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    if setup.statSnapshots then
+        setup.statSnapshots[bar] = nil
+        if next(setup.statSnapshots) == nil then
+            setup.statSnapshots = nil
+        end
     end
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt

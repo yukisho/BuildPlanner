@@ -67,6 +67,24 @@ CURSE_TYPE_NONE = 0
 CURSE_TYPE_VAMPIRE = 1
 CURSE_TYPE_WEREWOLF = 2
 MUNDUS_STONE_INVALID = 0
+ACTIVE_WEAPON_PAIR_MAIN = 1
+ACTIVE_WEAPON_PAIR_BACKUP = 2
+STAT_BONUS_OPTION_APPLY_BONUS = 1
+STAT_MAGICKA_MAX = 101
+STAT_MAGICKA_REGEN_COMBAT = 102
+STAT_HEALTH_MAX = 103
+STAT_HEALTH_REGEN_COMBAT = 104
+STAT_STAMINA_MAX = 105
+STAT_STAMINA_REGEN_COMBAT = 106
+STAT_SPELL_POWER = 107
+STAT_SPELL_CRITICAL = 108
+STAT_SPELL_PENETRATION = 109
+STAT_POWER = 110
+STAT_CRITICAL_STRIKE = 111
+STAT_PHYSICAL_PENETRATION = 112
+STAT_SPELL_RESIST = 113
+STAT_PHYSICAL_RESIST = 114
+STAT_CRITICAL_RESISTANCE = 115
 
 EQUIP_TYPE_HEAD = 1
 EQUIP_TYPE_SHOULDERS = 2
@@ -521,6 +539,9 @@ function GetAbilityName(abilityId) return abilities[abilityId] and abilities[abi
 function GetAbilityIcon(abilityId) return abilities[abilityId] and abilities[abilityId].icon or "" end
 function GetUnitSilhouetteTexture() return "player-silhouette" end
 function GetRawUnitName() return "Test Warden" end
+function GetActiveWeaponPairInfo() return ACTIVE_WEAPON_PAIR_MAIN end
+function GetPlayerStat(statType) return statType * 10 end
+function GetCriticalStrikeChance(rating) return rating / 100 end
 function GetUnitClassId() return 5 end
 function GetUnitRaceId() return 9 end
 function GetAttributeSpentPoints(attribute)
@@ -599,14 +620,41 @@ end
 function ZO_Character_GetEmptyEquipSlotTexture(equipSlot)
     return "empty-slot:" .. tostring(equipSlot)
 end
-function GetItemLinkTraitInfo(link) return itemLinks[link].traitType end
+function GetItemLinkTraitInfo(link)
+    local item = itemLinks[link]
+    return item and item.traitType or ITEM_TRAIT_TYPE_NONE,
+        item and item.traitType ~= ITEM_TRAIT_TYPE_NONE and "Trait effect" or ""
+end
 function GetItemLinkDisplayQuality(link) return itemLinks[link].quality end
 function GetItemLinkSetInfo(link)
     local item = itemLinks[link]
     if item and item.setId then
-        return true, item.setName, 0, 0, 0, item.setId, 0
+        return true, item.setName, 2, 0, 0, item.setId, 0
     end
     return false, "", 0, 0, 0, 0, 0
+end
+function GetItemLinkSetBonusInfo(link, _, index)
+    local item = itemLinks[link]
+    if not item or not item.setId or index > 2 then
+        return 0, ""
+    end
+    return index == 1 and 2 or 5, index == 1 and "Adds test resource" or "Adds test power"
+end
+function GetItemLinkEnchantInfo(link)
+    local item = itemLinks[link]
+    if not item or not item.enchantId then
+        return false, "", ""
+    end
+    return true, "Test Enchantment", "Adds test enchantment value"
+end
+function GetItemLinkArmorRating(link)
+    local item = itemLinks[link]
+    return item and item.armorType ~= ARMORTYPE_NONE and 1000 or 0
+end
+function GetItemLinkWeaponPower(link)
+    local item = itemLinks[link]
+    return item and item.weaponType ~= WEAPONTYPE_NONE
+        and item.weaponType ~= WEAPONTYPE_SHIELD and 1200 or 0
 end
 function IsItemLinkCrafted(link) return link == "crafted:item" end
 function GetItemLinkBindType(link)
@@ -749,6 +797,7 @@ function ClearTooltip(tooltip) tooltip.link = nil end
 
 dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
+dofile("StatImpact.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
@@ -765,6 +814,7 @@ dofile("ChampionPlanner.lua")
 dofile("SuppliesPlanner.lua")
 dofile("ChecklistPlanner.lua")
 dofile("ComparisonPlanner.lua")
+dofile("StatImpactUI.lua")
 dofile("Settings.lua")
 dofile("Gamepad.lua")
 dofile("GamepadDialogs.lua")
@@ -775,6 +825,7 @@ local owner = {
     itemResolver = GravvyBuildPlannerItemResolver:New(),
 }
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
+owner.statImpact = GravvyBuildPlannerStatImpact:New(owner)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
 owner.capture = GravvyBuildPlannerCharacterCapture:New(owner)
@@ -823,6 +874,7 @@ owner.skillCatalog:FindById(1001).progression = {
 owner.accessibility = GravvyBuildPlannerAccessibility
 owner.accessibility:Initialize(owner)
 local comparisonEngine = GravvyBuildPlannerComparison
+local statImpactEngine = GravvyBuildPlannerStatImpact
 local ui = GravvyBuildPlannerUI:New(owner)
 ui:Initialize()
 owner.ui = ui
@@ -830,6 +882,10 @@ expectEqual(GravvyBuildPlannerComparison, comparisonEngine,
     "creating the comparison panel should not replace the comparison engine")
 expectEqual(GravvyBuildPlannerComparisonPanel, ui.comparisonPanel,
     "the comparison panel should use its own global control name")
+expectEqual(GravvyBuildPlannerStatImpact, statImpactEngine,
+    "creating the stat window should not replace the calculation engine")
+expectEqual(GravvyBuildPlannerStatImpactWindow, ui.statImpactDialog,
+    "the stat impact window should use a distinct control name")
 expectEqual(ui.window.height, 728,
     "keyboard window should make room for the dedicated navigation row")
 expectEqual(ui.gearTab.anchor[5], 119,
@@ -846,6 +902,34 @@ expectEqual(ui.routeContainer.anchor[4] + ui.routeContainer.width, 412,
     "the shifted route selector should retain the editor's right alignment")
 expect(ui.captureButton, "keyboard users should have a character capture action")
 expect(ui.revisionButton, "keyboard users should have a revision history action")
+expect(ui.statImpactButton, "the comparison view should expose stat impact")
+expect(ui.statImpactDialog, "keyboard users should have a stat impact window")
+expectEqual(ui.statImpactDialog.width, 1040,
+    "the stat impact window should leave room for readable effect descriptions")
+expectEqual(GravvyBuildPlannerAccessibility.fonts[ui.statImpactEffectRows[1]], "ZoFontGame",
+    "planned gear effects should use the normal game font")
+ui:OpenStatImpact()
+expect(not ui.statImpactDialog:IsHidden(), "stat impact should open for the selected setup")
+expect(ui.statImpactRows[1].live:GetText() ~= "—",
+    "stat impact should read live character-sheet values")
+expect(#(ui.statImpactEffects or {}) > 0,
+    "stat impact should show resolvable planned gear effects")
+ui:RequestStatImpactCapture()
+expect(not ui.confirmDialog:IsHidden(), "stat capture should require confirmation")
+ui:AcceptConfirm()
+local statSetup = BuildPlannerTestData:GetCurrentSetup()
+expect(statSetup.statSnapshots and statSetup.statSnapshots.front,
+    "confirmed stat capture should be stored for the selected bar")
+expectEqual(ui.statImpactRows[1].change:GetText(), "0",
+    "a fresh snapshot should have no delta from the same live stats")
+ui:SelectStatImpactBar("back")
+expectEqual(ui.statImpactRows[1].snapshot:GetText(), "—",
+    "front-bar totals should not be reused for the back bar")
+ui:RequestStatImpactCapture()
+expect(ui.confirmDialog:IsHidden(),
+    "stat capture should be blocked when the live and selected bars differ")
+ui:SelectStatImpactBar("front")
+ui.statImpactDialog:SetHidden(true)
 local originalBuild = BuildPlannerTestData:GetCurrentBuild()
 local buildCount = #BuildPlannerTestData:GetBuilds()
 ui.captureButton.handlers.OnClicked()
@@ -1075,6 +1159,11 @@ expectEqual(
 )
 expectEqual(
     gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[3].text,
+    SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT,
+    "gamepad build management should expose stat impact"
+)
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[4].text,
     SI_GRAVVY_BUILD_PLANNER_REVISIONS,
     "gamepad build management should expose revision history"
 )
@@ -1090,9 +1179,17 @@ expectEqual(#BuildPlannerTestData:GetBuilds(), gamepadBuildCount,
 expectEqual(gamepad.pendingConfirmText,
     GetString(SI_GRAVVY_BUILD_PLANNER_CONFIRM_CAPTURE),
     "gamepad capture should explain what will be copied")
-local gamepadRevisionAction = gamepadDialogs[
+local gamepadStatImpactAction = gamepadDialogs[
     "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
 ].parametricList[3]
+gamepadStatImpactAction.templateData.callback()
+expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_STAT_IMPACT",
+    "gamepad users should be able to inspect stat impact")
+expect(gamepad:GetStatImpactText():find("Maximum Magicka", 1, true),
+    "gamepad stat impact should include character-sheet rows")
+local gamepadRevisionAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[4]
 gamepadRevisionAction.templateData.callback()
 expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION",
     "gamepad users should be able to browse revision history")
@@ -1685,7 +1782,7 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    15,
+    16,
     "gamepad editing, management, revisions, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true

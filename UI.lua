@@ -357,6 +357,7 @@ function UI:Initialize()
     self:CreateSuppliesPlanner()
     self:CreateChecklistPlanner()
     self:CreateComparisonPlanner()
+    self:CreateStatImpactDialog()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -1279,7 +1280,8 @@ function UI:CreateHelpDialog()
         ),
         helpPage(
             GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT)
         ),
     }
     self.helpPage = 1
@@ -2728,7 +2730,9 @@ function UI:AcquireMouse()
         SetGameCameraUIMode(true)
         zo_callLater(function()
             if self.ownsUIMode
-                and (not self.window:IsHidden() or not self.helpDialog:IsHidden()) then
+                and (not self.window:IsHidden()
+                    or not self.helpDialog:IsHidden()
+                    or not self.statImpactDialog:IsHidden()) then
                 SetGameCameraUIMode(true)
             end
         end, 10)
@@ -2737,12 +2741,16 @@ end
 
 function UI:RestoreOwnedMouse(delayMs)
     if not self.ownsUIMode
-        or (self.window:IsHidden() and self.helpDialog:IsHidden()) then
+        or (self.window:IsHidden()
+            and self.helpDialog:IsHidden()
+            and self.statImpactDialog:IsHidden()) then
         return
     end
     zo_callLater(function()
         if self.ownsUIMode
-            and (not self.window:IsHidden() or not self.helpDialog:IsHidden())
+            and (not self.window:IsHidden()
+                or not self.helpDialog:IsHidden()
+                or not self.statImpactDialog:IsHidden())
             and IsGameCameraUIModeActive
             and not IsGameCameraUIModeActive() then
             SetGameCameraUIMode(true)
@@ -2786,6 +2794,7 @@ function UI:Hide()
     self.exportDialog:SetHidden(true)
     self.codeDialog:SetHidden(true)
     self.helpDialog:SetHidden(true)
+    self.statImpactDialog:SetHidden(true)
     if self.owner.share and self.owner.share.window then
         self.owner.share:Hide()
     end

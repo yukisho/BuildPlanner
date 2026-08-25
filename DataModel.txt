@@ -135,6 +135,26 @@ setup defaults, equipment and alternatives, skill bars, character choices,
 Champion allocations and slottables, supplies, and progression steps. Derived
 acquisition and inventory states are intentionally excluded.
 
+Stat impact
+-----------
+
+Stat impact reads the same live derived values exposed by ESO's character sheet.
+A setup may keep separate front-bar and back-bar snapshots containing those raw
+values, the character name, and capture time. The interface compares the current
+live values with the selected bar's snapshot and formats critical ratings as
+percentages only at display time.
+
+The planned-effects side resolves the selected setup's active armor, jewelry,
+and weapon bar into item links. It can compare direct equipment armor and weapon
+power contributions and list active set thresholds, enchantments, and traits.
+Those descriptions remain separate from exact character-sheet totals because
+many set bonuses, passives, buffs, food effects, and combat conditions cannot be
+reliably simulated for unequipped gear through the ESO API.
+
+Stat snapshots are character-specific local reference data. Setup and build
+copies start without them, imports and GBP1 codes exclude them, and local revision
+checkpoints preserve them. Older single-snapshot data migrates to the front bar.
+
 Shopping List export
 --------------------
 
@@ -161,7 +181,8 @@ order and defaults, equipment requirements, item links, notes, preferred
 acquisition routes, ordered alternatives, skill bars, character and Champion
 plans, consumable requirements, progression checklists, and the selected setup.
 Derived inventory matches and collection states are recalculated after import
-rather than copied. Local revision checkpoints are also excluded.
+rather than copied. Character-specific stat snapshots and local revision
+checkpoints are also excluded.
 
 Build Planner writes format version 7 codes and continues to accept versions 1
 through 6, created before equipment alternatives, skill bars, character plans,

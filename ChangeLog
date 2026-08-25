@@ -1,3 +1,21 @@
+0.7.21
+- Widened the Stat Impact window and increased the Planned Gear Effects text
+  to the normal game font so longer effect descriptions are easier to read.
+
+0.7.20
+- Added a Stat Impact window for selecting any setup and front or back bar,
+  with ESO's live character-sheet totals beside exact captured setup totals
+  and signed changes.
+- Added bar-specific stat snapshots so weapon-dependent values are not reused
+  across front and back bars. Snapshots remain local, are omitted from setup
+  copies and share codes, and survive saved-data migration and local revisions.
+- Added planned equipment armor and weapon contribution changes plus active set
+  bonuses, enchantments, and traits derived from resolved ESO item links. Effects
+  that cannot be safely totaled remain clearly separate from exact stats.
+- Added keyboard access from Compare, native gamepad review and capture from
+  Build Management, confirmation for capture and clearing, localized help, paging, and regression
+  coverage for calculation, storage, and both interfaces.
+
 0.7.19
 - Fixed setup comparison crashing on different Mundus Stones by using ESO's
   localized Mundus string table instead of an unavailable API function.

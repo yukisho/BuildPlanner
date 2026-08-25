@@ -399,6 +399,12 @@ ok = data:UndoLastDeletion()
 expect(ok, "deleted build should be restored")
 expect(data:FindBuild(duplicate.id), "restored build should retain its id")
 
+local localSnapshotSaved = data:SetStatSnapshot(build.id, build.setups[1].id, "front", {
+    characterName = "Local Warden",
+    createdAt = 4000,
+    values = { maxHealth = 31000 },
+})
+expect(localSnapshotSaved, "a setup should accept a local stat snapshot")
 local shareCode = GravvyBuildPlannerShare.EncodeBuild(build)
 expect(shareCode and shareCode:sub(1, 5) == "GBP1:", "builds should encode as GBP1 codes")
 local decodedBuild = GravvyBuildPlannerShare.DecodeCode(shareCode)
@@ -434,6 +440,8 @@ expectEqual(decodedBuild.setups[1].checklist[1].abilityId, 5002,
     "share codes should retain passive-skill identity")
 expect(decodedBuild.setups[1].checklist[1].completed,
     "share codes should retain checklist completion")
+expectEqual(decodedBuild.setups[1].statSnapshots, nil,
+    "share codes should exclude character-specific stat snapshots")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
@@ -502,6 +510,8 @@ expectEqual(restored.id, build.id, "restoring should preserve the build identity
 expectEqual(restored.patch, "Update 50", "restoring should recover build metadata")
 expectEqual(restored.setups[1].equipment.waist.setName, "Whorl of the Depths",
     "restoring should recover setup contents")
+expectEqual(restored.setups[1].statSnapshots.front.values.maxHealth, 31000,
+    "local revision restores should retain exact stat snapshots")
 expectEqual(#restored.revisions, 2,
     "restoring should preserve a backup of the replaced build")
 expectEqual(restored.revisions[1].snapshot.patch, "Update 51",
@@ -535,6 +545,28 @@ expect(data:FindRevision(restoredAtLimit, oldestRevision.id),
 expectEqual(#data:GetRevisions(build.id), 20,
     "automatic restore backups should retain the history limit")
 
+local snapshotSetup, snapshotBuild = data:GetCurrentSetup()
+local snapshotSaved, snapshotMessage = data:SetStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front", {
+    characterName = "Test Warden",
+    createdAt = 4242,
+    values = {
+        maxHealth = 32000,
+        weaponDamage = 5400,
+        ignoredValue = 99,
+    },
+})
+expect(snapshotSaved, snapshotMessage)
+expectEqual(snapshotSetup.statSnapshots.front.values.maxHealth, 32000,
+    "stat snapshots should retain supported character-sheet values")
+expectEqual(snapshotSetup.statSnapshots.front.values.ignoredValue, nil,
+    "stat snapshots should discard unknown values")
+local copiedSnapshotSetup = data:DuplicateSetup(snapshotBuild.id, snapshotSetup.id, "Snapshot Copy")
+expectEqual(copiedSnapshotSetup.statSnapshots, nil,
+    "copied setups should not inherit character-specific stat snapshots")
+local snapshotCleared = data:ClearStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front")
+expect(snapshotCleared, "stat snapshots should be removable")
+expectEqual(snapshotSetup.statSnapshots, nil, "clearing should remove the snapshot")
+
 TEST_SAVED = {
     nextBuildId = 1,
     nextSetupId = 1,
@@ -546,7 +578,16 @@ TEST_SAVED = {
             id = 4,
             name = "Duplicate",
             setups = {
-                { id = 8, name = "Setup", equipment = { invalid = {}, frontOff = { weaponType = WEAPONTYPE_BOW } } },
+                {
+                    id = 8,
+                    name = "Setup",
+                    equipment = { invalid = {}, frontOff = { weaponType = WEAPONTYPE_BOW } },
+                    statSnapshot = {
+                        characterName = "Legacy Warden",
+                        createdAt = 900,
+                        values = { maxHealth = 30000 },
+                    },
+                },
                 { id = 8, name = "Setup", equipment = {} },
             },
         },
@@ -565,7 +606,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 9, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 10, "migration should advance the saved-data schema")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
     "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
@@ -575,6 +616,8 @@ expectEqual(#repaired.saved.builds[1].setups[1].consumables, 0,
     "migration should add consumable defaults")
 expectEqual(#repaired.saved.builds[1].setups[1].checklist, 0,
     "migration should add checklist defaults")
+expectEqual(repaired.saved.builds[1].setups[1].statSnapshots.front.values.maxHealth,
+    30000, "migration should move legacy exact stats to the front-bar snapshot")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
 
 local collectionSets = {
