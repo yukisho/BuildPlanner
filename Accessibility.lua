@@ -1,6 +1,7 @@
 GravvyBuildPlannerAccessibility = {
     fonts = setmetatable({}, { __mode = "k" }),
     backdrops = setmetatable({}, { __mode = "k" }),
+    textGeometry = setmetatable({}, { __mode = "k" }),
 }
 
 local Accessibility = GravvyBuildPlannerAccessibility
@@ -38,6 +39,26 @@ function Accessibility:ApplyFont(control, fontName)
     control:SetFont(descriptor)
 end
 
+function Accessibility:RegisterTextGeometry(control, width, height)
+    self.textGeometry[control] = { width = width, height = height }
+    self:ApplyTextGeometry(control, self.textGeometry[control])
+end
+
+function Accessibility:ApplyTextGeometry(control, geometry)
+    local scale = tonumber(self:GetSettings().fontScale) or 1
+    local currentHeight = control.GetHeight and control:GetHeight() or control.height
+    local scaledHeight = math.floor((geometry.height * math.min(scale, 1.2)) + 0.5)
+    if currentHeight and currentHeight > geometry.height * 1.2 then
+        return
+    end
+    if control.SetDimensions then
+        control:SetDimensions(geometry.width, scaledHeight)
+    end
+    if control.SetWrapMode and TEXT_WRAP_MODE_ELLIPSIS and geometry.height <= 32 then
+        control:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    end
+end
+
 function Accessibility:RegisterBackdrop(backdrop, center, edge)
     local colors = { center = center, edge = edge }
     self.backdrops[backdrop] = colors
@@ -67,6 +88,9 @@ end
 function Accessibility:Refresh()
     for control, fontName in pairs(self.fonts) do
         self:ApplyFont(control, fontName)
+    end
+    for control, geometry in pairs(self.textGeometry) do
+        self:ApplyTextGeometry(control, geometry)
     end
     for backdrop, colors in pairs(self.backdrops) do
         self:ApplyBackdrop(backdrop, colors)

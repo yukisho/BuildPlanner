@@ -231,6 +231,9 @@ local function traitChoices(slotKey)
         end
     end
     table.sort(choices, function(left, right)
+        if left.value == right.value then
+            return false
+        end
         if left.value == ITEM_TRAIT_TYPE_NONE then
             return true
         elseif right.value == ITEM_TRAIT_TYPE_NONE then
@@ -693,7 +696,7 @@ function Gamepad:SavePendingRequirement()
         return false, result
     end
     self.owner.setCatalog:Refresh()
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_SLOT_SAVED,
         slotName(self.pendingSlot)
@@ -965,7 +968,7 @@ function Gamepad:SavePendingSupply()
     if not ok then
         return false, result
     end
-    self.owner.consumableCatalog:Refresh()
+    self.owner.consumableCatalog:RefreshSaved()
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVED,
         catalogEntry and catalogEntry.name or typedName
@@ -1379,7 +1382,7 @@ function Gamepad:RemovePendingAlternative()
         return
     end
     self.pendingAlternativeIndex = nil
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_ALTERNATIVE_REMOVED,
         slotName(self.pendingSlot)
@@ -1404,7 +1407,7 @@ function Gamepad:ApplyPendingSetAlternative()
         showError(message)
         return
     end
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_SET_ALTERNATIVE_APPLIED,
         message
@@ -1534,7 +1537,8 @@ function Gamepad:GetStatImpactText()
     local bar = self.statImpactBar == "back" and "back" or "front"
     local report = self.owner.statImpact:BuildReport(setup, bar)
     local snapshotValues = report.snapshot and report.snapshot.values or {}
-    local comparable = not report.liveBar or report.liveBar == report.bar
+    local comparable = not report.snapshotStale
+        and (not report.liveBar or report.liveBar == report.bar)
     local lines = {
         GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_HELP),
         "",
@@ -1543,6 +1547,11 @@ function Gamepad:GetStatImpactText()
             or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
         "",
         GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_EXACT_TITLE),
+        self.owner.statImpact:FormatSnapshotDetails(
+            report.snapshot,
+            report.bar,
+            report.snapshotStale
+        ),
     }
     for _, row in ipairs(self.owner.statImpact:GetStatRows()) do
         local liveValue = report.live[row.key]
@@ -1874,7 +1883,7 @@ function Gamepad:AcceptPendingName()
         return false, message
     end
     self.owner.setCatalog:Refresh()
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(type(message) == "string" and message
         or GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_SAVED))
     self:Refresh(true)
@@ -1896,7 +1905,7 @@ function Gamepad:UndoFromManage()
     end
     ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
     self.owner.setCatalog:Refresh()
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_RESTORED))
     self:Refresh(true)
 end
@@ -1918,9 +1927,9 @@ function Gamepad:InitializeConfirmDialog()
                     end
                     self.owner.setCatalog:Refresh()
                     if self.owner.consumableCatalog then
-                        self.owner.consumableCatalog:Refresh()
+                        self.owner.consumableCatalog:RefreshSaved()
                     end
-                    self.owner.inventory:Refresh()
+                    self.owner.inventory:RefreshSetup()
                     if message then
                         self:SetStatus(message)
                     end
@@ -2332,7 +2341,7 @@ function Gamepad:FinishTransfer()
     end
 
     ZO_Dialogs_ReleaseDialogOnButtonPress(TRANSFER_DIALOG)
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(zo_strformat(
         self.pendingTransferMove
             and SI_GRAVVY_BUILD_PLANNER_SLOT_MOVED

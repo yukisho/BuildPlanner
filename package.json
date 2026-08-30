@@ -1,0 +1,11 @@
+{
+  "name": "gravvy-build-planner-test-tools",
+  "private": true,
+  "version": "0.8.0",
+  "scripts": {
+    "audit": "node Tests/audit.js"
+  },
+  "devDependencies": {
+    "fengari-node-cli": "0.1.0"
+  }
+}

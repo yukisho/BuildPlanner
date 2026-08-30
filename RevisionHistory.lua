@@ -8,6 +8,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -15,6 +16,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -41,12 +43,13 @@ function UI:CreateRevisionDialog()
     dialog:SetHidden(true)
     dialog:SetDrawTier(DT_HIGH)
     self.revisionDialog = dialog
+    self:RegisterDialog(dialog)
     self.revisionOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(
-        nil,
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         dialog,
-        "ZO_DefaultBackdrop"
+        "ZO_DefaultBackdrop",
+        "RevisionDialogBackdrop"
     )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
@@ -285,8 +288,8 @@ function UI:ConfirmRestoreRevision()
         )
         if restored then
             self.owner.setCatalog:Refresh()
-            self.owner.consumableCatalog:Refresh()
-            self.owner.inventory:Refresh()
+            self.owner.consumableCatalog:RefreshSaved()
+            self.owner.inventory:RefreshSetup()
             self:Refresh()
             self:RefreshRevisionDialog()
             self:SetStatus(message)

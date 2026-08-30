@@ -115,6 +115,7 @@ end
 
 dofile("Localization/en.lua")
 dofile("EquipmentSlots.lua")
+dofile("ModelValidation.lua")
 dofile("Data.lua")
 dofile("Share.lua")
 
@@ -147,14 +148,14 @@ local setup = data:GetCurrentSetup()
 local ok = data:SetEquipment(build.id, setup.id, "waist", {
     setName = "Whorl of the Depths",
     armorType = 1,
-    traitType = 12,
+    traitType = 21,
     enchantmentName = "Magicka",
 })
 expect(ok, "armor requirement should be accepted")
 ok = data:SetAlternative(build.id, setup.id, "waist", nil, {
     setName = "Order's Wrath",
     armorType = 1,
-    traitType = 12,
+    traitType = 21,
     enchantmentName = "Magicka",
 })
 expect(ok, "a compatible slot alternative should be accepted")
@@ -472,6 +473,29 @@ expectEqual(imported.setups[1].checklist[1].targetRank, 2,
     "import should preserve progression targets")
 local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
+local hostileCases = {
+    { key = "armorType", value = 99, slot = "head" },
+    { key = "weaponType", value = 999, slot = "frontMain" },
+    { key = "traitType", value = 999, slot = "head" },
+    { key = "enchantmentCategory", value = 999, slot = "head" },
+    { key = "quality", value = 99, slot = "head" },
+    { key = "level", value = 51, slot = "head" },
+    { key = "championPoints", value = 155, slot = "head" },
+    { key = "setId", value = 0, slot = "head" },
+}
+for _, hostileCase in ipairs(hostileCases) do
+    local hostile = copy(decodedBuild)
+    hostile.setups[1].equipment[hostileCase.slot] = hostile.setups[1].equipment[hostileCase.slot]
+        or { armorType = 1 }
+    hostile.setups[1].equipment[hostileCase.slot][hostileCase.key] = hostileCase.value
+    local validateRequirement = GravvyBuildPlannerValidation.IsRequirement
+    GravvyBuildPlannerValidation.IsRequirement = function() return true end
+    local hostileCode = GravvyBuildPlannerShare.EncodeBuild(hostile)
+    GravvyBuildPlannerValidation.IsRequirement = validateRequirement
+    expect(hostileCode, "hostile import fixtures should still carry a valid checksum")
+    expectEqual(GravvyBuildPlannerShare.DecodeCode(hostileCode), nil,
+        "checksummed imports should still reject invalid enum and numeric values")
+end
 local nextBuildId = data.saved.nextBuildId
 expectEqual(data:ImportBuild({ name = "Bad", setups = {} }), nil, "invalid imports should fail")
 expectEqual(data.saved.nextBuildId, nextBuildId, "failed imports should not consume ids")
@@ -504,8 +528,14 @@ data:SetEquipment(build.id, setup.id, "waist", {
     setName = "Changed Set",
     armorType = 1,
 })
+local buildIdBeforeRestore = data.saved.nextBuildId
+local setupIdBeforeRestore = data.saved.nextSetupId
 local restored, restoredMessage = data:RestoreRevision(build.id, revision.id)
 expect(restored, restoredMessage)
+expectEqual(data.saved.nextBuildId, buildIdBeforeRestore,
+    "revision restore should not consume a temporary build id")
+expectEqual(data.saved.nextSetupId, setupIdBeforeRestore,
+    "revision restore should not consume temporary setup ids")
 expectEqual(restored.id, build.id, "restoring should preserve the build identity")
 expectEqual(restored.patch, "Update 50", "restoring should recover build metadata")
 expectEqual(restored.setups[1].equipment.waist.setName, "Whorl of the Depths",
@@ -529,11 +559,15 @@ expectEqual(build.patch, "Update 50",
 expect(data:DeleteRevision(build.id, brokenRevision.id),
     "saved revisions should be removable")
 
+local evictionMessage
 for index = 1, 22 do
-    data:CreateRevision(build.id, "Checkpoint " .. tostring(index))
+    local _, message = data:CreateRevision(build.id, "Checkpoint " .. tostring(index))
+    evictionMessage = message
 end
 expectEqual(#data:GetRevisions(build.id), 20,
     "revision history should discard its oldest entries at the limit")
+expect(evictionMessage and evictionMessage:find("older revision", 1, true),
+    "revision saves should explain history eviction")
 local oldestRevision = data:GetRevisions(build.id)[20]
 local restoredAtLimit, restoredAtLimitMessage = data:RestoreRevision(
     build.id,
@@ -556,16 +590,78 @@ local snapshotSaved, snapshotMessage = data:SetStatSnapshot(snapshotBuild.id, sn
     },
 })
 expect(snapshotSaved, snapshotMessage)
+expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), false,
+    "a newly captured snapshot should match its setup fingerprint")
 expectEqual(snapshotSetup.statSnapshots.front.values.maxHealth, 32000,
     "stat snapshots should retain supported character-sheet values")
 expectEqual(snapshotSetup.statSnapshots.front.values.ignoredValue, nil,
     "stat snapshots should discard unknown values")
+data:UpdateSetup(snapshotBuild.id, snapshotSetup.id, { note = "route notes do not affect stats" })
+expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), false,
+    "setup notes should not stale an exact stat snapshot")
+data:SetEquipment(snapshotBuild.id, snapshotSetup.id, "head", {
+    setName = "Fingerprint Test",
+    armorType = 1,
+})
+expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), true,
+    "gear changes should stale exact stat snapshots")
+data:SetStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front", {
+    characterName = "Test Warden",
+    createdAt = 4243,
+    values = { maxHealth = 32000 },
+})
+data:SetPreferredRoute(snapshotBuild.id, snapshotSetup.id, "head", "buy")
+expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), false,
+    "acquisition routes should not stale exact stat snapshots")
+data:UpdateCharacter(snapshotBuild.id, snapshotSetup.id, {
+    attributes = { health = 1, magicka = 0, stamina = 0 },
+    raceId = 0,
+    mundus = 0,
+    curse = 0,
+    subclassLines = { "", "", "" },
+})
+expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), true,
+    "character choices should stale exact stat snapshots")
+local invalidBarOk, invalidBarMessage = data:SetStatSnapshot(
+    snapshotBuild.id,
+    snapshotSetup.id,
+    "side",
+    { values = { maxHealth = 1 } }
+)
+expectEqual(invalidBarOk, false, "invalid stat snapshot bars should fail")
+expectEqual(invalidBarMessage, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_STAT_BAR),
+    "invalid stat snapshot bars should return their own error")
 local copiedSnapshotSetup = data:DuplicateSetup(snapshotBuild.id, snapshotSetup.id, "Snapshot Copy")
 expectEqual(copiedSnapshotSetup.statSnapshots, nil,
     "copied setups should not inherit character-specific stat snapshots")
 local snapshotCleared = data:ClearStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front")
 expect(snapshotCleared, "stat snapshots should be removable")
 expectEqual(snapshotSetup.statSnapshots, nil, "clearing should remove the snapshot")
+
+local markedBuild = data:CreateBuild("|cFF0000Marked Build|r")
+expect(markedBuild and markedBuild.name == "Marked Build",
+    "ordinary user names should neutralize ESO color markup")
+data:DeleteBuild(markedBuild.id)
+local invalidRequirementCases = {
+    { slot = "head", value = { armorType = 99 } },
+    { slot = "frontMain", value = { weaponType = 999 } },
+    { slot = "head", value = { armorType = 1, traitType = 999 } },
+    { slot = "head", value = { armorType = 1, enchantmentCategory = 999 } },
+    { slot = "head", value = { armorType = 1, quality = 99 } },
+    { slot = "head", value = { armorType = 1, level = 51 } },
+    { slot = "head", value = { armorType = 1, championPoints = 155 } },
+    { slot = "head", value = { armorType = 1, setId = 0 } },
+}
+for _, case in ipairs(invalidRequirementCases) do
+    expectEqual(data:SetEquipment(snapshotBuild.id, snapshotSetup.id, case.slot, case.value), false,
+        "invalid equipment enum and numeric values should be rejected")
+end
+local excessiveSetups = { name = "Too Many", setups = {} }
+for index = 1, 101 do
+    excessiveSetups.setups[index] = { name = "Setup " .. tostring(index), equipment = {} }
+end
+expectEqual(data:ImportBuild(excessiveSetups), nil,
+    "model imports should enforce the setup-count limit")
 
 TEST_SAVED = {
     nextBuildId = 1,
@@ -606,7 +702,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 10, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 11, "migration should advance the saved-data schema")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
     "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
@@ -652,6 +748,21 @@ expectEqual(catalog:FindExact("pillar of nirn").setId, 34, "set lookup should ig
 expect(catalog:FindExact("Whorl of the Depths"), "saved manual sets should be searchable")
 expectEqual(catalog:FindExact("Highland Sentinel").setId, 101, "LibSets crafted sets should be searchable")
 expectEqual(catalog:Search("nirn")[1].name, "Pillar of Nirn", "set search should match within names")
+local catalogBuild = data:CreateBuild("Catalog Alternative Test")
+local catalogSetup = data:GetCurrentSetup()
+data:SetEquipment(catalogBuild.id, catalogSetup.id, "head", {
+    setName = "Catalog Primary",
+    armorType = 1,
+})
+data:SetAlternative(catalogBuild.id, catalogSetup.id, "head", nil, {
+    setName = "Website Alternative Only",
+    armorType = 1,
+})
+catalog:Refresh()
+expect(catalog:FindExact("Website Alternative Only"),
+    "alternative-only saved sets should be rebuilt into autocomplete")
+data:DeleteBuild(catalogBuild.id)
+catalog:Refresh()
 
 BuildPlannerTestData = data
 BuildPlannerTestCatalog = catalog

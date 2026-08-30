@@ -27,7 +27,7 @@ function Catalog:GetCategory(itemLink)
 end
 
 function Catalog:New(data)
-    return setmetatable({ data = data, entries = {} }, { __index = self })
+    return setmetatable({ data = data, entries = {}, bagEntries = {} }, { __index = self })
 end
 
 function Catalog:Add(entry, seen)
@@ -50,7 +50,7 @@ function Catalog:Add(entry, seen)
     }
 end
 
-function Catalog:Refresh()
+function Catalog:RefreshSaved()
     self.entries = {}
     local seen = {}
     for _, build in ipairs(self.data:GetBuilds()) do
@@ -61,26 +61,38 @@ function Catalog:Refresh()
         end
     end
 
+    for _, entry in ipairs(self.bagEntries) do
+        self:Add(entry, seen)
+    end
+    table.sort(self.entries, function(left, right)
+        return normalize(left.name) < normalize(right.name)
+    end)
+end
+
+function Catalog:RefreshBags()
+    self.bagEntries = {}
     if GetBagSize and GetItemLink then
         for _, bagId in ipairs({ BAG_BACKPACK, BAG_BANK, BAG_SUBSCRIBER_BANK, BAG_VIRTUAL }) do
             for slotIndex = 0, (GetBagSize(bagId) or 0) - 1 do
                 local itemLink = GetItemLink(bagId, slotIndex, LINK_STYLE_DEFAULT)
                 local category = itemLink ~= "" and getCategory(itemLink)
                 if category then
-                    self:Add({
+                    self.bagEntries[#self.bagEntries + 1] = {
                         category = category,
                         name = GetItemLinkName(itemLink),
                         itemId = GetItemLinkItemId(itemLink),
                         itemLink = itemLink,
                         icon = GetItemLinkIcon(itemLink),
-                    }, seen)
+                    }
                 end
             end
         end
     end
-    table.sort(self.entries, function(left, right)
-        return normalize(left.name) < normalize(right.name)
-    end)
+end
+
+function Catalog:Refresh()
+    self:RefreshBags()
+    self:RefreshSaved()
 end
 
 function Catalog:Search(query, category, limit)

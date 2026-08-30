@@ -78,6 +78,9 @@ function Enchantments:GetChoices(family, customName)
         end
     end
     table.sort(choices, function(left, right)
+        if left.value == right.value then
+            return false
+        end
         if left.value == self.DEFAULT then
             return true
         elseif right.value == self.DEFAULT then
@@ -90,4 +93,13 @@ function Enchantments:GetChoices(family, customName)
         return left.label < right.label
     end)
     return choices
+end
+
+function Enchantments:IsValidForFamily(family, category)
+    for _, candidate in ipairs(categories[family] or {}) do
+        if candidate == category then
+            return true
+        end
+    end
+    return false
 end

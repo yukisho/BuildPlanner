@@ -17,6 +17,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -24,6 +25,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -115,7 +117,11 @@ function UI:CreateChecklistPlanner()
     self.checklistPanel = panel
     self.checklistOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "ChecklistBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -201,7 +207,11 @@ function UI:CreateChecklistPlanner()
     suggestions:SetHidden(true)
     suggestions:SetDrawTier(DT_HIGH)
     self.checklistSuggestionPanel = suggestions
-    local suggestionBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, suggestions, "ZO_DefaultBackdrop")
+    local suggestionBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        suggestions,
+        "ZO_DefaultBackdrop",
+        "ChecklistSuggestionsBackdrop"
+    )
     suggestionBackdrop:SetAnchorFill(suggestions)
     self.checklistSuggestionButtons = {}
     for index = 1, 6 do

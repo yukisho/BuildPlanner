@@ -400,5 +400,29 @@ function StatImpact:BuildReport(setup, bar)
         planned = planned,
         bar = bar,
         liveBar = self:GetLiveBar(),
+        snapshotStale = self.owner.data:IsStatSnapshotStale(setup, bar),
     }
+end
+
+function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
+    if not snapshot then
+        return GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED)
+    end
+    local characterName = snapshot.characterName ~= ""
+        and snapshot.characterName
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_UNKNOWN_CHARACTER)
+    local capturedAt = GetDateStringFromTimestamp
+        and GetDateStringFromTimestamp(snapshot.createdAt)
+        or tostring(snapshot.createdAt or "")
+    return zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SNAPSHOT_DETAILS,
+        characterName,
+        capturedAt,
+        GetString(bar == "back"
+            and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+            or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
+        GetString(stale
+            and SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_STALE
+            or SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CURRENT)
+    )
 end

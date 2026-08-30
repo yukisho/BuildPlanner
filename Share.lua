@@ -2,13 +2,15 @@ GravvyBuildPlannerShare = {}
 
 local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
+local Validation = GravvyBuildPlannerValidation
 local PREFIX = "GBP1:"
 local FORMAT_VERSION = 7
 local MAX_CODE_LENGTH = 100000
-local MAX_SETUPS = 100
-local MAX_STRING = 512
-local MAX_NOTE = 4000
-local MAX_LINK = 2048
+local MAX_SETUPS = Validation.MAX_SETUPS
+local MAX_STRING = Validation.MAX_STRING
+local MAX_NAME = Validation.MAX_NAME
+local MAX_NOTE = Validation.MAX_NOTE
+local MAX_LINK = Validation.MAX_LINK
 local MAX_SUBCLASS_NAME = 100
 local MAX_RACE_ID = 10
 local MAX_CHAMPION_ALLOCATIONS = 200
@@ -20,7 +22,7 @@ local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 local DECODE = {}
 
 local buildStrings = {
-    { key = "name", max = MAX_STRING, required = true },
+    { key = "name", max = MAX_NAME, required = true },
     { key = "role", max = MAX_STRING },
     { key = "patch", max = MAX_STRING },
     { key = "author", max = MAX_STRING },
@@ -263,10 +265,11 @@ function Share.EncodeBuild(build)
     for _, setup in ipairs(build.setups) do
         local setupName = tostring(setup.name or "")
         local setupNote = tostring(setup.note or "")
-        local quality = wholeNumber(setup.defaultQuality, 0, 65535)
-        local level = wholeNumber(setup.defaultLevel, 1, 65535)
-        local championPoints = wholeNumber(setup.defaultChampionPoints, 0, MAX_U32)
-        if trim(setupName) == "" or #setupName > MAX_STRING or #setupNote > MAX_NOTE
+        local quality = Validation:IsQuality(setup.defaultQuality) and setup.defaultQuality
+        local level = Validation:IsLevel(setup.defaultLevel) and setup.defaultLevel
+        local championPoints = Validation:IsChampionPoints(setup.defaultChampionPoints)
+            and setup.defaultChampionPoints
+        if trim(setupName) == "" or #setupName > MAX_NAME or #setupNote > MAX_NOTE
             or not quality or not level or not championPoints
             or type(setup.equipment) ~= "table" then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
@@ -281,7 +284,7 @@ function Share.EncodeBuild(build)
         for slotKey, requirement in pairs(setup.equipment) do
             if not Slots:IsValid(slotKey)
                 or type(requirement) ~= "table"
-                or not Slots:IsRequirementCompatible(slotKey, requirement) then
+                or not Validation:IsRequirement(slotKey, requirement) then
                 return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
             end
         end
@@ -334,7 +337,7 @@ function Share.EncodeBuild(build)
                 parts[#parts + 1] = string.char(#alternatives)
                 for _, requirement in ipairs(alternatives) do
                     if type(requirement) ~= "table"
-                        or not Slots:IsRequirementCompatible(slotKey, requirement) then
+                        or not Validation:IsRequirement(slotKey, requirement) then
                         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
                     end
                     for _, field in ipairs(requirementStrings) do
@@ -367,7 +370,7 @@ function Share.EncodeBuild(build)
                     local abilityId = wholeNumber(skill.abilityId, 1, MAX_U32)
                     local name = tostring(skill.name or "")
                     local icon = tostring(skill.icon or "")
-                    if not abilityId or #name > MAX_STRING or #icon > MAX_STRING
+                    if not abilityId or #name > MAX_NAME or #icon > MAX_STRING
                         or skill.isUltimate ~= (slotIndex == 6) then
                         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
                     end
@@ -561,7 +564,7 @@ function Share.DecodeCode(code)
 
     for _ = 1, setupCount do
         local setup = {
-            name = reader:String(MAX_STRING, true),
+            name = reader:String(MAX_NAME, true),
             note = reader:String(MAX_NOTE, false),
             defaultQuality = reader:U16(),
             defaultLevel = reader:U16(),
@@ -586,9 +589,11 @@ function Share.DecodeCode(code)
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
-        if not setup.name or setup.note == nil or not setup.defaultQuality
-            or not setup.defaultLevel or setup.defaultLevel < 1
-            or not setup.defaultChampionPoints or not equipmentCount
+        if not setup.name or setup.note == nil
+            or not Validation:IsQuality(setup.defaultQuality)
+            or not Validation:IsLevel(setup.defaultLevel)
+            or not Validation:IsChampionPoints(setup.defaultChampionPoints)
+            or not equipmentCount
             or equipmentCount > #Slots.ORDER then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
@@ -621,7 +626,7 @@ function Share.DecodeCode(code)
             if route == nil or (route ~= 0 and not routeNames[route]) then
                 return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
             end
-            if not Slots:IsRequirementCompatible(slotKey, requirement) then
+            if not Validation:IsRequirement(slotKey, requirement) then
                 return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
             end
             setup.equipment[slotKey] = requirement
@@ -665,7 +670,7 @@ function Share.DecodeCode(code)
                         end
                         requirement[key] = value
                     end
-                    if not Slots:IsRequirementCompatible(slotKey, requirement) then
+                    if not Validation:IsRequirement(slotKey, requirement) then
                         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
                     end
                     setup.alternatives[slotKey][#setup.alternatives[slotKey] + 1] = requirement
@@ -681,7 +686,7 @@ function Share.DecodeCode(code)
                 for slotIndex = 1, 6 do
                     if math.floor(mask / (2 ^ (slotIndex - 1))) % 2 == 1 then
                         local abilityId = reader:U32()
-                        local name = reader:String(MAX_STRING, false)
+                        local name = reader:String(MAX_NAME, false)
                         local icon = reader:String(MAX_STRING, false)
                         if not abilityId or abilityId < 1 or name == nil or icon == nil then
                             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
@@ -850,6 +855,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -857,6 +863,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -878,8 +885,15 @@ function Share:Initialize()
     window:SetHidden(true)
     window:SetDrawTier(DT_HIGH)
     self.window = window
+    if self.owner.ui then
+        self.owner.ui:RegisterDialog(window)
+    end
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        window,
+        "ZO_DefaultBackdrop",
+        "ShareBackdrop"
+    )
     backdrop:SetAnchorFill(window)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -909,10 +923,18 @@ function Share:Initialize()
     help:SetHeight(52)
     help:SetVerticalAlignment(TEXT_ALIGN_TOP)
 
-    local editBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_EditBackdrop")
+    local editBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        window,
+        "ZO_EditBackdrop",
+        "ShareEditBackdrop"
+    )
     editBackdrop:SetAnchor(TOPLEFT, window, TOPLEFT, 18, 106)
     editBackdrop:SetDimensions(664, 190)
-    local edit = WINDOW_MANAGER:CreateControlFromVirtual(nil, editBackdrop, "ZO_DefaultEditMultiLineForBackdrop")
+    local edit = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        editBackdrop,
+        "ZO_DefaultEditMultiLineForBackdrop",
+        "ShareEdit"
+    )
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, editBackdrop, TOPLEFT, 5, 4)
     edit:SetAnchor(BOTTOMRIGHT, editBackdrop, BOTTOMRIGHT, -5, -4)
@@ -1000,7 +1022,7 @@ function Share:ImportCode()
         return
     end
     self.owner.setCatalog:Refresh()
-    self.owner.consumableCatalog:Refresh()
+    self.owner.consumableCatalog:RefreshSaved()
     self.owner.inventory:QueueRefresh(0)
     self.owner.ui:Refresh()
     self.owner.gamepad:Refresh(true)

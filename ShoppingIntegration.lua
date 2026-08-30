@@ -2,6 +2,7 @@ GravvyBuildPlannerShoppingIntegration = {}
 
 local Shopping = GravvyBuildPlannerShoppingIntegration
 local Slots = GravvyBuildPlannerSlots
+local Validation = GravvyBuildPlannerValidation
 local ADDON_URL = "https://www.esoui.com/downloads/info4775-ShoppingList.html"
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -94,6 +95,35 @@ end
 
 function Shopping:GetAddonURL()
     return ADDON_URL
+end
+
+function Shopping:ValidateReview(review)
+    if type(review) ~= "table" or type(review.items) ~= "table"
+        or #review.items > 500 or type(review.name) ~= "string"
+        or #review.name > Validation.MAX_STRING or type(review.note) ~= "string"
+        or #review.note > 2000 then
+        return false
+    end
+    for _, item in ipairs(review.items) do
+        local match = type(item) == "table" and item.match or nil
+        if type(item) ~= "table" or not Validation:IsItemLink(item.itemLink or "")
+            or not Validation:WholeNumber(item.quantity or 1, 1, 1000000)
+            or type(item.note or "") ~= "string" or #(item.note or "") > 2000
+            or type(match) ~= "table" then
+            return false
+        end
+        if match.quality ~= nil and not Validation:IsQuality(match.quality) then return false end
+        if match.level ~= nil and not Validation:IsLevel(match.level) then return false end
+        if match.championPoints ~= nil
+            and not Validation:IsChampionPoints(match.championPoints) then return false end
+        if match.traitType ~= nil
+            and not Validation:WholeNumber(match.traitType, 0, 255) then return false end
+        if match.setName ~= nil
+            and not Validation:SanitizePlainText(match.setName, Validation.MAX_STRING, true) then
+            return false
+        end
+    end
+    return true
 end
 
 local function itemNote(slotKey, requirement, setup)
@@ -298,6 +328,9 @@ function Shopping:BuildReview(includeOwned, includeGlyphs)
 end
 
 function Shopping:CreateList(review)
+    if not self:ValidateReview(review) then
+        return false, "INVALID_DATA"
+    end
     local api, state = self:GetAPI()
     if not api then
         return false, state
@@ -316,7 +349,7 @@ function Shopping:CreateList(review)
 end
 
 function Shopping:Encode(review)
-    if not review or #review.items > 500 then
+    if not self:ValidateReview(review) then
         return nil
     end
     local parts = { string.char(2) }

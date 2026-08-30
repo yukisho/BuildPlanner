@@ -8,6 +8,7 @@ local function makeLabel(parent, text, x, y, width, height, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, height or 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, height or 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -15,6 +16,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -51,10 +53,15 @@ function UI:CreateStatImpactDialog()
     dialog:SetDrawTier(DT_HIGH)
     dialog:SetHidden(true)
     self.statImpactDialog = dialog
+    self:RegisterDialog(dialog)
     self.statImpactBar = "front"
     self.statImpactEffectOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "StatImpactBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -158,7 +165,11 @@ function UI:CreateStatImpactDialog()
         local row = WINDOW_MANAGER:CreateControl(nil, dialog, CT_CONTROL)
         row:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 188 + ((index - 1) * 27))
         row:SetDimensions(430, 26)
-        local rowBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, row, "ZO_DefaultBackdrop")
+        local rowBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+            row,
+            "ZO_DefaultBackdrop",
+            "StatImpactRowBackdrop"
+        )
         rowBackdrop:SetAnchorFill(row)
         local shade = index % 2 == 0 and 0.035 or 0.018
         rowBackdrop:SetCenterColor(shade, shade, shade + 0.008, 0.88)
@@ -311,7 +322,8 @@ function UI:RefreshStatImpact()
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_LIVE_BAR,
         liveBar == "back" and 2 or 1
     ))
-    local comparable = not report.liveBar or report.liveBar == report.bar
+    local comparable = not report.snapshotStale
+        and (not report.liveBar or report.liveBar == report.bar)
     local snapshotValues = report.snapshot and report.snapshot.values or {}
     for _, row in ipairs(self.statImpactRows) do
         local liveValue = report.live[row.stat.key]
@@ -334,18 +346,15 @@ function UI:RefreshStatImpact()
         end
     end
 
-    if report.snapshot then
-        local characterName = report.snapshot.characterName ~= ""
-            and report.snapshot.characterName
-            or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_UNKNOWN_CHARACTER)
-        self.statImpactSnapshotLabel:SetText(zo_strformat(
-            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED_FROM,
-            characterName
-        ))
+    self.statImpactSnapshotLabel:SetText(self.owner.statImpact:FormatSnapshotDetails(
+        report.snapshot,
+        report.bar,
+        report.snapshotStale
+    ))
+    if report.snapshotStale then
+        self.statImpactSnapshotLabel:SetColor(1, 0.55, 0.3, 1)
     else
-        self.statImpactSnapshotLabel:SetText(
-            GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED)
-        )
+        self.statImpactSnapshotLabel:SetColor(0.88, 0.86, 0.8, 1)
     end
 
     self.statImpactCoverageLabel:SetText(zo_strformat(

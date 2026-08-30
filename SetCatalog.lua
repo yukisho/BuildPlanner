@@ -9,12 +9,17 @@ local function normalize(value)
 end
 
 function Catalog:New(data)
-    local catalog = setmetatable({ data = data, entries = {} }, { __index = self })
-    catalog:Refresh()
+    local catalog = setmetatable({
+        data = data,
+        entries = {},
+        staticEntries = {},
+        staticReady = false,
+    }, { __index = self })
+    catalog:Refresh(true)
     return catalog
 end
 
-function Catalog:Add(seen, setId, name)
+function Catalog:AddTo(entries, seen, setId, name)
     name = zo_strtrim(name or "")
     if name == "" then
         return
@@ -31,11 +36,15 @@ function Catalog:Add(seen, setId, name)
 
     local entry = { setId = setId, name = name, searchName = key }
     seen[key] = entry
-    self.entries[#self.entries + 1] = entry
+    entries[#entries + 1] = entry
 end
 
-function Catalog:Refresh()
-    self.entries = {}
+function Catalog:Add(seen, setId, name)
+    self:AddTo(self.entries, seen, setId, name)
+end
+
+function Catalog:RefreshStatic()
+    self.staticEntries = {}
     local seen = {}
 
     if LibSets
@@ -44,7 +53,7 @@ function Catalog:Refresh()
         and (not LibSets.checkIfSetsAreLoadedProperly
             or LibSets.checkIfSetsAreLoadedProperly()) then
         for setId in pairs(LibSets.GetAllSetIds() or {}) do
-            self:Add(seen, setId, LibSets.GetSetName(setId))
+            self:AddTo(self.staticEntries, seen, setId, LibSets.GetSetName(setId))
         end
     end
 
@@ -54,16 +63,30 @@ function Catalog:Refresh()
         repeat
             setId = GetNextItemSetCollectionId(setId)
             if setId then
-                self:Add(seen, setId, GetItemSetName(setId))
+                self:AddTo(self.staticEntries, seen, setId, GetItemSetName(setId))
                 count = count + 1
             end
         until not setId or count >= 5000
     end
 
+    self.staticReady = true
+end
+
+function Catalog:RefreshSaved()
+    self.entries = {}
+    local seen = {}
+    for _, entry in ipairs(self.staticEntries) do
+        self:Add(seen, entry.setId, entry.name)
+    end
     for _, build in ipairs(self.data:GetBuilds()) do
         for _, setup in ipairs(build.setups) do
             for _, requirement in pairs(setup.equipment) do
                 self:Add(seen, requirement.setId, requirement.setName)
+            end
+            for _, alternatives in pairs(setup.alternatives or {}) do
+                for _, requirement in ipairs(alternatives) do
+                    self:Add(seen, requirement.setId, requirement.setName)
+                end
             end
         end
     end
@@ -71,6 +94,23 @@ function Catalog:Refresh()
     table.sort(self.entries, function(left, right)
         return left.searchName < right.searchName
     end)
+end
+
+function Catalog:Refresh(forceStatic)
+    if forceStatic or not self.staticReady then
+        self:RefreshStatic()
+    end
+    self:RefreshSaved()
+end
+
+function Catalog:QueueStaticRefresh(delayMs)
+    self.refreshSerial = (self.refreshSerial or 0) + 1
+    local serial = self.refreshSerial
+    zo_callLater(function()
+        if serial == self.refreshSerial then
+            self:Refresh(true)
+        end
+    end, delayMs or 100)
 end
 
 function Catalog:FindExact(name)

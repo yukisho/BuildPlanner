@@ -4,6 +4,7 @@ Build Planner data model
 Saved data is account-wide and stored in GravvyBuildPlanner_Data. The top-level
 schemaVersion is independent of the ESO SavedVariables version so migrations can
 repair or reshape existing records without changing the storage name.
+Version 0.8.0 writes schema 11.
 
 Build
 -----
@@ -15,11 +16,14 @@ account-wide saved data.
 Revision history
 ----------------
 
-A build may keep up to 20 named revision checkpoints, newest first. Each
+A build may keep up to 20 named revision checkpoints, newest first, subject to
+a two-megabyte history budget per build. Each
 checkpoint stores the game update, save time, selected setup, and a complete
-snapshot of that build's guide metadata and setups. Restoring a checkpoint keeps
-the current build ID, assigns fresh setup IDs through the normal import validator,
-and first saves the state being replaced as another named checkpoint.
+snapshot of that build's guide metadata and setups. Retained snapshots are
+normalized through the same model validator during migration. Restoring a
+checkpoint keeps its build and setup IDs, does not consume temporary IDs, and
+first saves the state being replaced as another named checkpoint. Saving reports
+when older history had to be evicted for the count or size limit.
 
 Revision history is local backup state. It is not copied when a build is
 duplicated or imported and is not included in GBP1 share codes. This prevents
@@ -53,12 +57,15 @@ store the player's preferred route. This preference is separate from the gear
 requirement and is discarded if it no longer names a supported route.
 
 Owned-item matches are also kept in memory. Each equipped, backpack, or bank
-item may satisfy only one slot in a setup. Exact matches are preferred before
-pieces that need a trait change, enchantment, or quality upgrade.
+item may satisfy only one slot in a setup. A best-fit assignment maximizes exact
+matches first and total completed slots second, so a flexible alternative cannot
+consume the only item that satisfies a constrained slot.
 
 Setup progress is calculated in memory after inventory and collection updates.
 It reports ready, adjustable, and missing requirements without writing derived
-counts to SavedVariables.
+counts to SavedVariables. Bag contents are scanned once per coalesced inventory
+event, the current setup is matched first, and other setups are matched lazily
+when their progress is requested.
 
 A two-handed weapon is stored only in frontMain or backMain with
 occupiesOffHand=true. Its paired off-hand entry is cleared and cannot be filled
@@ -140,9 +147,12 @@ Stat impact
 
 Stat impact reads the same live derived values exposed by ESO's character sheet.
 A setup may keep separate front-bar and back-bar snapshots containing those raw
-values, the character name, and capture time. The interface compares the current
-live values with the selected bar's snapshot and formats critical ratings as
-percentages only at display time.
+values, the character name, capture time, bar, and a fingerprint of every
+stat-affecting plan choice. The interface marks older captures stale after gear,
+skills, character, Champion, or supply assumptions change. Renames, notes,
+checklist completion, and acquisition routes do not affect that fingerprint.
+The interface compares current live values with a current selected-bar snapshot
+and formats critical ratings as percentages only at display time.
 
 The planned-effects side resolves the selected setup's active armor, jewelry,
 and weapon bar into item links. It can compare direct equipment armor and weapon
@@ -191,6 +201,13 @@ Champion plans, consumable requirements, and progression checklists were added.
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing
 SavedVariables. A conflicting build name receives a numeric suffix.
+
+The shared model validator also owns build/setup count limits, identifier and
+string bounds, item-link bounds, gear levels, Champion Point steps, qualities,
+and family-specific armor, weapon, trait, and enchantment enums. Migration,
+revisions, GBP decoding, Data mutations, and Shopping List export use those same
+invariants. Ordinary names and metadata have disruptive ESO formatting markup
+removed; item-link fields retain valid link markup.
 
 Settings
 --------

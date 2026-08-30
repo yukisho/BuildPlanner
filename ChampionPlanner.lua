@@ -15,6 +15,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -22,6 +23,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -90,7 +92,11 @@ function UI:CreateChampionPlanner()
     self.championDiscipline = "warfare"
     self.championOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "ChampionBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -112,7 +118,11 @@ function UI:CreateChampionPlanner()
         local button = WINDOW_MANAGER:CreateControl(nil, panel, CT_BUTTON)
         button:SetDimensions(104, 70)
         button:SetAnchor(TOPLEFT, panel, TOPLEFT, 22 + ((slotIndex - 1) * 111), 87)
-        local edge = WINDOW_MANAGER:CreateControlFromVirtual(nil, button, "ZO_DefaultBackdrop")
+        local edge = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+            button,
+            "ZO_DefaultBackdrop",
+            "ChampionSlotBackdrop"
+        )
         edge:SetAnchorFill(button)
         edge:SetCenterColor(0.025, 0.025, 0.035, 0.96)
         local icon = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
@@ -208,7 +218,11 @@ function UI:CreateChampionPlanner()
     suggestions:SetHidden(true)
     suggestions:SetDrawTier(DT_HIGH)
     self.championSuggestionPanel = suggestions
-    local suggestionBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, suggestions, "ZO_DefaultBackdrop")
+    local suggestionBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        suggestions,
+        "ZO_DefaultBackdrop",
+        "ChampionSuggestionsBackdrop"
+    )
     suggestionBackdrop:SetAnchorFill(suggestions)
     self.championSuggestionButtons = {}
     for index = 1, 6 do

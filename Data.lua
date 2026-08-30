@@ -1,9 +1,10 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 10
+local SCHEMA_VERSION = 11
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
+local MAX_REVISION_BYTES = 2097152
 local MAX_REVISION_NAME = 100
 local MAX_NOTE_LENGTH = 4000
 local MAX_ALTERNATIVES = 8
@@ -16,6 +17,12 @@ local MAX_CONSUMABLE_QUANTITY = 9999
 local MAX_CHECKLIST_ENTRIES = 100
 local MAX_CHECKLIST_RANK = 50
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
+local Validation = GravvyBuildPlannerValidation
+local MAX_BUILDS = Validation.MAX_BUILDS
+local MAX_SETUPS = Validation.MAX_SETUPS
+local MAX_STRING_LENGTH = Validation.MAX_STRING
+local MAX_NAME_LENGTH = Validation.MAX_NAME
+local MAX_ID = Validation.MAX_ID
 local validAcquisitionRoutes = {
     buy = true,
     craft = true,
@@ -95,12 +102,17 @@ local function trim(value)
     return zo_strtrim(type(value) == "string" and value or "")
 end
 
+local function plain(value, maximum, allowEmpty)
+    return Validation:SanitizePlainText(value, maximum, allowEmpty)
+end
+
 local function normalizeNote(value)
-    value = tostring(value or "")
-    if #value > MAX_NOTE_LENGTH then
-        value = string.sub(value, 1, MAX_NOTE_LENGTH)
-    end
-    return value
+    return Validation:SanitizePlainText(
+        tostring(value or ""),
+        MAX_NOTE_LENGTH,
+        true,
+        true
+    ) or ""
 end
 
 local function now()
@@ -123,6 +135,111 @@ local function deepCopy(value, seen)
     return copy
 end
 
+local fingerprintRequirementKeys = {
+    "setId", "setName", "itemId", "itemLink", "armorType", "weaponType",
+    "traitType", "enchantmentId", "enchantmentCategory", "enchantmentName",
+    "quality", "level", "championPoints", "occupiesOffHand",
+}
+
+local function stableValue(value)
+    local valueType = type(value)
+    if valueType == "nil" then return "n" end
+    if valueType == "boolean" then return value and "b1" or "b0" end
+    if valueType == "number" then return "d" .. tostring(value) end
+    if valueType == "string" then return "s" .. tostring(#value) .. ":" .. value end
+    if valueType ~= "table" then return "x" end
+    local keys = {}
+    for key in pairs(value) do keys[#keys + 1] = key end
+    table.sort(keys, function(left, right)
+        local leftKey = type(left) .. ":" .. tostring(left)
+        local rightKey = type(right) .. ":" .. tostring(right)
+        return leftKey < rightKey
+    end)
+    local parts = { "{" }
+    for _, key in ipairs(keys) do
+        parts[#parts + 1] = stableValue(key)
+        parts[#parts + 1] = stableValue(value[key])
+    end
+    parts[#parts + 1] = "}"
+    return table.concat(parts)
+end
+
+local function fingerprint(value)
+    local encoded = stableValue(value)
+    local first, second = 1, 0
+    for index = 1, #encoded do
+        first = (first + string.byte(encoded, index)) % 65521
+        second = (second + first) % 65521
+    end
+    return string.format("%08x", (second * 65536) + first)
+end
+
+local function requirementFingerprint(requirement)
+    local result = {}
+    for _, key in ipairs(fingerprintRequirementKeys) do
+        if requirement[key] ~= nil then result[key] = requirement[key] end
+    end
+    return result
+end
+
+local function setupFingerprintPayload(setup)
+    local payload = {
+        defaultQuality = setup.defaultQuality,
+        defaultLevel = setup.defaultLevel,
+        defaultChampionPoints = setup.defaultChampionPoints,
+        equipment = {},
+        alternatives = {},
+        skillBars = { front = {}, back = {} },
+        character = setup.character,
+        champion = {},
+        consumables = {},
+    }
+    for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
+        local requirement = setup.equipment and setup.equipment[slotKey]
+        if requirement then payload.equipment[slotKey] = requirementFingerprint(requirement) end
+        local alternatives = setup.alternatives and setup.alternatives[slotKey]
+        if alternatives then
+            payload.alternatives[slotKey] = {}
+            for _, alternative in ipairs(alternatives) do
+                payload.alternatives[slotKey][#payload.alternatives[slotKey] + 1]
+                    = requirementFingerprint(alternative)
+            end
+        end
+    end
+    for _, entry in ipairs(setup.consumables or {}) do
+        payload.consumables[#payload.consumables + 1] = {
+            category = entry.category,
+            name = entry.name,
+            itemId = entry.itemId,
+            itemLink = entry.itemLink,
+        }
+    end
+    for _, barKey in ipairs({ "front", "back" }) do
+        for slotIndex, skill in pairs((setup.skillBars and setup.skillBars[barKey]) or {}) do
+            payload.skillBars[barKey][slotIndex] = {
+                abilityId = skill.abilityId,
+                isUltimate = skill.isUltimate,
+            }
+        end
+    end
+    for _, disciplineKey in ipairs({ "craft", "warfare", "fitness" }) do
+        local discipline = setup.champion and setup.champion[disciplineKey] or {}
+        local copy = { allocations = {}, slottables = {} }
+        for _, allocation in ipairs(discipline.allocations or {}) do
+            copy.allocations[#copy.allocations + 1] = {
+                skillId = allocation.skillId,
+                points = allocation.points,
+                isSlottable = allocation.isSlottable,
+            }
+        end
+        for index = 1, 4 do
+            copy.slottables[index] = discipline.slottables and discipline.slottables[index] or 0
+        end
+        payload.champion[disciplineKey] = copy
+    end
+    return payload
+end
+
 local function sameName(left, right)
     return zo_strlower(trim(left)) == zo_strlower(trim(right))
 end
@@ -131,7 +248,8 @@ local function makeUniqueName(seen, baseName)
     local name = baseName
     local suffix = 2
     while seen[zo_strlower(name)] do
-        name = baseName .. " " .. tostring(suffix)
+        local ending = " " .. tostring(suffix)
+        name = string.sub(baseName, 1, MAX_NAME_LENGTH - #ending) .. ending
         suffix = suffix + 1
     end
     seen[zo_strlower(name)] = true
@@ -159,6 +277,18 @@ local function makeBuildSnapshot(build)
     }
 end
 
+local function revisionSize(revision)
+    return #stableValue(revision)
+end
+
+local function revisionHistorySize(revisions)
+    local total = 0
+    for _, revision in ipairs(revisions or {}) do
+        total = total + revisionSize(revision)
+    end
+    return total
+end
+
 local function copyRequirement(source)
     if type(source) ~= "table" then
         return nil
@@ -174,9 +304,12 @@ local function copyRequirement(source)
             if key == "note" then
                 copy[key] = normalizeNote(value)
             elseif key == "itemLink" then
+                if not Validation:IsItemLink(value) then
+                    return nil
+                end
                 copy[key] = value
             else
-                copy[key] = trim(value)
+                copy[key] = plain(value, MAX_STRING_LENGTH, true)
             end
         end
     end
@@ -184,12 +317,18 @@ local function copyRequirement(source)
         local value = source[key]
         if value ~= nil then
             value = tonumber(value)
-            if not value or value ~= math.floor(value) or value < 0 then
+            if not value or value ~= math.floor(value) or value < 0 or value > MAX_ID then
                 return nil
             end
             copy[key] = value
         end
     end
+    if copy.setId ~= nil and not Validation:IsId(copy.setId, false) then return nil end
+    if copy.itemId ~= nil and not Validation:IsId(copy.itemId, false) then return nil end
+    if copy.enchantmentId ~= nil and not Validation:IsId(copy.enchantmentId, false) then return nil end
+    if copy.quality ~= nil and not Validation:IsQuality(copy.quality) then return nil end
+    if copy.level ~= nil and not Validation:IsLevel(copy.level) then return nil end
+    if copy.championPoints ~= nil and not Validation:IsChampionPoints(copy.championPoints) then return nil end
     return copy
 end
 
@@ -204,8 +343,7 @@ end
 
 local function normalizeAlternative(slotKey, source, primary)
     local requirement = copyRequirement(source)
-    if not requirement
-        or not GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+    if not requirement or not Validation:IsRequirement(slotKey, requirement) then
         return nil
     end
     local occupiedOffHand = GravvyBuildPlannerSlots:GetOccupiedOffHand(
@@ -229,9 +367,13 @@ local function copySkill(source, slotIndex)
         or source.isUltimate ~= (slotIndex == 6) then
         return nil
     end
+    local name = plain(source.name, MAX_NAME_LENGTH, false)
+    if not name or #source.icon > MAX_STRING_LENGTH then
+        return nil
+    end
     return {
         abilityId = abilityId,
-        name = trim(source.name),
+        name = name,
         icon = source.icon,
         isUltimate = source.isUltimate,
     }
@@ -258,9 +400,10 @@ local function copySkillBars(source, strict)
     return bars
 end
 
-local function readWholeNumber(value, minimum)
+local function readWholeNumber(value, minimum, maximum)
     value = tonumber(value)
-    if not value or value ~= math.floor(value) or value < minimum then
+    maximum = maximum or MAX_ID
+    if not value or value ~= math.floor(value) or value < minimum or value > maximum then
         return nil
     end
     return value
@@ -284,16 +427,20 @@ local function copyStatSnapshot(source)
         return nil
     end
     local characterName = type(source.characterName) == "string"
-        and trim(source.characterName)
+        and plain(source.characterName, MAX_NAME_LENGTH, true)
         or ""
-    if #characterName > 100 then
-        characterName = string.sub(characterName, 1, 100)
-    end
-    return {
+    local snapshot = {
         characterName = characterName,
         createdAt = readWholeNumber(source.createdAt, 0) or now(),
         values = values,
     }
+    if type(source.fingerprint) == "string" and #source.fingerprint <= 32 then
+        snapshot.fingerprint = source.fingerprint
+    end
+    if source.bar == "front" or source.bar == "back" then
+        snapshot.bar = source.bar
+    end
+    return snapshot
 end
 
 local function copyStatSnapshots(source, legacy)
@@ -374,7 +521,7 @@ local function copyCharacterPlan(source, strict)
         if value ~= nil and type(value) ~= "string" then
             return invalidCharacterPlan(strict, plan)
         end
-        value = trim(value)
+        value = plain(value, MAX_SUBCLASS_NAME, true)
         if #value > MAX_SUBCLASS_NAME then
             return invalidCharacterPlan(strict, plan)
         end
@@ -397,9 +544,10 @@ local function copyChampionAllocation(source)
     end
     local skillId = readWholeNumber(source.skillId, 1)
     local points = readWholeNumber(source.points, 1)
+    local name = type(source.name) == "string"
+        and plain(source.name, MAX_SUBCLASS_NAME, false)
     if not skillId or not points or points > MAX_CHAMPION_POINTS
-        or type(source.name) ~= "string" or trim(source.name) == ""
-        or #source.name > MAX_SUBCLASS_NAME
+        or not name
         or type(source.icon) ~= "string"
         or #source.icon > 512
         or type(source.isSlottable) ~= "boolean" then
@@ -407,7 +555,7 @@ local function copyChampionAllocation(source)
     end
     return {
         skillId = skillId,
-        name = trim(source.name),
+        name = name,
         icon = source.icon,
         points = points,
         isSlottable = source.isSlottable,
@@ -472,17 +620,18 @@ end
 
 local function copyConsumable(source)
     if type(source) ~= "table" or not validConsumableCategories[source.category]
-        or type(source.name) ~= "string" or trim(source.name) == ""
-        or #source.name > 100 then
+        or type(source.name) ~= "string" then
         return nil
     end
+    local name = plain(source.name, MAX_NAME_LENGTH, false)
+    if not name then return nil end
     local quantity = readWholeNumber(source.quantity or 1, 1)
     if not quantity or quantity > MAX_CONSUMABLE_QUANTITY then
         return nil
     end
     local entry = {
         category = source.category,
-        name = trim(source.name),
+        name = name,
         quantity = quantity,
         note = normalizeNote(source.note),
     }
@@ -493,7 +642,7 @@ local function copyConsumable(source)
         end
     end
     if source.itemLink ~= nil then
-        if type(source.itemLink) ~= "string" or #source.itemLink > 2048 then
+        if not Validation:IsItemLink(source.itemLink) then
             return nil
         end
         entry.itemLink = source.itemLink
@@ -536,13 +685,14 @@ end
 
 local function copyChecklistEntry(source)
     if type(source) ~= "table" or not validChecklistCategories[source.category]
-        or type(source.name) ~= "string" or trim(source.name) == ""
-        or #source.name > 100 then
+        or type(source.name) ~= "string" then
         return nil
     end
+    local name = plain(source.name, MAX_NAME_LENGTH, false)
+    if not name then return nil end
     local entry = {
         category = source.category,
-        name = trim(source.name),
+        name = name,
         completed = source.completed == true,
         note = normalizeNote(source.note),
     }
@@ -601,7 +751,7 @@ local function copyBuildChanges(values)
 
     local changes = {}
     if values.classId ~= nil then
-        changes.classId = readWholeNumber(values.classId, 0)
+        changes.classId = Validation:WholeNumber(values.classId, 0, 100)
         if not changes.classId then
             return nil
         end
@@ -611,7 +761,7 @@ local function copyBuildChanges(values)
             if type(values[key]) ~= "string" then
                 return nil
             end
-            changes[key] = trim(values[key])
+            changes[key] = plain(values[key], MAX_STRING_LENGTH, true)
         end
     end
     if values.notes ~= nil then
@@ -636,14 +786,14 @@ local function copySetupChanges(values)
         changes.note = normalizeNote(values.note)
     end
     for _, entry in ipairs({
-        { "defaultQuality", 0 },
-        { "defaultLevel", 1 },
-        { "defaultChampionPoints", 0 },
+        { "defaultQuality", function(value) return Validation:IsQuality(value) end },
+        { "defaultLevel", function(value) return Validation:IsLevel(value) end },
+        { "defaultChampionPoints", function(value) return Validation:IsChampionPoints(value) end },
     }) do
-        local key, minimum = entry[1], entry[2]
+        local key, validator = entry[1], entry[2]
         if values[key] ~= nil then
-            changes[key] = readWholeNumber(values[key], minimum)
-            if not changes[key] then
+            changes[key] = tonumber(values[key])
+            if not validator(changes[key]) then
                 return nil
             end
         end
@@ -664,7 +814,8 @@ local function uniqueSetupName(build, baseName, exceptId)
     local name = baseName
     local suffix = 2
     while setupNameExists(build, name, exceptId) do
-        name = baseName .. " " .. tostring(suffix)
+        local ending = " " .. tostring(suffix)
+        name = string.sub(baseName, 1, MAX_NAME_LENGTH - #ending) .. ending
         suffix = suffix + 1
     end
     return name
@@ -705,7 +856,7 @@ function Data:Migrate()
 
     local builds = {}
     for _, build in ipairs(saved.builds) do
-        if type(build) == "table" then
+        if type(build) == "table" and #builds < MAX_BUILDS then
             builds[#builds + 1] = build
         end
     end
@@ -717,23 +868,23 @@ function Data:Migrate()
     local usedSetupIds = {}
     local usedBuildNames = {}
     for _, build in ipairs(saved.builds) do
-        local buildId = readWholeNumber(build.id, 1)
+        local buildId = Validation:WholeNumber(build.id, 1, MAX_ID)
         if not buildId or usedBuildIds[buildId] then
             buildId = highestBuildId + 1
         end
         build.id = buildId
         usedBuildIds[buildId] = true
         highestBuildId = math.max(highestBuildId, build.id)
-        build.name = trim(build.name)
-        if build.name == "" then
+        build.name = plain(tostring(build.name or ""), MAX_NAME_LENGTH, true)
+        if not build.name or build.name == "" then
             build.name = GetString(SI_GRAVVY_BUILD_PLANNER_DEFAULT_BUILD)
         end
         build.name = makeUniqueName(usedBuildNames, build.name)
-        build.classId = readWholeNumber(build.classId, 0)
-        build.role = trim(build.role)
-        build.patch = trim(build.patch)
-        build.author = trim(build.author)
-        build.sourceUrl = trim(build.sourceUrl)
+        build.classId = Validation:WholeNumber(build.classId or 0, 0, 100) or 0
+        build.role = plain(tostring(build.role or ""), MAX_STRING_LENGTH, true) or ""
+        build.patch = plain(tostring(build.patch or ""), MAX_STRING_LENGTH, true) or ""
+        build.author = plain(tostring(build.author or ""), MAX_STRING_LENGTH, true) or ""
+        build.sourceUrl = plain(tostring(build.sourceUrl or ""), MAX_STRING_LENGTH, true) or ""
         build.notes = normalizeNote(build.notes)
         build.createdAt = readWholeNumber(build.createdAt, 0) or now()
         build.updatedAt = readWholeNumber(build.updatedAt, 0) or build.createdAt
@@ -748,13 +899,13 @@ function Data:Migrate()
                 local snapshot = type(sourceRevision) == "table"
                     and sourceRevision.snapshot
                 local revisionName = type(sourceRevision) == "table"
-                    and trim(sourceRevision.name)
+                    and plain(tostring(sourceRevision.name or ""), MAX_REVISION_NAME, true)
                     or ""
                 if revisionName ~= "" and #revisionName <= MAX_REVISION_NAME
                     and type(snapshot) == "table"
                     and type(snapshot.setups) == "table"
                     and #snapshot.setups > 0 then
-                    local revisionId = readWholeNumber(sourceRevision.id, 1)
+                    local revisionId = Validation:WholeNumber(sourceRevision.id, 1, MAX_ID)
                     if not revisionId or usedRevisionIds[revisionId] then
                         revisionId = highestRevisionId + 1
                     end
@@ -766,7 +917,7 @@ function Data:Migrate()
                     revisions[#revisions + 1] = {
                         id = revisionId,
                         name = revisionName,
-                        patch = trim(sourceRevision.patch or snapshot.patch),
+                        patch = plain(tostring(sourceRevision.patch or snapshot.patch or ""), MAX_STRING_LENGTH, true) or "",
                         createdAt = readWholeNumber(sourceRevision.createdAt, 0)
                             or build.updatedAt,
                         snapshot = snapshot,
@@ -782,7 +933,7 @@ function Data:Migrate()
         local setups = {}
         if type(build.setups) == "table" then
             for _, setup in ipairs(build.setups) do
-                if type(setup) == "table" then
+                if type(setup) == "table" and #setups < MAX_SETUPS then
                     setups[#setups + 1] = setup
                 end
             end
@@ -791,22 +942,25 @@ function Data:Migrate()
 
         local usedSetupNames = {}
         for _, setup in ipairs(build.setups) do
-            local setupId = readWholeNumber(setup.id, 1)
+            local setupId = Validation:WholeNumber(setup.id, 1, MAX_ID)
             if not setupId or usedSetupIds[setupId] then
                 setupId = highestSetupId + 1
             end
             setup.id = setupId
             usedSetupIds[setupId] = true
             highestSetupId = math.max(highestSetupId, setup.id)
-            setup.name = trim(setup.name)
-            if setup.name == "" then
+            setup.name = plain(tostring(setup.name or ""), MAX_NAME_LENGTH, true)
+            if not setup.name or setup.name == "" then
                 setup.name = GetString(SI_GRAVVY_BUILD_PLANNER_DEFAULT_SETUP)
             end
             setup.name = makeUniqueName(usedSetupNames, setup.name)
             setup.note = normalizeNote(setup.note)
-            setup.defaultQuality = math.max(0, math.floor(tonumber(setup.defaultQuality) or DEFAULT_QUALITY))
-            setup.defaultLevel = math.max(1, math.floor(tonumber(setup.defaultLevel) or 50))
-            setup.defaultChampionPoints = math.max(0, math.floor(tonumber(setup.defaultChampionPoints) or 160))
+            setup.defaultQuality = Validation:IsQuality(setup.defaultQuality)
+                and tonumber(setup.defaultQuality) or DEFAULT_QUALITY
+            setup.defaultLevel = Validation:IsLevel(setup.defaultLevel)
+                and tonumber(setup.defaultLevel) or 50
+            setup.defaultChampionPoints = Validation:IsChampionPoints(setup.defaultChampionPoints)
+                and tonumber(setup.defaultChampionPoints) or 160
             setup.equipment = type(setup.equipment) == "table" and setup.equipment or {}
             setup.alternatives = type(setup.alternatives) == "table"
                 and setup.alternatives
@@ -829,7 +983,7 @@ function Data:Migrate()
                     setup.equipment[slotKey] = nil
                 else
                     requirement = copyRequirement(requirement)
-                    if requirement and GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+                    if requirement and Validation:IsRequirement(slotKey, requirement) then
                         setup.equipment[slotKey] = requirement
                     else
                         setup.equipment[slotKey] = nil
@@ -885,6 +1039,20 @@ function Data:Migrate()
         math.floor(tonumber(saved.nextSetupId) or 1),
         highestSetupId + 1
     )
+    for _, build in ipairs(saved.builds) do
+        local revisions = {}
+        for _, revision in ipairs(build.revisions or {}) do
+            local normalized = self:NormalizeRevisionSnapshot(revision.snapshot, build.id)
+            if normalized then
+                revision.snapshot = normalized
+                if revisionSize(revision) <= MAX_REVISION_BYTES then
+                    revisions[#revisions + 1] = revision
+                end
+            end
+        end
+        build.revisions = revisions
+        self:TrimRevisionHistory(build)
+    end
     saved.schemaVersion = SCHEMA_VERSION
 
     if #saved.builds == 0 then
@@ -960,18 +1128,23 @@ function Data:BuildNameExists(name, exceptId)
 end
 
 function Data:GetUniqueBuildName(baseName, exceptId)
+    baseName = plain(tostring(baseName or ""), MAX_NAME_LENGTH, true) or ""
     local name = baseName
     local suffix = 2
     while self:BuildNameExists(name, exceptId) do
-        name = baseName .. " " .. tostring(suffix)
+        local ending = " " .. tostring(suffix)
+        name = string.sub(baseName, 1, MAX_NAME_LENGTH - #ending) .. ending
         suffix = suffix + 1
     end
     return name
 end
 
 function Data:CreateBuild(name, values)
-    name = trim(name)
-    if name == "" then
+    if #self.saved.builds >= MAX_BUILDS then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_LIMIT)
+    end
+    name = plain(name, MAX_NAME_LENGTH, false)
+    if not name then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_NAME)
     end
     if self:BuildNameExists(name) then
@@ -1016,8 +1189,8 @@ function Data:UpdateBuild(id, values)
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT)
     end
     if values.name ~= nil then
-        local name = trim(values.name)
-        if name == "" then
+        local name = plain(values.name, MAX_NAME_LENGTH, false)
+        if not name then
             return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_NAME)
         end
         if self:BuildNameExists(name, build.id) then
@@ -1046,7 +1219,10 @@ function Data:DuplicateBuild(id, name)
     if name ~= nil and type(name) ~= "string" then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_NAME)
     end
-    name = trim(name)
+    if #self.saved.builds >= MAX_BUILDS then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_LIMIT)
+    end
+    name = type(name) == "string" and plain(name, MAX_NAME_LENGTH, true) or ""
     if name == "" then
         name = self:GetUniqueBuildName(zo_strformat(
             SI_GRAVVY_BUILD_PLANNER_COPIED_BUILD_NAME,
@@ -1107,21 +1283,22 @@ function Data:DuplicateBuild(id, name)
     return build
 end
 
-function Data:ImportBuild(source)
-    if type(source) ~= "table" or type(source.setups) ~= "table" or #source.setups == 0 then
+function Data:NormalizeImportedBuild(source, exceptBuildId)
+    if type(source) ~= "table" or type(source.setups) ~= "table"
+        or #source.setups == 0 or #source.setups > MAX_SETUPS then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
     end
 
-    local name = trim(source.name)
+    local name = plain(source.name, MAX_NAME_LENGTH, false)
     local changes = copyBuildChanges(source)
-    if name == "" or not changes then
+    if not name or not changes then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
     end
 
     local timestamp = now()
     local build = {
         id = self.saved.nextBuildId,
-        name = self:GetUniqueBuildName(name),
+        name = self:GetUniqueBuildName(name, exceptBuildId),
         classId = changes.classId,
         role = changes.role or "",
         patch = changes.patch or "",
@@ -1140,9 +1317,9 @@ function Data:ImportBuild(source)
         if type(sourceSetup) ~= "table" or type(sourceSetup.equipment) ~= "table" then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
-        local setupName = trim(sourceSetup.name)
+        local setupName = plain(sourceSetup.name, MAX_NAME_LENGTH, false)
         local setupChanges = copySetupChanges(sourceSetup)
-        if setupName == "" or not setupChanges then
+        if not setupName or not setupChanges then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
         setupName = makeUniqueName(usedNames, setupName)
@@ -1152,7 +1329,7 @@ function Data:ImportBuild(source)
             local requirement = copyRequirement(sourceRequirement)
             if not GravvyBuildPlannerSlots:IsValid(slotKey)
                 or not requirement
-                or not GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+                or not Validation:IsRequirement(slotKey, requirement) then
                 return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
             end
             equipment[slotKey] = requirement
@@ -1238,6 +1415,10 @@ function Data:ImportBuild(source)
             champion = champion,
             consumables = consumables,
             checklist = checklist,
+            statSnapshots = copyStatSnapshots(
+                sourceSetup.statSnapshots,
+                sourceSetup.statSnapshot
+            ),
             acquisition = acquisition,
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -1251,11 +1432,70 @@ function Data:ImportBuild(source)
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
     end
     build.selectedSetupId = build.setups[selectedIndex].id
+    return build
+end
+
+function Data:ImportBuild(source)
+    if #self.saved.builds >= MAX_BUILDS then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_LIMIT)
+    end
+    local build, message = self:NormalizeImportedBuild(source)
+    if not build then
+        return nil, message
+    end
     self.saved.nextBuildId = self.saved.nextBuildId + 1
     self.saved.nextSetupId = self.saved.nextSetupId + #build.setups
     self.saved.builds[#self.saved.builds + 1] = build
     self.saved.selectedBuildId = build.id
     return build
+end
+
+function Data:NormalizeRevisionSnapshot(source, buildId)
+    local normalized, message = self:NormalizeImportedBuild(source, buildId)
+    if not normalized then
+        return nil, message
+    end
+    local selectedSetupIndex = 1
+    for index, setup in ipairs(normalized.setups) do
+        if setup.id == normalized.selectedSetupId then
+            selectedSetupIndex = index
+            break
+        end
+    end
+    local usedIds = {}
+    for index, setup in ipairs(normalized.setups) do
+        local sourceSetup = source.setups[index]
+        local setupId = sourceSetup and Validation:WholeNumber(sourceSetup.id, 1, MAX_ID)
+        if not setupId or usedIds[setupId] then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        setup.id = setupId
+        usedIds[setupId] = true
+    end
+    normalized.id = nil
+    normalized.revisions = nil
+    normalized.nextRevisionId = nil
+    normalized.selectedSetupIndex = selectedSetupIndex
+    normalized.selectedSetupId = nil
+    return normalized
+end
+
+function Data:TrimRevisionHistory(build, protectedRevisionId)
+    local evicted = 0
+    while #build.revisions > MAX_REVISIONS
+        or revisionHistorySize(build.revisions) > MAX_REVISION_BYTES do
+        local removeIndex
+        for index = #build.revisions, 1, -1 do
+            if build.revisions[index].id ~= protectedRevisionId then
+                removeIndex = index
+                break
+            end
+        end
+        if not removeIndex then break end
+        table.remove(build.revisions, removeIndex)
+        evicted = evicted + 1
+    end
+    return evicted
 end
 
 function Data:GetRevisions(buildId)
@@ -1284,7 +1524,7 @@ function Data:RevisionNameExists(build, name)
 end
 
 function Data:GetUniqueRevisionName(build, baseName)
-    baseName = trim(baseName)
+    baseName = plain(tostring(baseName or ""), MAX_REVISION_NAME, true) or ""
     if #baseName > MAX_REVISION_NAME then
         baseName = string.sub(baseName, 1, MAX_REVISION_NAME)
     end
@@ -1303,8 +1543,8 @@ function Data:CreateRevision(buildId, name)
     if not build then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_MISSING)
     end
-    name = trim(name)
-    if name == "" or #name > MAX_REVISION_NAME then
+    name = plain(name, MAX_REVISION_NAME, false)
+    if not name then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_NAME)
     end
     if self:RevisionNameExists(build, name) then
@@ -1318,12 +1558,16 @@ function Data:CreateRevision(buildId, name)
         createdAt = now(),
         snapshot = makeBuildSnapshot(build),
     }
+    if revisionSize(revision) > MAX_REVISION_BYTES then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_TOO_LARGE)
+    end
     build.nextRevisionId = build.nextRevisionId + 1
     table.insert(build.revisions, 1, revision)
-    while #build.revisions > MAX_REVISIONS do
-        table.remove(build.revisions)
-    end
-    return revision, zo_strformat(SI_GRAVVY_BUILD_PLANNER_REVISION_SAVED, name)
+    local evicted = self:TrimRevisionHistory(build, revision.id)
+    local messageId = evicted > 0
+        and SI_GRAVVY_BUILD_PLANNER_REVISION_SAVED_EVICTED
+        or SI_GRAVVY_BUILD_PLANNER_REVISION_SAVED
+    return revision, zo_strformat(messageId, name, evicted)
 end
 
 function Data:DeleteRevision(buildId, revisionId)
@@ -1346,34 +1590,62 @@ function Data:RestoreRevision(buildId, revisionId)
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_MISSING)
     end
 
-    local imported, message = self:ImportBuild(deepCopy(revision.snapshot))
+    local imported, message = self:NormalizeImportedBuild(
+        deepCopy(revision.snapshot),
+        build.id
+    )
     if not imported then
         self.saved.selectedBuildId = build.id
         return nil, message
     end
-    for index, importedSetup in ipairs(imported.setups) do
-        local sourceSetup = revision.snapshot.setups[index]
-        importedSetup.statSnapshots = sourceSetup
-            and copyStatSnapshots(sourceSetup.statSnapshots, sourceSetup.statSnapshot)
-            or nil
+
+    local reservedSetupIds = {}
+    for _, otherBuild in ipairs(self.saved.builds) do
+        if otherBuild.id ~= build.id then
+            for _, otherSetup in ipairs(otherBuild.setups) do
+                reservedSetupIds[otherSetup.id] = true
+            end
+        end
     end
-    local _, importedIndex = self:FindBuild(imported.id)
+    local restoredIds = {}
+    for index, importedSetup in ipairs(imported.setups) do
+        local sourceId = Validation:WholeNumber(
+            revision.snapshot.setups[index].id,
+            1,
+            MAX_ID
+        )
+        if not sourceId or reservedSetupIds[sourceId] or restoredIds[sourceId] then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        importedSetup.id = sourceId
+        restoredIds[sourceId] = true
+    end
+    local selectedIndex = revision.snapshot.selectedSetupIndex or 1
+    imported.selectedSetupId = imported.setups[selectedIndex].id
     local backupName = self:GetUniqueRevisionName(build, zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_REVISION_BEFORE_RESTORE,
         revision.name
     ))
+    local backupCandidate = {
+        id = build.nextRevisionId,
+        name = backupName,
+        patch = build.patch,
+        createdAt = now(),
+        snapshot = makeBuildSnapshot(build),
+    }
+    if revisionSize(revision) + revisionSize(backupCandidate) > MAX_REVISION_BYTES then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REVISION_TOO_LARGE)
+    end
     local backup, backupError = self:CreateRevision(build.id, backupName)
     if not backup then
-        table.remove(self.saved.builds, importedIndex)
         self.saved.selectedBuildId = build.id
         return nil, backupError
     end
     if not self:FindRevision(build, revision.id) then
         table.insert(build.revisions, 2, revision)
-        table.remove(build.revisions)
+        self:TrimRevisionHistory(build, revision.id)
     end
 
-    table.remove(self.saved.builds, importedIndex)
     build.name = self:GetUniqueBuildName(revision.snapshot.name, build.id)
     build.classId = imported.classId
     build.role = imported.role
@@ -1421,8 +1693,11 @@ function Data:CreateSetup(buildId, name, source)
     if not build then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_BUILD_MISSING)
     end
-    name = trim(name)
-    if name == "" then
+    if #build.setups >= MAX_SETUPS then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_LIMIT)
+    end
+    name = plain(name, MAX_NAME_LENGTH, false)
+    if not name then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_NAME)
     end
     if setupNameExists(build, name) then
@@ -1430,6 +1705,25 @@ function Data:CreateSetup(buildId, name, source)
     end
     if source ~= nil and type(source) ~= "table" then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT)
+    end
+    if source then
+        local sourceCopy = deepCopy(source)
+        sourceCopy.name = name
+        local normalized = self:NormalizeImportedBuild({
+            name = build.name,
+            classId = build.classId,
+            role = build.role,
+            patch = build.patch,
+            author = build.author,
+            sourceUrl = build.sourceUrl,
+            notes = build.notes,
+            selectedSetupIndex = 1,
+            setups = { sourceCopy },
+        }, build.id)
+        if not normalized then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT)
+        end
+        source = normalized.setups[1]
     end
 
     local setup = {
@@ -1469,7 +1763,7 @@ function Data:DuplicateSetup(buildId, setupId, name)
     if name ~= nil and type(name) ~= "string" then
         return nil, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_NAME)
     end
-    name = trim(name)
+    name = type(name) == "string" and plain(name, MAX_NAME_LENGTH, true) or ""
     if name == "" then
         name = uniqueSetupName(build, zo_strformat(
             SI_GRAVVY_BUILD_PLANNER_COPIED_SETUP_NAME,
@@ -1485,8 +1779,8 @@ function Data:RenameSetup(buildId, setupId, name)
     if not setup then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
     end
-    name = trim(name)
-    if name == "" then
+    name = plain(name, MAX_NAME_LENGTH, false)
+    if not name then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_NAME)
     end
     if setupNameExists(build, name, setup.id) then
@@ -1518,14 +1812,19 @@ end
 function Data:SetStatSnapshot(buildId, setupId, bar, snapshot)
     local build = self:FindBuild(buildId)
     local setup = self:FindSetup(build, setupId)
-    if not setup or (bar ~= "front" and bar ~= "back") then
+    if not setup then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    if bar ~= "front" and bar ~= "back" then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_STAT_BAR)
     end
     local copy = copyStatSnapshot(snapshot)
     if not copy then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_UNAVAILABLE)
     end
     setup.statSnapshots = setup.statSnapshots or {}
+    copy.bar = bar
+    copy.fingerprint = self:GetSetupFingerprint(setup)
     setup.statSnapshots[bar] = copy
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
@@ -1535,8 +1834,11 @@ end
 function Data:ClearStatSnapshot(buildId, setupId, bar)
     local build = self:FindBuild(buildId)
     local setup = self:FindSetup(build, setupId)
-    if not setup or (bar ~= "front" and bar ~= "back") then
+    if not setup then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    if bar ~= "front" and bar ~= "back" then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_STAT_BAR)
     end
     if setup.statSnapshots then
         setup.statSnapshots[bar] = nil
@@ -1547,6 +1849,20 @@ function Data:ClearStatSnapshot(buildId, setupId, bar)
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true, setup
+end
+
+function Data:GetSetupFingerprint(setup)
+    return setup and fingerprint(setupFingerprintPayload(setup)) or nil
+end
+
+function Data:IsStatSnapshotStale(setup, bar)
+    local snapshot = setup and setup.statSnapshots and setup.statSnapshots[bar]
+    if not snapshot then
+        return nil
+    end
+    return snapshot.bar ~= bar
+        or snapshot.fingerprint == nil
+        or snapshot.fingerprint ~= self:GetSetupFingerprint(setup)
 end
 
 function Data:SelectSetup(buildId, setupId)
@@ -1596,7 +1912,7 @@ function Data:SetEquipment(buildId, setupId, slotKey, values)
     end
 
     local requirement = copyRequirement(values)
-    if not requirement or not GravvyBuildPlannerSlots:IsRequirementCompatible(slotKey, requirement) then
+    if not requirement or not Validation:IsRequirement(slotKey, requirement) then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_REQUIREMENT)
     end
 

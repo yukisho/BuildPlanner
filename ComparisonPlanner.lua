@@ -11,6 +11,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -18,6 +19,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -50,7 +52,11 @@ function UI:CreateComparisonPlanner()
     self.comparisonPanel = panel
     self.comparisonOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "ComparisonBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -98,7 +104,11 @@ function UI:CreateComparisonPlanner()
             96 + ((rowIndex - 1) * 39)
         )
         row:SetDimensions(TABLE_WIDTH, 37)
-        local rowBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, row, "ZO_DefaultBackdrop")
+        local rowBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+            row,
+            "ZO_DefaultBackdrop",
+            "ComparisonRowBackdrop"
+        )
         rowBackdrop:SetAnchorFill(row)
         rowBackdrop:SetCenterColor(
             rowIndex % 2 == 0 and 0.035 or 0.02,

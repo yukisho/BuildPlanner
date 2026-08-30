@@ -822,7 +822,7 @@ function Gamepad:ClearTargetSlot()
         if data and data.supplyIndex then
             local setup, build = self.owner.data:GetCurrentSetup()
             self.owner.data:SetConsumable(build.id, setup.id, data.supplyIndex, nil)
-            self.owner.consumableCatalog:Refresh()
+            self.owner.consumableCatalog:RefreshSaved()
             self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVED))
             self:Refresh(true)
         end
@@ -852,7 +852,7 @@ function Gamepad:ClearTargetSlot()
         self:SetStatus(message, true)
         return
     end
-    self.owner.inventory:Refresh()
+    self.owner.inventory:RefreshSetup()
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_SLOT_CLEARED,
         GetString(slotStringIds[slotKey])

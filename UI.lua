@@ -40,6 +40,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -47,6 +48,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -263,6 +265,7 @@ end
 function UI:New(owner)
     return setmetatable({
         owner = owner,
+        dialogs = {},
         rows = {},
         selectedSlot = "head",
         suggestions = {},
@@ -272,6 +275,29 @@ function UI:New(owner)
         selectedSkillBar = "front",
         selectedSkillSlot = 1,
     }, { __index = self })
+end
+
+function UI:RegisterDialog(dialog)
+    self.dialogs[#self.dialogs + 1] = dialog
+    return dialog
+end
+
+function UI:HasVisibleWindow()
+    if self.window and not self.window:IsHidden() then
+        return true
+    end
+    for _, dialog in ipairs(self.dialogs) do
+        if not dialog:IsHidden() then
+            return true
+        end
+    end
+    return false
+end
+
+function UI:HideDialogs()
+    for _, dialog in ipairs(self.dialogs) do
+        dialog:SetHidden(true)
+    end
 end
 
 function UI:Initialize()
@@ -290,7 +316,11 @@ function UI:Initialize()
     window:SetHandler("OnMoveStop", function() self:SavePosition() end)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        window,
+        "ZO_DefaultBackdrop",
+        "MainBackdrop"
+    )
     backdrop:SetAnchorFill(window)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -495,7 +525,11 @@ function UI:CreateCharacterPlanner()
     panel:SetHidden(true)
     self.characterPanel = panel
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "CharacterBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -580,7 +614,11 @@ function UI:CreateSkillPlanner()
     panel:SetHidden(true)
     self.skillPanel = panel
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "SkillsBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -615,7 +653,11 @@ function UI:CreateSkillPlanner()
                 self:ShowSkillTooltip(control, barKey, slotIndex)
             end)
             button:SetHandler("OnMouseExit", function() self:HideSkillTooltip() end)
-            local edge = WINDOW_MANAGER:CreateControlFromVirtual(nil, button, "ZO_DefaultBackdrop")
+            local edge = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+                button,
+                "ZO_DefaultBackdrop",
+                "SkillSlotBackdrop"
+            )
             edge:SetAnchorFill(button)
             edge:SetCenterColor(0.025, 0.025, 0.035, 0.96)
             local icon = WINDOW_MANAGER:CreateControl(nil, button, CT_TEXTURE)
@@ -729,7 +771,11 @@ function UI:CreateSlotRows()
     panel:SetDimensions(490, 530)
     self.paperDoll = panel
 
-    local panelBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local panelBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "PaperDollBackdrop"
+    )
     panelBackdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         panelBackdrop,
@@ -798,7 +844,11 @@ function UI:CreateSlotRows()
         end)
         button:SetHandler("OnMouseExit", function() self:HideItemTooltip() end)
 
-        local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, button, "ZO_DefaultBackdrop")
+        local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+            button,
+            "ZO_DefaultBackdrop",
+            "EquipmentSlotBackdrop"
+        )
         backdrop:SetAnchorFill(button)
         backdrop:SetCenterColor(0.025, 0.025, 0.035, 0.96)
         backdrop:SetEdgeColor(0.36, 0.32, 0.24, 0.95)
@@ -830,7 +880,11 @@ function UI:CreateEditor()
     panel:SetDimensions(430, 530)
     self.editor = panel
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "EquipmentEditorBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -985,7 +1039,11 @@ function UI:CreateSuggestions()
     panel:SetHandler("OnMouseWheel", function(_, delta) self:ScrollSuggestions(-delta) end)
     self.suggestionPanel = panel
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "SetSuggestionsBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1014,8 +1072,13 @@ function UI:CreateNameDialog()
     dialog:SetHidden(true)
     dialog:SetDrawTier(DT_HIGH)
     self.nameDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "NameDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1051,8 +1114,13 @@ function UI:CreateConfirmDialog()
     dialog:SetHidden(true)
     dialog:SetDrawTier(DT_HIGH)
     self.confirmDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "ConfirmDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1084,8 +1152,13 @@ function UI:CreateSlotActionDialog()
     dialog:SetHidden(true)
     dialog:SetDrawTier(DT_HIGH)
     self.slotActionDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "SlotActionDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1128,8 +1201,13 @@ function UI:CreateExportDialog()
     dialog:SetDrawTier(DT_HIGH)
     dialog:SetMouseEnabled(true)
     self.exportDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "ExportDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1184,8 +1262,13 @@ function UI:CreateCodeDialog()
     dialog:SetDrawTier(DT_HIGH)
     dialog:SetMouseEnabled(true)
     self.codeDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "CodeDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -1245,8 +1328,13 @@ function UI:CreateHelpDialog()
     dialog:SetDrawTier(DT_HIGH)
     dialog:SetMouseEnabled(true)
     self.helpDialog = dialog
+    self:RegisterDialog(dialog)
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        dialog,
+        "ZO_DefaultBackdrop",
+        "HelpDialogBackdrop"
+    )
     backdrop:SetAnchorFill(dialog)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -2345,7 +2433,7 @@ function UI:SaveSlot()
     end
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
-        self.owner.inventory:Refresh()
+        self.owner.inventory:RefreshSetup()
     end
     self:RefreshRows()
     self:LoadEditor()
@@ -2383,7 +2471,7 @@ function UI:ClearSlot()
         self.editorAlternativeIndex = nil
     end
     if self.owner.inventory then
-        self.owner.inventory:Refresh()
+        self.owner.inventory:RefreshSetup()
     end
     self:RefreshRows()
     self:LoadEditor()
@@ -2409,7 +2497,7 @@ function UI:ApplySetAlternative()
         return
     end
     if self.owner.inventory then
-        self.owner.inventory:Refresh()
+        self.owner.inventory:RefreshSetup()
     end
     self:RefreshRows()
     self:SetStatus(zo_strformat(
@@ -2485,7 +2573,7 @@ function UI:TransferSlot(move)
             return false, message
         end
         if self.owner.inventory then
-            self.owner.inventory:Refresh()
+            self.owner.inventory:RefreshSetup()
         end
         self.slotActionDialog:SetHidden(true)
         self.selectedSlot = targetSlot
@@ -2669,7 +2757,7 @@ function UI:FinishAction(result, message)
     end
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
-        self.owner.inventory:Refresh()
+        self.owner.inventory:RefreshSetup()
     end
     self:Refresh()
     self:SetStatus("")
@@ -2691,7 +2779,7 @@ function UI:CaptureCharacter()
     end
     self.owner.setCatalog:Refresh()
     if self.owner.inventory then
-        self.owner.inventory:Refresh()
+        self.owner.inventory:RefreshSetup()
     end
     self:Refresh()
     self:SetStatus(message)
@@ -2729,10 +2817,7 @@ function UI:AcquireMouse()
         self.ownsUIMode = true
         SetGameCameraUIMode(true)
         zo_callLater(function()
-            if self.ownsUIMode
-                and (not self.window:IsHidden()
-                    or not self.helpDialog:IsHidden()
-                    or not self.statImpactDialog:IsHidden()) then
+            if self.ownsUIMode and self:HasVisibleWindow() then
                 SetGameCameraUIMode(true)
             end
         end, 10)
@@ -2740,17 +2825,11 @@ function UI:AcquireMouse()
 end
 
 function UI:RestoreOwnedMouse(delayMs)
-    if not self.ownsUIMode
-        or (self.window:IsHidden()
-            and self.helpDialog:IsHidden()
-            and self.statImpactDialog:IsHidden()) then
+    if not self.ownsUIMode or not self:HasVisibleWindow() then
         return
     end
     zo_callLater(function()
-        if self.ownsUIMode
-            and (not self.window:IsHidden()
-                or not self.helpDialog:IsHidden()
-                or not self.statImpactDialog:IsHidden())
+        if self.ownsUIMode and self:HasVisibleWindow()
             and IsGameCameraUIModeActive
             and not IsGameCameraUIModeActive() then
             SetGameCameraUIMode(true)
@@ -2788,13 +2867,7 @@ end
 
 function UI:Hide()
     self.suggestionPanel:SetHidden(true)
-    self.nameDialog:SetHidden(true)
-    self.confirmDialog:SetHidden(true)
-    self.slotActionDialog:SetHidden(true)
-    self.exportDialog:SetHidden(true)
-    self.codeDialog:SetHidden(true)
-    self.helpDialog:SetHidden(true)
-    self.statImpactDialog:SetHidden(true)
+    self:HideDialogs()
     if self.owner.share and self.owner.share.window then
         self.owner.share:Hide()
     end

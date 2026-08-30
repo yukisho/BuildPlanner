@@ -17,6 +17,7 @@ local function makeLabel(parent, text, x, y, width, font)
     label:SetText(text or "")
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     label:SetDimensions(width or 120, 30)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(label, width or 120, 30)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
 end
@@ -24,6 +25,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
+    GravvyBuildPlannerAccessibility:RegisterTextGeometry(button, width, 28)
     GravvyBuildPlannerAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
@@ -100,7 +102,11 @@ function UI:CreateSuppliesPlanner()
     self.suppliesPanel = panel
     self.supplyOffset = 0
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        panel,
+        "ZO_DefaultBackdrop",
+        "SuppliesBackdrop"
+    )
     backdrop:SetAnchorFill(panel)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(
         backdrop,
@@ -176,7 +182,11 @@ function UI:CreateSuppliesPlanner()
     suggestions:SetHidden(true)
     suggestions:SetDrawTier(DT_HIGH)
     self.supplySuggestionPanel = suggestions
-    local suggestionBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, suggestions, "ZO_DefaultBackdrop")
+    local suggestionBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
+        suggestions,
+        "ZO_DefaultBackdrop",
+        "SupplySuggestionsBackdrop"
+    )
     suggestionBackdrop:SetAnchorFill(suggestions)
     self.supplySuggestionButtons = {}
     for index = 1, 6 do
@@ -372,7 +382,7 @@ function UI:SaveSupply()
         return
     end
     self.selectedSupplyIndex = result
-    self.owner.consumableCatalog:Refresh()
+    self.owner.consumableCatalog:RefreshSaved()
     self:RefreshSuppliesPlanner()
     self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVED, values.name))
 end
@@ -393,7 +403,7 @@ function UI:RemoveSupply()
         return
     end
     self.selectedSupplyIndex = nil
-    self.owner.consumableCatalog:Refresh()
+    self.owner.consumableCatalog:RefreshSaved()
     self:RefreshSuppliesPlanner()
     self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVED))
 end

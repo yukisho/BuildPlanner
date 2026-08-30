@@ -25,6 +25,7 @@ ITEM_TRAIT_TYPE_CATEGORY_ARMOR = 1
 ITEM_TRAIT_TYPE_CATEGORY_WEAPON = 2
 ITEM_TRAIT_TYPE_CATEGORY_JEWELRY = 3
 ITEM_QUALITY_NORMAL = 1
+ITEM_QUALITY_TRASH = 0
 ITEM_QUALITY_MAGIC = 2
 ITEM_QUALITY_ARCANE = 3
 ITEM_QUALITY_ARTIFACT = 4
@@ -287,6 +288,7 @@ local function newControl(name, parent)
 end
 
 WINDOW_MANAGER = {}
+local virtualControlNames = {}
 function WINDOW_MANAGER:CreateTopLevelWindow(name)
     local control = newControl(name)
     if name then _G[name] = control end
@@ -298,6 +300,11 @@ function WINDOW_MANAGER:CreateControl(name, parent)
     return control
 end
 function WINDOW_MANAGER:CreateControlFromVirtual(name, parent)
+    local generatedName = name and name:find("GravvyBuildPlanner_", 1, true) == 1
+    if generatedName and virtualControlNames[name] then
+        error("duplicate virtual control name: " .. name)
+    end
+    if generatedName then virtualControlNames[name] = true end
     local control = newControl(name, parent)
     if name then _G[name] = control end
     return control
@@ -795,6 +802,7 @@ end
 function InitializeTooltip() end
 function ClearTooltip(tooltip) tooltip.link = nil end
 
+dofile("UIHelpers.lua")
 dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
 dofile("StatImpact.lua")
@@ -922,6 +930,29 @@ expect(statSetup.statSnapshots and statSetup.statSnapshots.front,
     "confirmed stat capture should be stored for the selected bar")
 expectEqual(ui.statImpactRows[1].change:GetText(), "0",
     "a fresh snapshot should have no delta from the same live stats")
+expect(ui.statImpactSnapshotLabel:GetText():find("current", 1, true),
+    "stat impact should identify a snapshot whose setup fingerprint is current")
+BuildPlannerTestData:UpdateSetup(
+    BuildPlannerTestData:GetCurrentBuild().id,
+    statSetup.id,
+    { note = "non-stat note" }
+)
+ui:RefreshStatImpact()
+expect(ui.statImpactSnapshotLabel:GetText():find("current", 1, true),
+    "non-stat notes should not mark a captured snapshot stale")
+BuildPlannerTestData:UpdateSetup(
+    BuildPlannerTestData:GetCurrentBuild().id,
+    statSetup.id,
+    { defaultLevel = 49 }
+)
+ui:RefreshStatImpact()
+expect(ui.statImpactSnapshotLabel:GetText():find("stale", 1, true),
+    "stat impact should visibly identify a snapshot after the plan changes")
+BuildPlannerTestData:UpdateSetup(
+    BuildPlannerTestData:GetCurrentBuild().id,
+    statSetup.id,
+    { defaultLevel = 50 }
+)
 ui:SelectStatImpactBar("back")
 expectEqual(ui.statImpactRows[1].snapshot:GetText(), "—",
     "front-bar totals should not be reused for the back bar")
@@ -1146,7 +1177,9 @@ expectEqual(owner.share.importButton.width, 150,
     "the localized Import Code action should have enough room")
 owner.share:Open()
 expect(owner.share.codeEdit:GetText():sub(1, 5) == "GBP1:", "the share window should generate the current build code")
-owner.share:Hide()
+ui:Hide()
+expect(owner.share.window:IsHidden(),
+    "closing the planner should close the registered Share window")
 GravvyBuildPlannerGamepadWindow = newControl("GravvyBuildPlannerGamepadWindow")
 GravvyBuildPlannerGamepadWindow:SetHidden(true)
 local gamepad = GravvyBuildPlannerGamepad:New(owner)
@@ -1278,6 +1311,29 @@ local cpOneFiftyLink = owner.itemResolver:ApplyPlannedLevel(
 )
 expect(cpOneFiftyLink, "resolver should build a validated CP 150 link")
 expect(cpOneFiftyLink:find(":312:50:0:", 1, true), "CP 150 link should use the legendary CP 150 subtype")
+local subtypeChecks = {
+    { level = 1, cp = 0, quality = ITEM_QUALITY_NORMAL, expected = 30 },
+    { level = 50, cp = 0, quality = ITEM_QUALITY_LEGENDARY, expected = 24 },
+    { level = 50, cp = 10, quality = ITEM_QUALITY_NORMAL, expected = 125 },
+    { level = 50, cp = 150, quality = ITEM_QUALITY_LEGENDARY, expected = 312 },
+    { level = 50, cp = 160, quality = ITEM_QUALITY_LEGENDARY, expected = 370 },
+}
+for _, check in ipairs(subtypeChecks) do
+    local itemSubtype, enchantSubtype = owner.itemResolver:CreateSubTypes(
+        check.level,
+        check.cp,
+        check.quality
+    )
+    expectEqual(itemSubtype, check.expected,
+        "representative item subtypes should remain compatible after API updates")
+    expectEqual(enchantSubtype, check.expected,
+        "representative enchant subtypes should remain compatible after API updates")
+end
+for quality = ITEM_QUALITY_NORMAL, ITEM_QUALITY_LEGENDARY do
+    local subtype = owner.itemResolver:CreateSubTypes(50, 160, quality)
+    expectEqual(subtype, 366 + quality - 1,
+        "all supported gear qualities should retain their CP160 subtype")
+end
 expect(owner.itemResolver:Resolve("ring1", { setId = 34 }, resolverSetup), "resolver should find jewelry pieces")
 expect(owner.itemResolver:Resolve("frontMain", {
     setId = 34,
@@ -1368,10 +1424,14 @@ if ui.revisionOffset > 0 then
     expectEqual(ui.selectedRevisionId, ui.revisionRows[1].revisionId,
         "revision paging should select a visible checkpoint")
 end
-ui.revisionDialog:SetHidden(true)
+ui:Hide()
+expect(ui.revisionDialog:IsHidden(),
+    "closing the planner should close its registered Revision window")
 BuildPlannerTestData:GetSettings().fontScale = 1.2
 owner.accessibility:Refresh()
 expect(ui.status.font:find("test%-font|22"), "font scaling should reapply registered control fonts")
+expectEqual(ui.status.height, 36,
+    "font scaling should expand registered single-line text geometry within its row")
 BuildPlannerTestData:GetSettings().highContrast = true
 owner.accessibility:Refresh()
 local highContrastBackdrops = 0
@@ -1529,7 +1589,7 @@ itemLinks["owned:waist"] = {
     equipType = EQUIP_TYPE_WAIST,
     armorType = ARMORTYPE_LIGHT,
     weaponType = WEAPONTYPE_NONE,
-    traitType = 12,
+    traitType = ITEM_TRAIT_TYPE_ARMOR_DIVINES,
     quality = ITEM_QUALITY_LEGENDARY,
     level = 50,
     championPoints = 160,
@@ -1627,6 +1687,98 @@ expectEqual(feetMatch.alternativeIndex, 1, "owned matches should identify the ch
 local ringMatches = (owner.inventory:GetMatch(setup.id, "ring1") and 1 or 0)
     + (owner.inventory:GetMatch(setup.id, "ring2") and 1 or 0)
 expectEqual(ringMatches, 1, "one owned ring should not satisfy two planned slots")
+itemLinks["best:x"] = {
+    itemId = 8801, name = "Ring of X", setId = 880, setName = "Set X",
+    equipType = EQUIP_TYPE_RING, armorType = ARMORTYPE_NONE,
+    weaponType = WEAPONTYPE_NONE, traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE,
+    quality = ITEM_QUALITY_LEGENDARY, level = 50, championPoints = 160,
+    enchantId = 502,
+}
+itemLinks["best:y"] = {
+    itemId = 8901, name = "Ring of Y", setId = 890, setName = "Set Y",
+    equipType = EQUIP_TYPE_RING, armorType = ARMORTYPE_NONE,
+    weaponType = WEAPONTYPE_NONE, traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE,
+    quality = ITEM_QUALITY_LEGENDARY, level = 50, championPoints = 160,
+    enchantId = 502,
+}
+itemLinks["best:adjustable-x"] = {
+    itemId = 8802, name = "Untraited Ring of X", setId = 880, setName = "Set X",
+    equipType = EQUIP_TYPE_RING, armorType = ARMORTYPE_NONE,
+    weaponType = WEAPONTYPE_NONE, traitType = ITEM_TRAIT_TYPE_NONE,
+    quality = ITEM_QUALITY_LEGENDARY, level = 50, championPoints = 160,
+    enchantId = 502,
+}
+local bestFitSetup = {
+    id = 99001,
+    defaultQuality = ITEM_QUALITY_LEGENDARY,
+    defaultLevel = 50,
+    defaultChampionPoints = 160,
+    equipment = {
+        ring1 = { setId = 880, setName = "Set X", traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE },
+        ring2 = { setId = 880, setName = "Set X", traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE },
+    },
+    alternatives = {
+        ring1 = {{ setId = 890, setName = "Set Y", traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE }},
+    },
+}
+owner.inventory.items = {
+    { itemLink = "best:x", count = 1, location = "backpack" },
+    { itemLink = "best:y", count = 1, location = "backpack" },
+}
+local bestFitMatches = owner.inventory:MatchSetup(bestFitSetup)
+expect(bestFitMatches.ring1 and bestFitMatches.ring1.alternativeIndex == 1,
+    "a flexible slot should use its alternative instead of consuming a constrained item")
+expect(bestFitMatches.ring2 and bestFitMatches.ring2.itemLink == "best:x",
+    "best-fit matching should reserve the only primary item for the constrained slot")
+owner.inventory.items = {
+    { itemLink = "best:x", count = 2, location = "bank" },
+}
+bestFitSetup.alternatives = {}
+bestFitMatches = owner.inventory:MatchSetup(bestFitSetup)
+expect(bestFitMatches.ring1 and bestFitMatches.ring2,
+    "a stacked item entry should satisfy duplicate ring requirements up to its count")
+owner.inventory.items = {
+    { itemLink = "best:x", count = 1, location = "backpack" },
+    { itemLink = "best:adjustable-x", count = 1, location = "backpack" },
+}
+bestFitSetup.equipment.ring1.traitType = nil
+bestFitMatches = owner.inventory:MatchSetup(bestFitSetup)
+expect(bestFitMatches.ring1 and bestFitMatches.ring1.exact,
+    "the unconstrained duplicate should accept the otherwise adjustable item exactly")
+expect(bestFitMatches.ring2 and bestFitMatches.ring2.exact
+    and bestFitMatches.ring2.itemLink == "best:x",
+    "best-fit matching should maximize exact matches before adjustable matches")
+local scaleSetups = {}
+for index = 1, 40 do
+    scaleSetups[index] = {
+        id = 100000 + index,
+        defaultQuality = ITEM_QUALITY_LEGENDARY,
+        defaultLevel = 50,
+        defaultChampionPoints = 160,
+        equipment = { ring1 = { setId = 880, setName = "Set X" } },
+        alternatives = {},
+    }
+end
+local scaleOwner = {
+    acquisition = owner.acquisition,
+    data = {
+        GetBuilds = function() return {{ setups = scaleSetups }} end,
+        GetCurrentSetup = function() return scaleSetups[1] end,
+        GetSetupFingerprint = function(_, value) return tostring(value.id) end,
+    },
+}
+local scaleInventory = GravvyBuildPlannerInventory:New(scaleOwner)
+scaleInventory.itemsLoaded = true
+scaleInventory.items = {{ itemLink = "best:x", count = 1, location = "backpack" }}
+scaleInventory:Refresh(false)
+expect(scaleInventory.matches[scaleSetups[1].id],
+    "a refresh should match the current setup immediately")
+expectEqual(scaleInventory.matches[scaleSetups[2].id], nil,
+    "large setup collections should defer non-current matching")
+scaleInventory:GetProgress(scaleSetups[2].id)
+expect(scaleInventory.matches[scaleSetups[2].id],
+    "deferred setup progress should be calculated when requested")
+owner.inventory:Refresh()
 local setupProgress = owner.inventory:GetProgress(setup.id)
 expectEqual(
     setupProgress.ready + setupProgress.adjustable + setupProgress.missing,
@@ -1733,7 +1885,8 @@ end
 ShoppingListData = {
     NormalizeName = function(value) return zo_strlower(zo_strtrim(value)) end,
 }
-dofile("F:/laragon/www/ShoppingList/Share.lua")
+dofile("F:/laragon/www/ShoppingList/Build/Core/Model.lua")
+dofile("F:/laragon/www/ShoppingList/Build/Features/Share.lua")
 local decodedShare = ShoppingListShare.DecodeCode(shareCode)
 expect(decodedShare, "Shopping List should decode Build Planner's fallback code")
 expectEqual(#decodedShare.items, 5, "the decoded SL2 list should retain every exported entry")
