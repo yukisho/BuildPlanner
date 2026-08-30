@@ -18,6 +18,8 @@ local SUPPLY_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_SUPPLY"
 local CHECKLIST_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_CHECKLIST"
 local REVISION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION"
 local STAT_IMPACT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_STAT_IMPACT"
+local VALIDATION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_VALIDATION"
+local READINESS_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_READINESS"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -369,6 +371,8 @@ function Gamepad:InitializeDialogs()
     self:InitializeEditDialog()
     self:InitializeManageDialog()
     self:InitializeStatImpactDialog()
+    self:InitializeValidationDialog()
+    self:InitializeReadinessDialog()
     self:InitializeRevisionDialog()
     self:InitializeNameDialog()
     self:InitializeConfirmDialog()
@@ -1431,6 +1435,12 @@ function Gamepad:InitializeManageDialog()
             actionEntry(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT, function()
                 releaseAndOpen(MANAGE_DIALOG, function() self:ShowStatImpactDialog() end)
             end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_VALIDATION, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowValidationDialog() end)
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_READINESS, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowReadinessDialog() end)
+            end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_REVISIONS, function()
                 self:OpenRevisionsFromManage()
             end),
@@ -1573,6 +1583,12 @@ function Gamepad:GetStatImpactText()
             and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
             or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
     )
+    lines[#lines + 1] = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_EQUIPPED_COVERAGE,
+        report.equippedCoverage.ready,
+        report.equippedCoverage.adjustable,
+        report.equippedCoverage.missing
+    )
     for index = 1, math.min(6, #report.effects) do
         local effect = report.effects[index]
         lines[#lines + 1] = effect.label .. ": " .. effect.description
@@ -1585,6 +1601,8 @@ function Gamepad:GetStatImpactText()
     elseif #report.effects == 0 then
         lines[#lines + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_EFFECTS)
     end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = self.owner.statImpact:FormatCaptureProgress(setup)
     return table.concat(lines, "\n")
 end
 
@@ -1620,22 +1638,40 @@ function Gamepad:OpenStatImpactCapture()
         ))
         return
     end
+    local coverage = self.owner.statImpact:GetEquippedCoverage(setup, bar)
     self.pendingConfirmTitle = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_ACTION)
-    self.pendingConfirmText = zo_strformat(
-        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONFIRM_CAPTURE,
-        setup.name
+    self.pendingConfirmText = self.owner.statImpact:FormatCaptureConfirmation(
+        setup,
+        bar,
+        coverage
     )
     self.pendingConfirm = function()
         local ok, message = self.owner.data:SetStatSnapshot(
             build.id,
             setup.id,
             bar,
-            self.owner.statImpact:MakeSnapshot()
+            self.owner.statImpact:MakeSnapshot(setup, bar, coverage)
         )
-        return ok, ok and zo_strformat(
+        if not ok then
+            return false, message
+        end
+        local nextBar = self.owner.statImpact:GetNextCaptureBar(setup, bar)
+        if nextBar then
+            self.statImpactBar = nextBar
+            return true, zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED_NEXT,
+                GetString(bar == "back"
+                    and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                    or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
+                GetString(nextBar == "back"
+                    and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                    or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+            )
+        end
+        return true, zo_strformat(
             SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED,
             setup.name
-        ) or message
+        )
     end
     releaseAndOpen(STAT_IMPACT_DIALOG, function()
         ZO_Dialogs_ShowGamepadDialog(CONFIRM_DIALOG)
@@ -1660,6 +1696,65 @@ function Gamepad:InitializeStatImpactDialog()
                 keybind = "DIALOG_SECONDARY",
                 text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_ACTION,
                 callback = function() self:OpenStatImpactCapture() end,
+            },
+            { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
+        },
+    })
+end
+
+function Gamepad:ShowValidationDialog(setupId)
+    local build = self.owner.data:GetCurrentBuild()
+    local setup = setupId and self.owner.data:FindSetup(build, setupId)
+        or self.owner.data:GetCurrentSetup()
+    self.validationSetupId = setup.id
+    ZO_Dialogs_ShowGamepadDialog(VALIDATION_DIALOG)
+end
+
+function Gamepad:GetValidationText()
+    local build = self.owner.data:GetCurrentBuild()
+    local setup = self.validationSetupId
+        and self.owner.data:FindSetup(build, self.validationSetupId)
+        or self.owner.data:GetCurrentSetup()
+    local report = self.owner.buildValidation:BuildReport(setup)
+    return setup.name .. "\n\n"
+        .. self.owner.buildValidation:FormatReport(report, 14)
+end
+
+function Gamepad:InitializeValidationDialog()
+    ZO_Dialogs_RegisterCustomDialog(VALIDATION_DIALOG, {
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_VALIDATION_TITLE },
+        mainText = { text = function() return self:GetValidationText() end },
+        buttons = {
+            { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
+        },
+    })
+end
+
+function Gamepad:ShowReadinessDialog()
+    ZO_Dialogs_ShowGamepadDialog(READINESS_DIALOG)
+end
+
+function Gamepad:GetReadinessText()
+    local setup = self.owner.data:GetCurrentSetup()
+    local report = self.owner.readiness:BuildReport(setup)
+    return setup.name .. "\n\n" .. self.owner.readiness:FormatReport(report, 14)
+end
+
+function Gamepad:InitializeReadinessDialog()
+    ZO_Dialogs_RegisterCustomDialog(READINESS_DIALOG, {
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_READINESS_TITLE },
+        mainText = { text = function() return self:GetReadinessText() end },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GRAVVY_BUILD_PLANNER_EXPORT,
+                callback = function()
+                    releaseAndOpen(READINESS_DIALOG, function()
+                        self:ShowExportDialog()
+                    end)
+                end,
             },
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
         },
@@ -2140,6 +2235,8 @@ function Gamepad:InitializeHelpDialog()
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_VALIDATION)
+                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_READINESS)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
                 .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
         end },

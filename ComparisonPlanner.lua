@@ -75,7 +75,16 @@ function UI:CreateComparisonPlanner()
     self.statImpactButton:SetHandler("OnClicked", function()
         self:OpenStatImpact(self.comparisonSetupId)
     end)
-    self.comparisonCountLabel = makeLabel(panel, "", 606, 16, 304, "ZoFontGameSmall")
+    self.validationButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_VALIDATION),
+        116
+    )
+    self.validationButton:SetAnchor(TOPLEFT, panel, TOPLEFT, 600, 17)
+    self.validationButton:SetHandler("OnClicked", function()
+        self:OpenValidation(self.comparisonSetupId)
+    end)
+    self.comparisonCountLabel = makeLabel(panel, "", 730, 16, 180, "ZoFontGameSmall")
     self.comparisonCountLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
     local header = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)
@@ -139,6 +148,13 @@ function UI:CreateComparisonPlanner()
     nextPage:SetAnchor(LEFT, previous, RIGHT, 8, 0)
     nextPage:SetHandler("OnClicked", function() self:PageComparison(1) end)
     self.comparisonPageLabel = makeLabel(panel, "", 234, 486, 250, "ZoFontGameSmall")
+    self.readinessButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_READINESS),
+        150
+    )
+    self.readinessButton:SetAnchor(BOTTOMRIGHT, panel, BOTTOMRIGHT, -18, -14)
+    self.readinessButton:SetHandler("OnClicked", function() self:OpenReadiness() end)
 end
 
 function UI:SetComparisonTarget(setupId)

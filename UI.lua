@@ -388,6 +388,8 @@ function UI:Initialize()
     self:CreateChecklistPlanner()
     self:CreateComparisonPlanner()
     self:CreateStatImpactDialog()
+    self:CreateValidationDialog()
+    self:CreateReadinessDialog()
     self:CreateNameDialog()
     self:CreateConfirmDialog()
     self:CreateSlotActionDialog()
@@ -1369,7 +1371,9 @@ function UI:CreateHelpDialog()
         helpPage(
             GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
             GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT)
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_VALIDATION),
+            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_READINESS)
         ),
     }
     self.helpPage = 1

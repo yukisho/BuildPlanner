@@ -583,6 +583,12 @@ local snapshotSetup, snapshotBuild = data:GetCurrentSetup()
 local snapshotSaved, snapshotMessage = data:SetStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front", {
     characterName = "Test Warden",
     createdAt = 4242,
+    captureTime = "20:15",
+    foodName = "Bewitched Sugar Skulls",
+    foodAbilityId = 9002,
+    mundus = 10,
+    inCombat = true,
+    equippedCoverage = { planned = 3, ready = 1, adjustable = 1, missing = 1 },
     values = {
         maxHealth = 32000,
         weaponDamage = 5400,
@@ -596,6 +602,18 @@ expectEqual(snapshotSetup.statSnapshots.front.values.maxHealth, 32000,
     "stat snapshots should retain supported character-sheet values")
 expectEqual(snapshotSetup.statSnapshots.front.values.ignoredValue, nil,
     "stat snapshots should discard unknown values")
+expectEqual(snapshotSetup.statSnapshots.front.captureTime, "20:15",
+    "stat snapshots should retain capture time")
+expectEqual(snapshotSetup.statSnapshots.front.foodName, "Bewitched Sugar Skulls",
+    "stat snapshots should retain active food context")
+expectEqual(snapshotSetup.statSnapshots.front.foodAbilityId, 9002,
+    "stat snapshots should retain active food identity")
+expectEqual(snapshotSetup.statSnapshots.front.mundus, 10,
+    "stat snapshots should retain Mundus context")
+expectEqual(snapshotSetup.statSnapshots.front.inCombat, true,
+    "stat snapshots should retain combat context")
+expectEqual(snapshotSetup.statSnapshots.front.equippedCoverage.adjustable, 1,
+    "stat snapshots should retain valid equipped coverage")
 data:UpdateSetup(snapshotBuild.id, snapshotSetup.id, { note = "route notes do not affect stats" })
 expectEqual(data:IsStatSnapshotStale(snapshotSetup, "front"), false,
     "setup notes should not stale an exact stat snapshot")

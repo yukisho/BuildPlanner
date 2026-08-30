@@ -31,9 +31,11 @@ Comparison.lua
 SetCatalog.lua
 ItemResolver.lua
 StatImpact.lua
+BuildValidation.lua
 Acquisition.lua
 Inventory.lua
 ShoppingIntegration.lua
+Readiness.lua
 CharacterCapture.lua
 Accessibility.lua
 UI.lua
@@ -43,6 +45,8 @@ SuppliesPlanner.lua
 ChecklistPlanner.lua
 ComparisonPlanner.lua
 StatImpactUI.lua
+BuildValidationUI.lua
+ReadinessUI.lua
 Share.lua
 Settings.lua
 Gamepad.lua

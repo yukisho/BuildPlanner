@@ -17,7 +17,7 @@ function Catalog:New()
     }, { __index = self })
 end
 
-function Catalog:AddAbility(abilityId, isUltimate, progression)
+function Catalog:AddAbility(abilityId, isUltimate, progression, skillLineInfo)
     abilityId = tonumber(abilityId)
     if not abilityId or abilityId <= 0 then
         return
@@ -36,6 +36,9 @@ function Catalog:AddAbility(abilityId, isUltimate, progression)
         icon = GetAbilityIcon(abilityId),
         isUltimate = isUltimate == true,
         progression = progression,
+        skillType = skillLineInfo and skillLineInfo.skillType,
+        skillLineIndex = skillLineInfo and skillLineInfo.skillLineIndex,
+        skillLine = skillLineInfo and skillLineInfo.name or "",
     }
     self.entries[#self.entries + 1] = entry
     self.byName[key] = entry
@@ -80,8 +83,15 @@ function Catalog:Refresh()
     if not SKILLS_DATA_MANAGER then
         return
     end
-    for _, skillType in SKILLS_DATA_MANAGER:SkillTypeIterator() do
-        for _, skillLine in skillType:SkillLineIterator() do
+    for skillTypeIndex, skillType in SKILLS_DATA_MANAGER:SkillTypeIterator() do
+        local skillTypeId = skillType.GetSkillType and skillType:GetSkillType()
+            or skillTypeIndex
+        for skillLineIndex, skillLine in skillType:SkillLineIterator() do
+            local skillLineInfo = {
+                skillType = skillTypeId,
+                skillLineIndex = skillLineIndex,
+                name = skillLine:GetName(),
+            }
             for _, skill in skillLine:SkillIterator() do
                 if skill:IsPassive() then
                     local progressions = {}
@@ -114,7 +124,8 @@ function Catalog:Refresh()
                                 self:AddAbility(
                                     progression:GetAbilityId(),
                                     skill:IsUltimate(),
-                                    progression
+                                    progression,
+                                    skillLineInfo
                                 )
                             end
                         end
@@ -124,7 +135,8 @@ function Catalog:Refresh()
                             self:AddAbility(
                                 progression:GetAbilityId(),
                                 skill:IsUltimate(),
-                                progression
+                                progression,
+                                skillLineInfo
                             )
                         end
                     end

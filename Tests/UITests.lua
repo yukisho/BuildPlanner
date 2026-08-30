@@ -39,6 +39,7 @@ ITEM_SET_TYPE_DUNGEON = 2
 ITEM_SET_TYPE_MONSTER = 3
 ITEM_SET_TYPE_WEAPON = 4
 ITEM_SET_TYPE_WORLD = 5
+ITEM_SET_TYPE_MYTHIC = 6
 ITEMTYPE_FOOD = 20
 ITEMTYPE_DRINK = 21
 ITEMTYPE_POTION = 22
@@ -70,6 +71,7 @@ CURSE_TYPE_WEREWOLF = 2
 MUNDUS_STONE_INVALID = 0
 ACTIVE_WEAPON_PAIR_MAIN = 1
 ACTIVE_WEAPON_PAIR_BACKUP = 2
+SKILL_TYPE_WEAPON = 2
 STAT_BONUS_OPTION_APPLY_BONUS = 1
 STAT_MAGICKA_MAX = 101
 STAT_MAGICKA_REGEN_COMBAT = 102
@@ -539,6 +541,7 @@ local abilities = {
     [1002] = { name = "Subterranean Assault", icon = "subterranean-assault.dds" },
     [1005] = { name = "Wield Soul", icon = "wield-soul.dds" },
     [1006] = { name = "Wild Guardian", icon = "wild-guardian.dds" },
+    [1100] = { name = "Volley", icon = "volley.dds" },
     [5001] = { name = "Advanced Species", icon = "advanced-species.dds" },
     [5002] = { name = "Advanced Species", icon = "advanced-species.dds" },
 }
@@ -557,12 +560,19 @@ function GetAttributeSpentPoints(attribute)
 end
 function GetPlayerCurseType() return CURSE_TYPE_VAMPIRE end
 function GetUnitActiveMundusStoneBuffIndices() return 1 end
-function GetUnitBuffInfo()
+function GetNumBuffs() return 2 end
+function GetUnitBuffInfo(_, buffIndex)
+    if buffIndex == 2 then
+        return "Bewitched Sugar Skulls", 0, 0, 0, 0,
+            "/esoui/art/icons/icon_potion_full.dds", "", 0, 0, 0, 9002, false, false
+    end
     return "The Thief", 0, 0, 0, 0, "", "", 0, 0, 0, 9001, false, false
 end
 function GetAbilityMundusStoneType(abilityId)
     return abilityId == 9001 and 10 or MUNDUS_STONE_INVALID
 end
+function GetTimeString() return "20:15" end
+function IsUnitInCombat() return false end
 function GetMaxLevel() return 50 end
 function GetChampionPointsPlayerProgressionCap() return 160 end
 
@@ -685,6 +695,8 @@ function GetItemSetType(setId)
         return ITEM_SET_TYPE_DUNGEON
     elseif setId == 56 then
         return ITEM_SET_TYPE_MONSTER
+    elseif setId == 91 or setId == 94 then
+        return ITEM_SET_TYPE_MYTHIC
     end
     return ITEM_SET_TYPE_NONE
 end
@@ -806,9 +818,11 @@ dofile("UIHelpers.lua")
 dofile("Enchantments.lua")
 dofile("ItemResolver.lua")
 dofile("StatImpact.lua")
+dofile("BuildValidation.lua")
 dofile("Acquisition.lua")
 dofile("Inventory.lua")
 dofile("ShoppingIntegration.lua")
+dofile("Readiness.lua")
 dofile("CharacterCapture.lua")
 dofile("SkillCatalog.lua")
 dofile("ChampionCatalog.lua")
@@ -823,6 +837,8 @@ dofile("SuppliesPlanner.lua")
 dofile("ChecklistPlanner.lua")
 dofile("ComparisonPlanner.lua")
 dofile("StatImpactUI.lua")
+dofile("BuildValidationUI.lua")
+dofile("ReadinessUI.lua")
 dofile("Settings.lua")
 dofile("Gamepad.lua")
 dofile("GamepadDialogs.lua")
@@ -834,8 +850,10 @@ local owner = {
 }
 owner.acquisition = GravvyBuildPlannerAcquisition:New(owner.itemResolver)
 owner.statImpact = GravvyBuildPlannerStatImpact:New(owner)
+owner.buildValidation = GravvyBuildPlannerBuildValidation:New(owner)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
+owner.readiness = GravvyBuildPlannerReadiness:New(owner)
 owner.capture = GravvyBuildPlannerCharacterCapture:New(owner)
 owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
@@ -914,6 +932,8 @@ expect(ui.statImpactButton, "the comparison view should expose stat impact")
 expect(ui.statImpactDialog, "keyboard users should have a stat impact window")
 expectEqual(ui.statImpactDialog.width, 1040,
     "the stat impact window should leave room for readable effect descriptions")
+expectEqual(ui.statImpactDialog.height, 760,
+    "the stat impact window should leave room for capture guidance")
 expectEqual(GravvyBuildPlannerAccessibility.fonts[ui.statImpactEffectRows[1]], "ZoFontGame",
     "planned gear effects should use the normal game font")
 ui:OpenStatImpact()
@@ -922,12 +942,31 @@ expect(ui.statImpactRows[1].live:GetText() ~= "—",
     "stat impact should read live character-sheet values")
 expect(#(ui.statImpactEffects or {}) > 0,
     "stat impact should show resolvable planned gear effects")
+expect(ui.statImpactCoverageLabel:GetText():find("Equipped match", 1, true),
+    "stat impact should show worn-gear match coverage before capture")
 ui:RequestStatImpactCapture()
 expect(not ui.confirmDialog:IsHidden(), "stat capture should require confirmation")
+expect(ui.confirmText:GetText():find("Equipped match", 1, true),
+    "stat capture confirmation should repeat worn-gear coverage")
 ui:AcceptConfirm()
 local statSetup = BuildPlannerTestData:GetCurrentSetup()
 expect(statSetup.statSnapshots and statSetup.statSnapshots.front,
     "confirmed stat capture should be stored for the selected bar")
+expectEqual(statSetup.statSnapshots.front.foodName, "Bewitched Sugar Skulls",
+    "stat capture should record the active food buff")
+expectEqual(statSetup.statSnapshots.front.mundus, 10,
+    "stat capture should record the active Mundus Stone")
+expectEqual(statSetup.statSnapshots.front.captureTime, "20:15",
+    "stat capture should retain the capture time")
+expectEqual(statSetup.statSnapshots.front.inCombat, false,
+    "stat capture should retain combat state")
+expect(statSetup.statSnapshots.front.equippedCoverage,
+    "stat capture should retain equipped match coverage")
+expectEqual(ui.statImpactBar, "back",
+    "capturing one bar should guide the player to the other bar")
+expect(ui.statImpactCaptureProgress:GetText():find("Back Bar", 1, true),
+    "stat impact should show progress for both weapon bars")
+ui:SelectStatImpactBar("front")
 expectEqual(ui.statImpactRows[1].change:GetText(), "0",
     "a fresh snapshot should have no delta from the same live stats")
 expect(ui.statImpactSnapshotLabel:GetText():find("current", 1, true),
@@ -961,6 +1000,81 @@ expect(ui.confirmDialog:IsHidden(),
     "stat capture should be blocked when the live and selected bars differ")
 ui:SelectStatImpactBar("front")
 ui.statImpactDialog:SetHidden(true)
+expect(ui.validationButton, "the comparison view should expose setup validation")
+ui:OpenValidation()
+expect(not ui.validationDialog:IsHidden(), "setup validation should open for the selected setup")
+expect(ui.validationReport and #ui.validationReport.issues > 0,
+    "setup validation should report incomplete planning details")
+expect(ui.validationFrontSets:GetText():find("Front Bar", 1, true),
+    "setup validation should show front-bar set counts")
+expect(ui.validationBackSets:GetText():find("Back Bar", 1, true),
+    "setup validation should show back-bar set counts separately")
+ui.validationDialog:SetHidden(true)
+expect(ui.readinessButton, "the comparison view should expose setup readiness")
+ui:OpenReadiness()
+expect(not ui.readinessDialog:IsHidden(), "readiness should open for the current setup")
+expect(#ui.readinessReport.entries > 0,
+    "readiness should include each planned equipment requirement")
+expectEqual(
+    ui.readinessReport.ready + ui.readinessReport.adjustable
+        + ui.readinessReport.missing + ui.readinessReport.conflicting,
+    #ui.readinessReport.entries,
+    "readiness categories should account for every planned slot"
+)
+expect(ui.readinessMaterials:GetText():find("glyphs", 1, true),
+    "readiness should summarize glyph, upgrade, and transmute work")
+expect(ui.readinessShopping:GetText():find("Shopping List", 1, true),
+    "readiness should summarize eligible Shopping List entries")
+ui.readinessDialog:SetHidden(true)
+
+owner.skillCatalog:AddAbility(1100, false, nil, {
+    skillType = SKILL_TYPE_WEAPON,
+    skillLineIndex = 4,
+    name = "Bow",
+})
+local validationSetup = {
+    defaultLevel = 50,
+    defaultChampionPoints = 160,
+    equipment = {
+        head = { setId = 56, setName = "Monster Test", armorType = ARMORTYPE_LIGHT },
+        chest = { setId = 91, setName = "Mythic One", armorType = ARMORTYPE_LIGHT },
+        ring1 = { setId = 94, setName = "Mythic Two" },
+        frontMain = {
+            setId = 92,
+            setName = "Front Arena",
+            weaponType = WEAPONTYPE_TWO_HANDED_SWORD,
+            occupiesOffHand = true,
+        },
+        backMain = {
+            setId = 93,
+            setName = "Back Arena",
+            weaponType = WEAPONTYPE_BOW,
+            occupiesOffHand = true,
+        },
+    },
+    alternatives = {},
+    skillBars = { front = { [1] = { abilityId = 1100 } }, back = {} },
+    character = { attributes = { health = 10, magicka = 0, stamina = 0 } },
+    champion = {
+        craft = { allocations = {}, slottables = { 3001, 0, 0, 0 } },
+        warfare = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+        fitness = { allocations = {}, slottables = { 0, 0, 0, 0 } },
+    },
+}
+local validationReport = owner.buildValidation:BuildReport(validationSetup)
+local validationKeys = {}
+for _, issue in ipairs(validationReport.issues) do validationKeys[issue.key] = true end
+expect(validationKeys.mythics, "validation should reject multiple planned Mythics")
+expect(validationKeys["monster:56"], "validation should flag incomplete monster sets")
+expect(validationKeys["skill:front:bow"],
+    "validation should flag weapon skills planned on an incompatible bar")
+expect(validationKeys.attributes, "validation should flag incomplete attribute totals")
+expect(validationKeys["cp:unfunded:3001"],
+    "validation should flag slotted Champion stars without allocated points")
+expect(owner.buildValidation:FormatSetCounts(validationReport.sets.front)
+        ~= owner.buildValidation:FormatSetCounts(validationReport.sets.back),
+    "validation should calculate active set counts independently for each bar")
+
 local originalBuild = BuildPlannerTestData:GetCurrentBuild()
 local buildCount = #BuildPlannerTestData:GetBuilds()
 ui.captureButton.handlers.OnClicked()
@@ -1197,6 +1311,16 @@ expectEqual(
 )
 expectEqual(
     gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[4].text,
+    SI_GRAVVY_BUILD_PLANNER_VALIDATION,
+    "gamepad build management should expose setup validation"
+)
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[5].text,
+    SI_GRAVVY_BUILD_PLANNER_READINESS,
+    "gamepad build management should expose setup readiness"
+)
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[6].text,
     SI_GRAVVY_BUILD_PLANNER_REVISIONS,
     "gamepad build management should expose revision history"
 )
@@ -1222,10 +1346,26 @@ expect(gamepad:GetStatImpactText():find("Maximum Magicka", 1, true),
     "gamepad stat impact should include character-sheet rows")
 local gamepadRevisionAction = gamepadDialogs[
     "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
-].parametricList[4]
+].parametricList[6]
 gamepadRevisionAction.templateData.callback()
 expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION",
     "gamepad users should be able to browse revision history")
+local gamepadValidationAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[4]
+gamepadValidationAction.templateData.callback()
+expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_VALIDATION",
+    "gamepad users should be able to inspect setup validation")
+expect(gamepad:GetValidationText():find("errors", 1, true),
+    "gamepad validation should include the setup summary")
+local gamepadReadinessAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[5]
+gamepadReadinessAction.templateData.callback()
+expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_READINESS",
+    "gamepad users should be able to inspect setup readiness")
+expect(gamepad:GetReadinessText():find("Shopping List", 1, true),
+    "gamepad readiness should include eligible purchase totals")
 
 local resolverSetup = BuildPlannerTestData:GetCurrentSetup()
 local matchingEnchant = owner.itemResolver:Resolve("head", {
@@ -1738,6 +1878,16 @@ bestFitMatches = owner.inventory:MatchSetup(bestFitSetup)
 expect(bestFitMatches.ring1 and bestFitMatches.ring2,
     "a stacked item entry should satisfy duplicate ring requirements up to its count")
 owner.inventory.items = {
+    { itemLink = "best:x", count = 1, location = "backpack", bagId = BAG_BACKPACK, slotIndex = 0 },
+}
+bestFitSetup.equipment.ring1.traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE
+bestFitSetup.equipment.ring2.traitType = ITEM_TRAIT_TYPE_JEWELRY_ARCANE
+owner.inventory.matches[bestFitSetup.id] = nil
+owner.inventory.matchFingerprints[bestFitSetup.id] = nil
+local contestedReport = owner.readiness:BuildReport(bestFitSetup)
+expectEqual(contestedReport.conflicting, 1,
+    "readiness should separate a shared physical item conflict from missing gear")
+owner.inventory.items = {
     { itemLink = "best:x", count = 1, location = "backpack" },
     { itemLink = "best:adjustable-x", count = 1, location = "backpack" },
 }
@@ -1935,8 +2085,8 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    16,
-    "gamepad editing, management, revisions, sharing, export, and help dialogs should register"
+    18,
+    "gamepad editing, management, validation, readiness, revisions, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
 gamepad:Show()

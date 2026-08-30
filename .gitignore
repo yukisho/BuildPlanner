@@ -1,6 +1,7 @@
 .history/
 .readme/
 .todo/
+.generators/
 *.jpeg
 *.md
 TODO.txt

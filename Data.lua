@@ -434,6 +434,27 @@ local function copyStatSnapshot(source)
         createdAt = readWholeNumber(source.createdAt, 0) or now(),
         values = values,
     }
+    if type(source.captureTime) == "string" then
+        snapshot.captureTime = plain(source.captureTime, 32, true)
+    end
+    if type(source.foodName) == "string" then
+        snapshot.foodName = plain(source.foodName, MAX_NAME_LENGTH, true)
+    end
+    local foodAbilityId = readWholeNumber(source.foodAbilityId or 0, 0)
+    if foodAbilityId then snapshot.foodAbilityId = foodAbilityId end
+    local mundus = readWholeNumber(source.mundus or 0, 0, 13)
+    if mundus then snapshot.mundus = mundus end
+    snapshot.inCombat = source.inCombat == true
+    if type(source.equippedCoverage) == "table" then
+        local coverage = {}
+        for _, key in ipairs({ "planned", "ready", "adjustable", "missing" }) do
+            coverage[key] = readWholeNumber(source.equippedCoverage[key] or 0, 0, 14)
+                or 0
+        end
+        if coverage.ready + coverage.adjustable + coverage.missing == coverage.planned then
+            snapshot.equippedCoverage = coverage
+        end
+    end
     if type(source.fingerprint) == "string" and #source.fingerprint <= 32 then
         snapshot.fingerprint = source.fingerprint
     end

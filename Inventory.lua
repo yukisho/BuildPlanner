@@ -327,6 +327,10 @@ end
 function Inventory:NotifyViews()
     if self.owner.ui then
         self.owner.ui:RefreshOwnedStatus()
+        if self.owner.ui.readinessDialog
+            and not self.owner.ui.readinessDialog:IsHidden() then
+            self.owner.ui:RefreshReadiness()
+        end
     end
     if self.owner.gamepad then
         self.owner.gamepad:Refresh()

@@ -45,7 +45,7 @@ end
 
 function UI:CreateStatImpactDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerStatImpactWindow")
-    dialog:SetDimensions(1040, 690)
+    dialog:SetDimensions(1040, 760)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -184,19 +184,20 @@ function UI:CreateStatImpactDialog()
         self.statImpactRows[index] = row
     end
 
-    self.statImpactSnapshotLabel = makeLabel(dialog, "", 18, 600, 430, 38, "ZoFontGameSmall")
+    self.statImpactSnapshotLabel = makeLabel(dialog, "", 18, 600, 430, 100, "ZoFontGameSmall")
     self.statImpactSnapshotLabel:SetVerticalAlignment(TEXT_ALIGN_TOP)
 
-    self.statImpactCoverageLabel = makeLabel(dialog, "", 474, 158, 546, 28, "ZoFontGame")
+    self.statImpactCoverageLabel = makeLabel(dialog, "", 474, 158, 546, 50, "ZoFontGame")
+    self.statImpactCoverageLabel:SetVerticalAlignment(TEXT_ALIGN_TOP)
     self.statImpactEffectRows = {}
     for index = 1, EFFECT_ROWS do
         local label = makeLabel(
             dialog,
             "",
             474,
-            188 + ((index - 1) * 78),
+            210 + ((index - 1) * 74),
             546,
-            76,
+            72,
             "ZoFontGame"
         )
         label:SetVerticalAlignment(TEXT_ALIGN_TOP)
@@ -222,6 +223,16 @@ function UI:CreateStatImpactDialog()
     nextPage:SetHandler("OnClicked", function() self:PageStatImpactEffects(1) end)
     self.statImpactPageLabel = makeLabel(dialog, "", 788, 594, 230, 28, "ZoFontGameSmall")
     self.statImpactPageLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
+    self.statImpactCaptureProgress = makeLabel(
+        dialog,
+        "",
+        474,
+        626,
+        546,
+        76,
+        "ZoFontGameSmall"
+    )
+    self.statImpactCaptureProgress:SetVerticalAlignment(TEXT_ALIGN_TOP)
 
     local capture = makeButton(
         dialog,
@@ -357,6 +368,7 @@ function UI:RefreshStatImpact()
         self.statImpactSnapshotLabel:SetColor(0.88, 0.86, 0.8, 1)
     end
 
+    local coverage = report.equippedCoverage
     self.statImpactCoverageLabel:SetText(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_COVERAGE,
         report.resolved,
@@ -364,7 +376,15 @@ function UI:RefreshStatImpact()
         GetString(report.bar == "back"
             and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
             or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+    ) .. "\n" .. zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_EQUIPPED_COVERAGE,
+        coverage.ready,
+        coverage.adjustable,
+        coverage.missing
     ))
+    self.statImpactCaptureProgress:SetText(
+        self.owner.statImpact:FormatCaptureProgress(setup)
+    )
     self.statImpactEffects = report.effects
     local lastOffset = #report.effects > 0
         and math.floor((#report.effects - 1) / EFFECT_ROWS) * EFFECT_ROWS
@@ -413,21 +433,35 @@ function UI:RequestStatImpactCapture()
         ), true)
         return
     end
+    local captureBar = self.statImpactBar
+    local coverage = self.owner.statImpact:GetEquippedCoverage(setup, captureBar)
     self:OpenConfirm(
-        zo_strformat(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONFIRM_CAPTURE, setup.name),
+        self.owner.statImpact:FormatCaptureConfirmation(setup, captureBar, coverage),
         function()
-            local snapshot = self.owner.statImpact:MakeSnapshot()
+            local snapshot = self.owner.statImpact:MakeSnapshot(setup, captureBar, coverage)
             local ok, message = self.owner.data:SetStatSnapshot(
                 build.id,
                 setup.id,
-                self.statImpactBar,
+                captureBar,
                 snapshot
             )
             if not ok then
                 return false, message
             end
+            local nextBar = self.owner.statImpact:GetNextCaptureBar(setup, captureBar)
+            if nextBar then
+                self.statImpactBar = nextBar
+            end
             self:RefreshStatImpact()
-            self:SetStatus(zo_strformat(
+            self:SetStatus(nextBar and zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED_NEXT,
+                GetString(captureBar == "back"
+                    and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                    or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
+                GetString(nextBar == "back"
+                    and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                    or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+            ) or zo_strformat(
                 SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURED,
                 setup.name
             ))

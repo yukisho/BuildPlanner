@@ -19,6 +19,11 @@ Slots.ORDER = {
     "backOff",
 }
 
+local alwaysActive = {
+    "head", "shoulders", "chest", "hands", "waist", "legs", "feet",
+    "neck", "ring1", "ring2",
+}
+
 Slots.DEFINITIONS = {
     head = { family = "armor", equipSlot = EQUIP_SLOT_HEAD },
     shoulders = { family = "armor", equipSlot = EQUIP_SLOT_SHOULDERS },
@@ -81,6 +86,21 @@ function Slots:GetMainHand(slotKey)
     elseif slotKey == "backOff" then
         return "backMain"
     end
+end
+
+function Slots:GetActiveSlotKeys(bar)
+    local keys = {}
+    for _, slotKey in ipairs(alwaysActive) do
+        keys[#keys + 1] = slotKey
+    end
+    if bar == "back" then
+        keys[#keys + 1] = "backMain"
+        keys[#keys + 1] = "backOff"
+    else
+        keys[#keys + 1] = "frontMain"
+        keys[#keys + 1] = "frontOff"
+    end
+    return keys
 end
 
 function Slots:IsTransferCompatible(sourceSlot, targetSlot, requirement)

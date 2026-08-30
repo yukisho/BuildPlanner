@@ -21,29 +21,79 @@ local statRows = {
     { key = "criticalResistance", constant = "STAT_CRITICAL_RESISTANCE", label = SI_GRAVVY_BUILD_PLANNER_STAT_CRITICAL_RESISTANCE },
 }
 
-local alwaysActiveSlots = {
-    "head", "shoulders", "chest", "hands", "waist", "legs", "feet",
-    "neck", "ring1", "ring2",
-}
-
 local function round(value)
     value = tonumber(value) or 0
     return value < 0 and math.ceil(value - 0.5) or math.floor(value + 0.5)
 end
 
-local function activeSlotKeys(bar)
-    local keys = {}
-    for _, slotKey in ipairs(alwaysActiveSlots) do
-        keys[#keys + 1] = slotKey
+local function lower(value)
+    value = tostring(value or "")
+    return zo_strlower and zo_strlower(value) or string.lower(value)
+end
+
+local function captureMundus()
+    if not GetUnitActiveMundusStoneBuffIndices
+        or not GetUnitBuffInfo
+        or not GetAbilityMundusStoneType then
+        return 0
     end
-    if bar == "back" then
-        keys[#keys + 1] = "backMain"
-        keys[#keys + 1] = "backOff"
-    else
-        keys[#keys + 1] = "frontMain"
-        keys[#keys + 1] = "frontOff"
+    local indices = { GetUnitActiveMundusStoneBuffIndices("player") }
+    for _, buffIndex in ipairs(indices) do
+        local _, _, _, _, _, _, _, _, _, _, abilityId = GetUnitBuffInfo(
+            "player",
+            buffIndex
+        )
+        local mundus = abilityId and GetAbilityMundusStoneType(abilityId)
+        if mundus and mundus ~= MUNDUS_STONE_INVALID then
+            return mundus
+        end
     end
-    return keys
+    return 0
+end
+
+local function plannedFoodNames(setup)
+    local names = {}
+    for _, entry in ipairs(setup and setup.consumables or {}) do
+        if entry.category == "food" or entry.category == "drink" then
+            if entry.name and entry.name ~= "" then
+                names[lower(entry.name)] = true
+            end
+            if entry.itemLink and entry.itemLink ~= "" and GetItemLinkOnUseAbilityInfo then
+                local hasAbility, abilityName = GetItemLinkOnUseAbilityInfo(entry.itemLink)
+                if hasAbility and abilityName and abilityName ~= "" then
+                    names[lower(abilityName)] = true
+                end
+            end
+        end
+    end
+    return names
+end
+
+local function captureFood(setup)
+    if not GetNumBuffs or not GetUnitBuffInfo then
+        return "", 0
+    end
+    local plannedNames = plannedFoodNames(setup)
+    local iconCandidate
+    for buffIndex = 1, GetNumBuffs("player") do
+        local name, _, _, _, _, icon, _, _, _, _, abilityId = GetUnitBuffInfo(
+            "player",
+            buffIndex
+        )
+        if name and name ~= "" then
+            if plannedNames[lower(name)] then
+                return name, tonumber(abilityId) or 0
+            end
+            if lower(icon):find("icon_potion_full", 1, true) then
+                iconCandidate = iconCandidate or {
+                    name = name,
+                    abilityId = tonumber(abilityId) or 0,
+                }
+            end
+        end
+    end
+    return iconCandidate and iconCandidate.name or "",
+        iconCandidate and iconCandidate.abilityId or 0
 end
 
 local function itemLinkForRequirement(owner, slotKey, requirement, setup)
@@ -140,16 +190,77 @@ function StatImpact:GetLiveBar()
     end
 end
 
-function StatImpact:MakeSnapshot()
+function StatImpact:GetEquippedCoverage(setup, bar)
+    local coverage = { planned = 0, ready = 0, adjustable = 0, missing = 0 }
+    for _, slotKey in ipairs(Slots:GetActiveSlotKeys(bar)) do
+        local requirement = setup.equipment and setup.equipment[slotKey]
+        local mainHand = Slots:GetMainHand(slotKey)
+        local occupied = mainHand and setup.equipment and setup.equipment[mainHand]
+        if requirement and not (occupied and (occupied.occupiesOffHand
+            or Slots:IsTwoHanded(occupied.weaponType))) then
+            coverage.planned = coverage.planned + 1
+            local definition = Slots:Get(slotKey)
+            local itemLink = definition and GetItemLink and GetItemLink(
+                BAG_WORN,
+                definition.equipSlot,
+                LINK_STYLE_DEFAULT
+            )
+            local bestMatch
+            if itemLink and itemLink ~= "" then
+                local candidates = { requirement }
+                for _, alternative in ipairs(
+                    (setup.alternatives and setup.alternatives[slotKey]) or {}
+                ) do
+                    candidates[#candidates + 1] = alternative
+                end
+                for _, candidate in ipairs(candidates) do
+                    local match = self.owner.acquisition:CompareItem(
+                        slotKey,
+                        candidate,
+                        setup,
+                        itemLink
+                    )
+                    if match and (not bestMatch or match.exact) then
+                        bestMatch = match
+                    end
+                    if bestMatch and bestMatch.exact then
+                        break
+                    end
+                end
+            end
+            if bestMatch and bestMatch.exact then
+                coverage.ready = coverage.ready + 1
+            elseif bestMatch then
+                coverage.adjustable = coverage.adjustable + 1
+            else
+                coverage.missing = coverage.missing + 1
+            end
+        end
+    end
+    return coverage
+end
+
+function StatImpact:MakeSnapshot(setup, bar, coverage)
     local characterName = ""
     if GetRawUnitName then
         characterName = GetRawUnitName("player") or ""
     elseif GetUnitName then
         characterName = GetUnitName("player") or ""
     end
+    local foodName, foodAbilityId = captureFood(setup)
+    local inCombat = IsUnitInCombat and IsUnitInCombat("player")
+    if inCombat == nil and IsPlayerInCombat then
+        inCombat = IsPlayerInCombat()
+    end
     return {
         characterName = characterName,
         createdAt = GetTimeStamp and GetTimeStamp() or 0,
+        captureTime = GetTimeString and GetTimeString() or "",
+        foodName = foodName,
+        foodAbilityId = foodAbilityId,
+        mundus = captureMundus(),
+        inCombat = inCombat == true,
+        equippedCoverage = coverage or self:GetEquippedCoverage(setup, bar),
         values = self:GetLiveStats(),
     }
 end
@@ -187,11 +298,12 @@ function StatImpact:GetPlannedLinks(setup, bar)
     local links = {}
     local planned = 0
     local resolved = 0
-    for _, slotKey in ipairs(activeSlotKeys(bar)) do
+    for _, slotKey in ipairs(Slots:GetActiveSlotKeys(bar)) do
         local requirement = setup.equipment and setup.equipment[slotKey]
         local mainHand = Slots:GetMainHand(slotKey)
         local occupied = mainHand and setup.equipment and setup.equipment[mainHand]
-        if requirement and not (occupied and occupied.occupiesOffHand) then
+        if requirement and not (occupied and (occupied.occupiesOffHand
+            or Slots:IsTwoHanded(occupied.weaponType))) then
             planned = planned + 1
             local itemLink, enchantmentMatches, traitMatches = itemLinkForRequirement(
                 self.owner,
@@ -222,7 +334,7 @@ function StatImpact:GetEquippedLinks(bar)
     if not GetItemLink then
         return links
     end
-    for _, slotKey in ipairs(activeSlotKeys(bar)) do
+    for _, slotKey in ipairs(Slots:GetActiveSlotKeys(bar)) do
         local definition = Slots:Get(slotKey)
         local itemLink = definition and GetItemLink(
             BAG_WORN,
@@ -392,16 +504,77 @@ end
 function StatImpact:BuildReport(setup, bar)
     bar = bar == "back" and "back" or "front"
     local plannedLinks, resolved, planned = self:GetPlannedLinks(setup, bar)
+    local equippedCoverage = self:GetEquippedCoverage(setup, bar)
     return {
         live = self:GetLiveStats(),
         snapshot = setup.statSnapshots and setup.statSnapshots[bar],
         effects = self:BuildEffects(setup, bar, plannedLinks),
         resolved = resolved,
         planned = planned,
+        equippedCoverage = equippedCoverage,
         bar = bar,
         liveBar = self:GetLiveBar(),
         snapshotStale = self.owner.data:IsStatSnapshotStale(setup, bar),
     }
+end
+
+function StatImpact:GetCaptureStatus(setup, bar)
+    local snapshot = setup.statSnapshots and setup.statSnapshots[bar]
+    if not snapshot then
+        return "missing", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED_SHORT
+    end
+    if self.owner.data:IsStatSnapshotStale(setup, bar) then
+        return "stale", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_STALE_SHORT
+    end
+    return "current", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CURRENT
+end
+
+function StatImpact:GetNextCaptureBar(setup, capturedBar)
+    local otherBar = capturedBar == "front" and "back" or "front"
+    local otherStatus = self:GetCaptureStatus(setup, otherBar)
+    if otherStatus ~= "current" then
+        return otherBar
+    end
+    local currentStatus = self:GetCaptureStatus(setup, capturedBar)
+    return currentStatus ~= "current" and capturedBar or nil
+end
+
+function StatImpact:FormatCaptureProgress(setup)
+    local _, frontStatusId = self:GetCaptureStatus(setup, "front")
+    local _, backStatusId = self:GetCaptureStatus(setup, "back")
+    local text = zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_PROGRESS,
+        GetString(frontStatusId),
+        GetString(backStatusId)
+    )
+    local nextBar = self:GetNextCaptureBar(setup, "back")
+    if nextBar then
+        text = text .. "\n" .. zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_NEXT,
+            GetString(nextBar == "back"
+                and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+                or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
+        )
+    else
+        text = text .. "\n" .. GetString(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_COMPLETE
+        )
+    end
+    return text
+end
+
+function StatImpact:FormatCaptureConfirmation(setup, bar, coverage)
+    coverage = coverage or self:GetEquippedCoverage(setup, bar)
+    return zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONFIRM_CAPTURE,
+        setup.name,
+        GetString(bar == "back"
+            and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
+            or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
+        coverage.ready,
+        coverage.adjustable,
+        coverage.missing
+    )
 end
 
 function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
@@ -414,7 +587,10 @@ function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
     local capturedAt = GetDateStringFromTimestamp
         and GetDateStringFromTimestamp(snapshot.createdAt)
         or tostring(snapshot.createdAt or "")
-    return zo_strformat(
+    if snapshot.captureTime and snapshot.captureTime ~= "" then
+        capturedAt = capturedAt .. " " .. snapshot.captureTime
+    end
+    local details = zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SNAPSHOT_DETAILS,
         characterName,
         capturedAt,
@@ -424,5 +600,19 @@ function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
         GetString(stale
             and SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_STALE
             or SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CURRENT)
+    )
+    local food = snapshot.foodName and snapshot.foodName ~= ""
+        and snapshot.foodName
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_FOOD)
+    local mundus = snapshot.mundus and snapshot.mundus > 0
+        and GetString("SI_MUNDUSSTONE", snapshot.mundus)
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_MUNDUS)
+    return details .. "\n" .. zo_strformat(
+        SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT,
+        food,
+        mundus,
+        GetString(snapshot.inCombat
+            and SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_IN_COMBAT
+            or SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_OUT_OF_COMBAT)
     )
 end
