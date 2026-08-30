@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 12
+local SCHEMA_VERSION = 13
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
 local MAX_REVISION_BYTES = 2097152
@@ -16,6 +16,7 @@ local MAX_CONSUMABLES = 20
 local MAX_CONSUMABLE_QUANTITY = 9999
 local MAX_CHECKLIST_ENTRIES = 100
 local MAX_CHECKLIST_RANK = 50
+local MAX_STAT_CONTEXTS = 12
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local Validation = GravvyBuildPlannerValidation
 local MAX_BUILDS = Validation.MAX_BUILDS
@@ -477,6 +478,30 @@ local function copyStatSnapshots(source, legacy)
     if type(source) == "table" then
         snapshots.front = copyStatSnapshot(source.front)
         snapshots.back = copyStatSnapshot(source.back)
+        if type(source.contexts) == "table" then
+            local seen = {}
+            local contexts = {}
+            for _, sourceContext in ipairs(source.contexts) do
+                local key = type(sourceContext) == "table"
+                    and plain(sourceContext.key, MAX_NAME_LENGTH, false)
+                local name = type(sourceContext) == "table"
+                    and plain(sourceContext.name, MAX_NAME_LENGTH, false)
+                local normalizedKey = key and zo_strlower(key)
+                if key and name and not seen[normalizedKey] and #contexts < MAX_STAT_CONTEXTS then
+                    local context = {
+                        key = key,
+                        name = name,
+                        front = copyStatSnapshot(sourceContext.front),
+                        back = copyStatSnapshot(sourceContext.back),
+                    }
+                    if context.front or context.back then
+                        contexts[#contexts + 1] = context
+                        seen[normalizedKey] = true
+                    end
+                end
+            end
+            snapshots.contexts = #contexts > 0 and contexts or nil
+        end
     end
     if not snapshots.front and legacy then
         snapshots.front = copyStatSnapshot(legacy)
@@ -1883,16 +1908,43 @@ function Data:SetStatSnapshot(buildId, setupId, bar, snapshot)
     if not copy then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_UNAVAILABLE)
     end
+    local contextKey = type(snapshot.contextKey) == "string"
+        and plain(snapshot.contextKey, MAX_NAME_LENGTH, false) or "general"
+    local contextName = type(snapshot.contextName) == "string"
+        and plain(snapshot.contextName, MAX_NAME_LENGTH, false) or contextKey
+    if not contextKey or not contextName then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_INVALID)
+    end
     setup.statSnapshots = setup.statSnapshots or {}
     copy.bar = bar
     copy.fingerprint = self:GetSetupFingerprint(setup)
-    setup.statSnapshots[bar] = copy
+    if zo_strlower(contextKey) == "general" then
+        setup.statSnapshots[bar] = copy
+    else
+        setup.statSnapshots.contexts = setup.statSnapshots.contexts or {}
+        local context
+        for _, entry in ipairs(setup.statSnapshots.contexts) do
+            if zo_strlower(entry.key) == zo_strlower(contextKey) then
+                context = entry
+                break
+            end
+        end
+        if not context then
+            if #setup.statSnapshots.contexts >= MAX_STAT_CONTEXTS then
+                return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_LIMIT)
+            end
+            context = { key = contextKey, name = contextName }
+            setup.statSnapshots.contexts[#setup.statSnapshots.contexts + 1] = context
+        end
+        context.name = contextName
+        context[bar] = copy
+    end
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
     return true, setup
 end
 
-function Data:ClearStatSnapshot(buildId, setupId, bar)
+function Data:ClearStatSnapshot(buildId, setupId, bar, contextKey)
     local build = self:FindBuild(buildId)
     local setup = self:FindSetup(build, setupId)
     if not setup then
@@ -1901,8 +1953,24 @@ function Data:ClearStatSnapshot(buildId, setupId, bar)
     if bar ~= "front" and bar ~= "back" then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_STAT_BAR)
     end
+    contextKey = type(contextKey) == "string" and zo_strlower(contextKey) or "general"
     if setup.statSnapshots then
-        setup.statSnapshots[bar] = nil
+        if contextKey == "general" then
+            setup.statSnapshots[bar] = nil
+        else
+            for index, context in ipairs(setup.statSnapshots.contexts or {}) do
+                if zo_strlower(context.key) == contextKey then
+                    context[bar] = nil
+                    if not context.front and not context.back then
+                        table.remove(setup.statSnapshots.contexts, index)
+                    end
+                    break
+                end
+            end
+            if setup.statSnapshots.contexts and #setup.statSnapshots.contexts == 0 then
+                setup.statSnapshots.contexts = nil
+            end
+        end
         if next(setup.statSnapshots) == nil then
             setup.statSnapshots = nil
         end
@@ -1912,12 +1980,25 @@ function Data:ClearStatSnapshot(buildId, setupId, bar)
     return true, setup
 end
 
+function Data:GetStatSnapshot(setup, bar, contextKey)
+    if not setup or not setup.statSnapshots then return nil end
+    contextKey = type(contextKey) == "string" and zo_strlower(contextKey) or "general"
+    if contextKey == "general" then return setup.statSnapshots[bar] end
+    for _, context in ipairs(setup.statSnapshots.contexts or {}) do
+        if zo_strlower(context.key) == contextKey then return context[bar], context end
+    end
+end
+
+function Data:GetStatContexts(setup)
+    return setup and setup.statSnapshots and setup.statSnapshots.contexts or {}
+end
+
 function Data:GetSetupFingerprint(setup)
     return setup and fingerprint(setupFingerprintPayload(setup)) or nil
 end
 
-function Data:IsStatSnapshotStale(setup, bar)
-    local snapshot = setup and setup.statSnapshots and setup.statSnapshots[bar]
+function Data:IsStatSnapshotStale(setup, bar, contextKey)
+    local snapshot = self:GetStatSnapshot(setup, bar, contextKey)
     if not snapshot then
         return nil
     end

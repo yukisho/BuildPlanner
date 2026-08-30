@@ -1564,16 +1564,35 @@ function Gamepad:GetStatImpactSetup()
 end
 
 function Gamepad:GetStatImpactText()
-    local setup = self:GetStatImpactSetup()
+    local setup, build = self:GetStatImpactSetup()
+    local compareSetup = self.statImpactCompareSetupId
+        and self.owner.data:FindSetup(build, self.statImpactCompareSetupId)
     local bar = self.statImpactBar == "back" and "back" or "front"
-    local report = self.owner.statImpact:BuildReport(setup, bar)
-    local snapshotValues = report.snapshot and report.snapshot.values or {}
-    local comparable = not report.snapshotStale
-        and (not report.liveBar or report.liveBar == report.bar)
+    local contextKey = self.statImpactContextKey or "general"
+    local contextName = self.statImpactContextName
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL)
+    local report = self.owner.statImpact:BuildReport(setup, bar, contextKey, compareSetup)
+    local leftValues
+    if compareSetup then
+        leftValues = report.snapshot and report.snapshot.values or {}
+    else
+        leftValues = report.live
+    end
+    local rightSnapshot = compareSetup and report.compareSnapshot or report.snapshot
+    local rightValues = rightSnapshot and rightSnapshot.values or {}
+    local comparable
+    if compareSetup then
+        comparable = report.snapshot ~= nil and report.compareSnapshot ~= nil
+            and not report.snapshotStale and not report.compareSnapshotStale
+    else
+        comparable = report.snapshot ~= nil and not report.snapshotStale
+            and (not report.liveBar or report.liveBar == report.bar)
+    end
     local lines = {
         GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_HELP),
         "",
-        setup.name .. " · " .. GetString(bar == "back"
+        contextName .. " · " .. setup.name .. (compareSetup
+            and " → " .. compareSetup.name or "") .. " · " .. GetString(bar == "back"
             and SI_GRAVVY_BUILD_PLANNER_BACK_BAR
             or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR),
         "",
@@ -1581,12 +1600,21 @@ function Gamepad:GetStatImpactText()
         self.owner.statImpact:FormatSnapshotDetails(
             report.snapshot,
             report.bar,
-            report.snapshotStale
+            report.snapshotStale,
+            contextName
         ),
     }
+    if compareSetup then
+        lines[#lines + 1] = self.owner.statImpact:FormatSnapshotDetails(
+            report.compareSnapshot,
+            report.bar,
+            report.compareSnapshotStale,
+            contextName
+        )
+    end
     for _, row in ipairs(self.owner.statImpact:GetStatRows()) do
-        local liveValue = report.live[row.key]
-        local snapshotValue = snapshotValues[row.key]
+        local liveValue = leftValues and leftValues[row.key]
+        local snapshotValue = rightValues[row.key]
         lines[#lines + 1] = GetString(row.label)
             .. ": " .. self.owner.statImpact:FormatValue(row, liveValue)
             .. " → " .. self.owner.statImpact:FormatValue(row, snapshotValue)
@@ -1610,6 +1638,11 @@ function Gamepad:GetStatImpactText()
         report.equippedCoverage.adjustable,
         report.equippedCoverage.missing
     )
+    for index = 1, math.min(6, #(report.changes or {})) do
+        local change = report.changes[index]
+        lines[#lines + 1] = change.section .. " · " .. change.label
+            .. ": " .. change.left .. " → " .. change.right
+    end
     for index = 1, math.min(6, #report.effects) do
         local effect = report.effects[index]
         lines[#lines + 1] = effect.label .. ": " .. effect.description
@@ -1623,19 +1656,24 @@ function Gamepad:GetStatImpactText()
         lines[#lines + 1] = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_EFFECTS)
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = self.owner.statImpact:FormatCaptureProgress(setup)
+    lines[#lines + 1] = self.owner.statImpact:FormatCaptureProgress(setup, contextKey)
     return table.concat(lines, "\n")
 end
 
 function Gamepad:ShowStatImpactDialog(setupId)
     local build = self.owner.data:GetCurrentBuild()
-    local setup = setupId and self.owner.data:FindSetup(build, setupId)
-    if not setup and self.activeView == "comparison" then
-        setup = self.comparisonSetupId
+    local setup = self.owner.data:GetCurrentSetup()
+    local compareSetup = setupId and self.owner.data:FindSetup(build, setupId)
+    if not compareSetup and self.activeView == "comparison" then
+        compareSetup = self.comparisonSetupId
             and self.owner.data:FindSetup(build, self.comparisonSetupId)
     end
-    setup = setup or self.owner.data:GetCurrentSetup()
+    self.statImpactCompareSetupId = compareSetup and compareSetup.id ~= setup.id
+        and compareSetup.id or nil
     self.statImpactSetupId = setup.id
+    self.statImpactContextKey = self.statImpactContextKey or "general"
+    self.statImpactContextName = self.statImpactContextName
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL)
     self.statImpactBar = self.statImpactBar == "back" and "back" or "front"
     ZO_Dialogs_ShowGamepadDialog(STAT_IMPACT_DIALOG)
 end
@@ -1644,6 +1682,38 @@ function Gamepad:ReopenStatImpactDialog()
     releaseAndOpen(STAT_IMPACT_DIALOG, function()
         ZO_Dialogs_ShowGamepadDialog(STAT_IMPACT_DIALOG)
     end)
+end
+
+function Gamepad:CycleStatImpactContext()
+    local choices = {
+        { key = "general", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL) },
+        { key = "unbuffed", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_UNBUFFED) },
+        { key = "food", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_FOOD) },
+        { key = "trial", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_TRIAL) },
+    }
+    local seen = { general = true, unbuffed = true, food = true, trial = true }
+    local setup, build = self:GetStatImpactSetup()
+    local compareSetup = self.statImpactCompareSetupId
+        and self.owner.data:FindSetup(build, self.statImpactCompareSetupId)
+    local function addContexts(source)
+        for _, context in ipairs(self.owner.data:GetStatContexts(source)) do
+            local key = zo_strlower(context.key)
+            if not seen[key] then
+                choices[#choices + 1] = { key = context.key, name = context.name }
+                seen[key] = true
+            end
+        end
+    end
+    addContexts(setup)
+    addContexts(compareSetup)
+    local current = 1
+    for index, choice in ipairs(choices) do
+        if choice.key == self.statImpactContextKey then current = index break end
+    end
+    local choice = choices[(current % #choices) + 1]
+    self.statImpactContextKey = choice.key
+    self.statImpactContextName = choice.name
+    self:ReopenStatImpactDialog()
 end
 
 function Gamepad:OpenStatImpactCapture()
@@ -1664,19 +1734,28 @@ function Gamepad:OpenStatImpactCapture()
     self.pendingConfirmText = self.owner.statImpact:FormatCaptureConfirmation(
         setup,
         bar,
-        coverage
+        coverage,
+        self.statImpactContextName
     )
     self.pendingConfirm = function()
+        local snapshot = self.owner.statImpact:MakeSnapshot(setup, bar, coverage)
+        snapshot.contextKey = self.statImpactContextKey or "general"
+        snapshot.contextName = self.statImpactContextName
+            or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL)
         local ok, message = self.owner.data:SetStatSnapshot(
             build.id,
             setup.id,
             bar,
-            self.owner.statImpact:MakeSnapshot(setup, bar, coverage)
+            snapshot
         )
         if not ok then
             return false, message
         end
-        local nextBar = self.owner.statImpact:GetNextCaptureBar(setup, bar)
+        local nextBar = self.owner.statImpact:GetNextCaptureBar(
+            setup,
+            bar,
+            self.statImpactContextKey
+        )
         if nextBar then
             self.statImpactBar = nextBar
             return true, zo_strformat(
@@ -1717,6 +1796,11 @@ function Gamepad:InitializeStatImpactDialog()
                 keybind = "DIALOG_SECONDARY",
                 text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_ACTION,
                 callback = function() self:OpenStatImpactCapture() end,
+            },
+            {
+                keybind = "DIALOG_TERTIARY",
+                text = SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SWITCH_CONTEXT,
+                callback = function() self:CycleStatImpactContext() end,
             },
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
         },

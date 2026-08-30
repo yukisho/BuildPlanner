@@ -663,6 +663,26 @@ expectEqual(invalidBarMessage, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_STAT_BAR)
 local copiedSnapshotSetup = data:DuplicateSetup(snapshotBuild.id, snapshotSetup.id, "Snapshot Copy")
 expectEqual(copiedSnapshotSetup.statSnapshots, nil,
     "copied setups should not inherit character-specific stat snapshots")
+local namedSnapshotSaved = data:SetStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front", {
+    characterName = "Test Warden",
+    contextKey = "unbuffed",
+    contextName = "Unbuffed",
+    values = { maxHealth = 28000, weaponDamage = 5000 },
+})
+expect(namedSnapshotSaved, "named stat contexts should accept exact captures")
+local namedSnapshot, namedContext = data:GetStatSnapshot(
+    snapshotSetup,
+    "front",
+    "unbuffed"
+)
+expectEqual(namedSnapshot.values.maxHealth, 28000,
+    "named stat contexts should retain independent values")
+expectEqual(namedContext.name, "Unbuffed",
+    "named stat contexts should retain their display name")
+expectEqual(#data:GetStatContexts(snapshotSetup), 1,
+    "named stat contexts should be discoverable by the UI")
+expect(data:ClearStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front", "unbuffed"),
+    "individual named stat captures should be removable")
 local snapshotCleared = data:ClearStatSnapshot(snapshotBuild.id, snapshotSetup.id, "front")
 expect(snapshotCleared, "stat snapshots should be removable")
 expectEqual(snapshotSetup.statSnapshots, nil, "clearing should remove the snapshot")
@@ -731,7 +751,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 12, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 13, "migration should advance the saved-data schema")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
     "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")

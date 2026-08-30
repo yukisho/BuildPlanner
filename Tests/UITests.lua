@@ -933,7 +933,7 @@ expect(ui.captureButton, "keyboard users should have a character capture action"
 expect(ui.revisionButton, "keyboard users should have a revision history action")
 expect(ui.statImpactButton, "the comparison view should expose stat impact")
 expect(ui.statImpactDialog, "keyboard users should have a stat impact window")
-expectEqual(ui.statImpactDialog.width, 1040,
+expectEqual(ui.statImpactDialog.width, 1180,
     "the stat impact window should leave room for readable effect descriptions")
 expectEqual(ui.statImpactDialog.height, 760,
     "the stat impact window should leave room for capture guidance")
@@ -974,6 +974,39 @@ expectEqual(ui.statImpactRows[1].change:GetText(), "0",
     "a fresh snapshot should have no delta from the same live stats")
 expect(ui.statImpactSnapshotLabel:GetText():find("current", 1, true),
     "stat impact should identify a snapshot whose setup fingerprint is current")
+local comparisonBuild = BuildPlannerTestData:GetCurrentBuild()
+local comparisonStatSetup
+for _, candidate in ipairs(comparisonBuild.setups) do
+    if candidate.id ~= statSetup.id then comparisonStatSetup = candidate break end
+end
+expect(BuildPlannerTestData:SetStatSnapshot(comparisonBuild.id, statSetup.id, "front", {
+    contextKey = "unbuffed",
+    contextName = "Unbuffed",
+    values = { maxMagicka = 15000 },
+}), "the current setup should accept a named comparison capture")
+expect(BuildPlannerTestData:SetStatSnapshot(comparisonBuild.id, comparisonStatSetup.id, "front", {
+    contextKey = "unbuffed",
+    contextName = "Unbuffed",
+    values = { maxMagicka = 17000 },
+}), "the comparison setup should accept the same named context")
+ui:SelectStatImpactContext("unbuffed", "Unbuffed")
+ui:SelectStatImpactComparison(comparisonStatSetup.id)
+expectEqual(ui.statImpactRows[1].change:GetText(), "+2000",
+    "captured setups should compare front-bar snapshots directly")
+expectEqual(ui.statImpactLiveHeader:GetText(), statSetup.name,
+    "setup comparison should label the source snapshot")
+expectEqual(ui.statImpactSnapshotHeader:GetText(), comparisonStatSetup.name,
+    "setup comparison should label the target snapshot")
+expect(#ui.statImpactEffects > 0,
+    "setup stat comparison should include the planned changes behind its deltas")
+ui:SelectStatImpactBar("back")
+expectEqual(ui.statImpactRows[1].live:GetText(), "—",
+    "a missing source capture should not fall back to live character stats")
+expectEqual(ui.statImpactRows[1].change:GetText(), "—",
+    "setup deltas should require matching captures from both setups")
+ui:SelectStatImpactBar("front")
+ui:SelectStatImpactComparison(nil)
+ui:SelectStatImpactContext("general", "General")
 BuildPlannerTestData:UpdateSetup(
     BuildPlannerTestData:GetCurrentBuild().id,
     statSetup.id,
@@ -1389,6 +1422,9 @@ expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_STAT_IMPACT",
     "gamepad users should be able to inspect stat impact")
 expect(gamepad:GetStatImpactText():find("Maximum Magicka", 1, true),
     "gamepad stat impact should include character-sheet rows")
+gamepad:CycleStatImpactContext()
+expectEqual(gamepad.statImpactContextKey, "unbuffed",
+    "gamepad users should be able to cycle named stat contexts")
 local gamepadRevisionAction = gamepadDialogs[
     "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
 ].parametricList[6]

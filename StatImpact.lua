@@ -501,53 +501,71 @@ function StatImpact:BuildEffects(setup, bar, plannedLinks)
     return effects
 end
 
-function StatImpact:BuildReport(setup, bar)
+function StatImpact:BuildReport(setup, bar, contextKey, compareSetup)
     bar = bar == "back" and "back" or "front"
-    local plannedLinks, resolved, planned = self:GetPlannedLinks(setup, bar)
-    local equippedCoverage = self:GetEquippedCoverage(setup, bar)
+    local effectSetup = compareSetup or setup
+    local plannedLinks, resolved, planned = self:GetPlannedLinks(effectSetup, bar)
+    local equippedCoverage = self:GetEquippedCoverage(effectSetup, bar)
+    local snapshot = self.owner.data:GetStatSnapshot(setup, bar, contextKey)
+    local compareSnapshot = compareSetup
+        and self.owner.data:GetStatSnapshot(compareSetup, bar, contextKey) or nil
+    local changes = {}
+    if compareSetup then
+        for _, change in ipairs(GravvyBuildPlannerComparison:Build(setup, compareSetup)) do
+            if change.sectionKey ~= "setup" and change.sectionKey ~= "checklist" then
+                changes[#changes + 1] = change
+            end
+        end
+    end
     return {
         live = self:GetLiveStats(),
-        snapshot = setup.statSnapshots and setup.statSnapshots[bar],
-        effects = self:BuildEffects(setup, bar, plannedLinks),
+        snapshot = snapshot,
+        compareSnapshot = compareSnapshot,
+        compareSetup = compareSetup,
+        changes = changes,
+        effects = self:BuildEffects(effectSetup, bar, plannedLinks),
         resolved = resolved,
         planned = planned,
         equippedCoverage = equippedCoverage,
         bar = bar,
         liveBar = self:GetLiveBar(),
-        snapshotStale = self.owner.data:IsStatSnapshotStale(setup, bar),
+        snapshotStale = self.owner.data:IsStatSnapshotStale(setup, bar, contextKey),
+        compareSnapshotStale = compareSetup
+            and self.owner.data:IsStatSnapshotStale(compareSetup, bar, contextKey) or nil,
+        contextKey = contextKey or "general",
     }
 end
 
-function StatImpact:GetCaptureStatus(setup, bar)
-    local snapshot = setup.statSnapshots and setup.statSnapshots[bar]
+function StatImpact:GetCaptureStatus(setup, bar, contextKey)
+    local snapshot = self.owner.data:GetStatSnapshot(setup, bar, contextKey)
     if not snapshot then
         return "missing", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED_SHORT
     end
-    if self.owner.data:IsStatSnapshotStale(setup, bar) then
+    if self.owner.data:IsStatSnapshotStale(setup, bar, contextKey) then
         return "stale", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_STALE_SHORT
     end
     return "current", SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CURRENT
 end
 
-function StatImpact:GetNextCaptureBar(setup, capturedBar)
+function StatImpact:GetNextCaptureBar(setup, capturedBar, contextKey)
     local otherBar = capturedBar == "front" and "back" or "front"
-    local otherStatus = self:GetCaptureStatus(setup, otherBar)
+    local otherStatus = self:GetCaptureStatus(setup, otherBar, contextKey)
     if otherStatus ~= "current" then
         return otherBar
     end
-    local currentStatus = self:GetCaptureStatus(setup, capturedBar)
+    local currentStatus = self:GetCaptureStatus(setup, capturedBar, contextKey)
     return currentStatus ~= "current" and capturedBar or nil
 end
 
-function StatImpact:FormatCaptureProgress(setup)
-    local _, frontStatusId = self:GetCaptureStatus(setup, "front")
-    local _, backStatusId = self:GetCaptureStatus(setup, "back")
+function StatImpact:FormatCaptureProgress(setup, contextKey)
+    local _, frontStatusId = self:GetCaptureStatus(setup, "front", contextKey)
+    local _, backStatusId = self:GetCaptureStatus(setup, "back", contextKey)
     local text = zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_PROGRESS,
         GetString(frontStatusId),
         GetString(backStatusId)
     )
-    local nextBar = self:GetNextCaptureBar(setup, "back")
+    local nextBar = self:GetNextCaptureBar(setup, "back", contextKey)
     if nextBar then
         text = text .. "\n" .. zo_strformat(
             SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CAPTURE_NEXT,
@@ -563,9 +581,9 @@ function StatImpact:FormatCaptureProgress(setup)
     return text
 end
 
-function StatImpact:FormatCaptureConfirmation(setup, bar, coverage)
+function StatImpact:FormatCaptureConfirmation(setup, bar, coverage, contextName)
     coverage = coverage or self:GetEquippedCoverage(setup, bar)
-    return zo_strformat(
+    local text = zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONFIRM_CAPTURE,
         setup.name,
         GetString(bar == "back"
@@ -575,9 +593,16 @@ function StatImpact:FormatCaptureConfirmation(setup, bar, coverage)
         coverage.adjustable,
         coverage.missing
     )
+    if contextName and contextName ~= "" then
+        text = zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NAMED_CONTEXT,
+            contextName
+        ) .. "\n" .. text
+    end
+    return text
 end
 
-function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
+function StatImpact:FormatSnapshotDetails(snapshot, bar, stale, contextName)
     if not snapshot then
         return GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED)
     end
@@ -607,6 +632,12 @@ function StatImpact:FormatSnapshotDetails(snapshot, bar, stale)
     local mundus = snapshot.mundus and snapshot.mundus > 0
         and GetString("SI_MUNDUSSTONE", snapshot.mundus)
         or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NO_MUNDUS)
+    if contextName and contextName ~= "" then
+        details = zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NAMED_CONTEXT,
+            contextName
+        ) .. " · " .. details
+    end
     return details .. "\n" .. zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT,
         food,

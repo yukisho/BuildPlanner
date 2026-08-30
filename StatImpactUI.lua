@@ -45,7 +45,7 @@ end
 
 function UI:CreateStatImpactDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("GravvyBuildPlannerStatImpactWindow")
-    dialog:SetDimensions(1040, 760)
+    dialog:SetDimensions(1180, 760)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -55,6 +55,8 @@ function UI:CreateStatImpactDialog()
     self.statImpactDialog = dialog
     self:RegisterDialog(dialog)
     self.statImpactBar = "front"
+    self.statImpactContextKey = "general"
+    self.statImpactContextName = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL)
     self.statImpactEffectOffset = 0
 
     local backdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
@@ -96,15 +98,34 @@ function UI:CreateStatImpactDialog()
         "GravvyBuildPlannerStatImpactSetupCombo",
         76,
         48,
-        310
+        240
     )
-    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_ACTIVE_BAR), 630, 48, 100)
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_COMPARE_WITH), 328, 48, 70)
+    self.statImpactCompareCombo = makeCombo(
+        dialog,
+        "GravvyBuildPlannerStatImpactCompareCombo",
+        398,
+        48,
+        240
+    )
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_LABEL), 650, 48, 65)
+    self.statImpactContextCombo = makeCombo(
+        dialog,
+        "GravvyBuildPlannerStatImpactContextCombo",
+        715,
+        48,
+        170
+    )
+    self.statImpactAddContext = makeButton(dialog, "+", 32)
+    self.statImpactAddContext:SetAnchor(TOPLEFT, dialog, TOPLEFT, 891, 49)
+    self.statImpactAddContext:SetHandler("OnClicked", function() self:AddStatImpactContext() end)
+    makeLabel(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_ACTIVE_BAR), 930, 48, 100)
     self.statImpactBarCombo = makeCombo(
         dialog,
         "GravvyBuildPlannerStatImpactBarCombo",
-        730,
+        1020,
         48,
-        270
+        140
     )
 
     self.statImpactHelp = makeLabel(
@@ -112,7 +133,7 @@ function UI:CreateStatImpactDialog()
         GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_HELP),
         18,
         82,
-        1004,
+        1144,
         44,
         "ZoFontGameSmall"
     )
@@ -157,7 +178,15 @@ function UI:CreateStatImpactDialog()
         28,
         "ZoFontGameBold"
     )
-    makeLabel(statHeader, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SNAPSHOT), 270, 0, 86, 28, "ZoFontGameBold")
+    self.statImpactSnapshotHeader = makeLabel(
+        statHeader,
+        GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SNAPSHOT),
+        270,
+        0,
+        86,
+        28,
+        "ZoFontGameBold"
+    )
     makeLabel(statHeader, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CHANGE), 360, 0, 64, 28, "ZoFontGameBold")
 
     self.statImpactRows = {}
@@ -273,10 +302,10 @@ end
 
 function UI:OpenStatImpact(setupId)
     local build = self.owner.data:GetCurrentBuild()
-    local setup = setupId and self.owner.data:FindSetup(build, setupId)
-    if not setup then
-        setup = self.owner.data:GetCurrentSetup()
-    end
+    local setup = self.owner.data:GetCurrentSetup()
+    local compareSetup = setupId and self.owner.data:FindSetup(build, setupId)
+    self.statImpactCompareSetupId = compareSetup and compareSetup.id ~= setup.id
+        and compareSetup.id or nil
     self.statImpactSetupId = setup.id
     self.statImpactEffectOffset = 0
     self.statImpactDialog:SetHidden(false)
@@ -285,8 +314,35 @@ end
 
 function UI:SelectStatImpactSetup(setupId)
     self.statImpactSetupId = setupId
+    if self.statImpactCompareSetupId == setupId then self.statImpactCompareSetupId = nil end
     self.statImpactEffectOffset = 0
     self:RefreshStatImpact()
+end
+
+function UI:SelectStatImpactComparison(setupId)
+    self.statImpactCompareSetupId = setupId
+    self.statImpactEffectOffset = 0
+    self:RefreshStatImpact()
+end
+
+function UI:SelectStatImpactContext(key, name)
+    self.statImpactContextKey = key or "general"
+    self.statImpactContextName = name or key
+    self.statImpactEffectOffset = 0
+    self:RefreshStatImpact()
+end
+
+function UI:AddStatImpactContext()
+    self:OpenNameDialog("", function(value)
+        value = zo_strtrim(value or "")
+        if value == "" or #value > 90 then
+            return false, GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_INVALID)
+        end
+        self.statImpactContextKey = "custom:" .. zo_strlower(value)
+        self.statImpactContextName = value
+        self:RefreshStatImpact()
+        return true
+    end, SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_NEW)
 end
 
 function UI:SelectStatImpactBar(bar)
@@ -308,6 +364,61 @@ function UI:RefreshStatImpact()
     finishCombo(self.statImpactSetupCombo)
     self.statImpactSetupCombo:SetSelectedItem(setup.name)
 
+    local compareSetup = self.statImpactCompareSetupId
+        and self.owner.data:FindSetup(build, self.statImpactCompareSetupId)
+    self.statImpactCompareCombo:ClearItems()
+    self.statImpactCompareCombo:AddItem(self.statImpactCompareCombo:CreateItemEntry(
+        GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_LIVE_CHARACTER),
+        function() self:SelectStatImpactComparison(nil) end
+    ), ZO_COMBOBOX_SUPPRESS_UPDATE)
+    for _, choice in ipairs(build.setups) do
+        if choice.id ~= setup.id then
+            local setupId = choice.id
+            self.statImpactCompareCombo:AddItem(self.statImpactCompareCombo:CreateItemEntry(
+                choice.name,
+                function() self:SelectStatImpactComparison(setupId) end
+            ), ZO_COMBOBOX_SUPPRESS_UPDATE)
+        end
+    end
+    finishCombo(self.statImpactCompareCombo)
+    self.statImpactCompareCombo:SetSelectedItem(compareSetup and compareSetup.name
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_LIVE_CHARACTER))
+
+    local contexts = {
+        { key = "general", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_GENERAL) },
+        { key = "unbuffed", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_UNBUFFED) },
+        { key = "food", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_FOOD) },
+        { key = "trial", name = GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_CONTEXT_TRIAL) },
+    }
+    local seen = { general = true, unbuffed = true, food = true, trial = true }
+    local function addContexts(source)
+        for _, context in ipairs(self.owner.data:GetStatContexts(source)) do
+            local key = zo_strlower(context.key)
+            if not seen[key] then
+                contexts[#contexts + 1] = { key = context.key, name = context.name }
+                seen[key] = true
+            end
+        end
+    end
+    addContexts(setup)
+    addContexts(compareSetup)
+    if not seen[zo_strlower(self.statImpactContextKey)] then
+        contexts[#contexts + 1] = {
+            key = self.statImpactContextKey,
+            name = self.statImpactContextName,
+        }
+    end
+    self.statImpactContextCombo:ClearItems()
+    for _, context in ipairs(contexts) do
+        local key, name = context.key, context.name
+        self.statImpactContextCombo:AddItem(self.statImpactContextCombo:CreateItemEntry(
+            name,
+            function() self:SelectStatImpactContext(key, name) end
+        ), ZO_COMBOBOX_SUPPRESS_UPDATE)
+    end
+    finishCombo(self.statImpactContextCombo)
+    self.statImpactContextCombo:SetSelectedItem(self.statImpactContextName)
+
     self.statImpactBarCombo:ClearItems()
     local barChoices = {
         { key = "front", label = GetString(SI_GRAVVY_BUILD_PLANNER_FRONT_BAR) },
@@ -327,18 +438,38 @@ function UI:RefreshStatImpact()
             or SI_GRAVVY_BUILD_PLANNER_FRONT_BAR)
     )
 
-    local report = self.owner.statImpact:BuildReport(setup, self.statImpactBar)
+    local report = self.owner.statImpact:BuildReport(
+        setup,
+        self.statImpactBar,
+        self.statImpactContextKey,
+        compareSetup
+    )
     local liveBar = report.liveBar or report.bar
-    self.statImpactLiveHeader:SetText(zo_strformat(
+    self.statImpactLiveHeader:SetText(compareSetup and setup.name or zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_LIVE_BAR,
         liveBar == "back" and 2 or 1
     ))
-    local comparable = not report.snapshotStale
-        and (not report.liveBar or report.liveBar == report.bar)
-    local snapshotValues = report.snapshot and report.snapshot.values or {}
+    self.statImpactSnapshotHeader:SetText(compareSetup and compareSetup.name
+        or GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_SNAPSHOT))
+    local leftValues
+    if compareSetup then
+        leftValues = report.snapshot and report.snapshot.values or {}
+    else
+        leftValues = report.live
+    end
+    local rightSnapshot = compareSetup and report.compareSnapshot or report.snapshot
+    local rightValues = rightSnapshot and rightSnapshot.values or {}
+    local comparable
+    if compareSetup then
+        comparable = report.snapshot ~= nil and report.compareSnapshot ~= nil
+            and not report.snapshotStale and not report.compareSnapshotStale
+    else
+        comparable = report.snapshot ~= nil and not report.snapshotStale
+            and (not report.liveBar or report.liveBar == report.bar)
+    end
     for _, row in ipairs(self.statImpactRows) do
-        local liveValue = report.live[row.stat.key]
-        local snapshotValue = snapshotValues[row.stat.key]
+        local liveValue = leftValues and leftValues[row.stat.key]
+        local snapshotValue = rightValues[row.stat.key]
         row.live:SetText(self.owner.statImpact:FormatValue(row.stat, liveValue))
         row.snapshot:SetText(self.owner.statImpact:FormatValue(row.stat, snapshotValue))
         row.change:SetText(comparable
@@ -360,9 +491,15 @@ function UI:RefreshStatImpact()
     self.statImpactSnapshotLabel:SetText(self.owner.statImpact:FormatSnapshotDetails(
         report.snapshot,
         report.bar,
-        report.snapshotStale
-    ))
-    if report.snapshotStale then
+        report.snapshotStale,
+        self.statImpactContextName
+    ) .. (compareSetup and "\n" .. self.owner.statImpact:FormatSnapshotDetails(
+        report.compareSnapshot,
+        report.bar,
+        report.compareSnapshotStale,
+        self.statImpactContextName
+    ) or ""))
+    if report.snapshotStale or report.compareSnapshotStale then
         self.statImpactSnapshotLabel:SetColor(1, 0.55, 0.3, 1)
     else
         self.statImpactSnapshotLabel:SetColor(0.88, 0.86, 0.8, 1)
@@ -383,28 +520,36 @@ function UI:RefreshStatImpact()
         coverage.missing
     ))
     self.statImpactCaptureProgress:SetText(
-        self.owner.statImpact:FormatCaptureProgress(setup)
+        self.owner.statImpact:FormatCaptureProgress(setup, self.statImpactContextKey)
     )
-    self.statImpactEffects = report.effects
-    local lastOffset = #report.effects > 0
-        and math.floor((#report.effects - 1) / EFFECT_ROWS) * EFFECT_ROWS
+    local effects = {}
+    for _, change in ipairs(report.changes or {}) do
+        effects[#effects + 1] = {
+            label = change.section .. " · " .. change.label,
+            description = change.left .. " → " .. change.right,
+        }
+    end
+    for _, effect in ipairs(report.effects) do effects[#effects + 1] = effect end
+    self.statImpactEffects = effects
+    local lastOffset = #effects > 0
+        and math.floor((#effects - 1) / EFFECT_ROWS) * EFFECT_ROWS
         or 0
     self.statImpactEffectOffset = zo_clamp(self.statImpactEffectOffset, 0, lastOffset)
     for index, label in ipairs(self.statImpactEffectRows) do
-        local effect = report.effects[self.statImpactEffectOffset + index]
+        local effect = effects[self.statImpactEffectOffset + index]
         label:SetHidden(not effect)
         if effect then
             label:SetText("|cEFB760" .. effect.label .. "|r\n" .. effect.description)
         end
     end
-    self.statImpactEffectsEmpty:SetHidden(#report.effects > 0)
-    local first = #report.effects == 0 and 0 or self.statImpactEffectOffset + 1
-    local last = math.min(#report.effects, self.statImpactEffectOffset + EFFECT_ROWS)
+    self.statImpactEffectsEmpty:SetHidden(#effects > 0)
+    local first = #effects == 0 and 0 or self.statImpactEffectOffset + 1
+    local last = math.min(#effects, self.statImpactEffectOffset + EFFECT_ROWS)
     self.statImpactPageLabel:SetText(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_CHAMPION_PAGE,
         first,
         last,
-        #report.effects
+        #effects
     ))
 end
 
@@ -436,9 +581,16 @@ function UI:RequestStatImpactCapture()
     local captureBar = self.statImpactBar
     local coverage = self.owner.statImpact:GetEquippedCoverage(setup, captureBar)
     self:OpenConfirm(
-        self.owner.statImpact:FormatCaptureConfirmation(setup, captureBar, coverage),
+        self.owner.statImpact:FormatCaptureConfirmation(
+            setup,
+            captureBar,
+            coverage,
+            self.statImpactContextName
+        ),
         function()
             local snapshot = self.owner.statImpact:MakeSnapshot(setup, captureBar, coverage)
+            snapshot.contextKey = self.statImpactContextKey
+            snapshot.contextName = self.statImpactContextName
             local ok, message = self.owner.data:SetStatSnapshot(
                 build.id,
                 setup.id,
@@ -448,7 +600,11 @@ function UI:RequestStatImpactCapture()
             if not ok then
                 return false, message
             end
-            local nextBar = self.owner.statImpact:GetNextCaptureBar(setup, captureBar)
+            local nextBar = self.owner.statImpact:GetNextCaptureBar(
+                setup,
+                captureBar,
+                self.statImpactContextKey
+            )
             if nextBar then
                 self.statImpactBar = nextBar
             end
@@ -474,7 +630,11 @@ end
 
 function UI:RequestStatImpactClear()
     local setup, build = self:GetStatImpactSetup()
-    if not setup.statSnapshots or not setup.statSnapshots[self.statImpactBar] then
+    if not self.owner.data:GetStatSnapshot(
+        setup,
+        self.statImpactBar,
+        self.statImpactContextKey
+    ) then
         self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_STAT_IMPACT_NOT_CAPTURED))
         return
     end
@@ -484,7 +644,8 @@ function UI:RequestStatImpactClear()
             local ok, message = self.owner.data:ClearStatSnapshot(
                 build.id,
                 setup.id,
-                self.statImpactBar
+                self.statImpactBar,
+                self.statImpactContextKey
             )
             if not ok then
                 return false, message
