@@ -926,7 +926,7 @@ local auditMessages = {}
 CHAT_SYSTEM = {
     AddMessage = function(_, message) auditMessages[#auditMessages + 1] = message end,
 }
-function GetAPIVersion() return 101050 end
+function GetAPIVersion() return 101051 end
 local auditSetup = {
     equipment = {
         head = { setId = 1 },
@@ -943,7 +943,8 @@ local runtimeAudit = GravvyBuildPlannerRuntimeAudit:New({
     },
     gamepad = {},
     itemResolver = {
-        TESTED_API_VERSION = 101050,
+        TESTED_API_VERSION = 101051,
+        TESTED_API_VERSIONS = { [101050] = true, [101051] = true },
         AuditRepresentativeLinks = function(_, samples)
             return { checked = #samples * 25, failed = 0, issues = {} }
         end,

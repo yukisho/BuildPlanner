@@ -1,7 +1,8 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 13
+local SCHEMA_VERSION = 14
+local MAX_RECOVERY_SNAPSHOTS = 5
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
 local MAX_REVISION_BYTES = 2097152
@@ -73,6 +74,7 @@ local validStatSnapshotKeys = {
 
 local defaults = {
     schemaVersion = SCHEMA_VERSION,
+    language = GetCVar and GetCVar("language.2") or "",
     nextBuildId = 1,
     nextSetupId = 1,
     selectedBuildId = nil,
@@ -84,6 +86,11 @@ local defaults = {
         highContrast = false,
         nonColorIndicators = false,
     },
+}
+
+local recoveryDefaults = {
+    nextId = 1,
+    snapshots = {},
 }
 
 local stringFields = {
@@ -142,6 +149,32 @@ local function deepCopy(value, seen)
         copy[deepCopy(key, seen)] = deepCopy(entry, seen)
     end
     return copy
+end
+
+local STATE_KEYS = {
+    "schemaVersion",
+    "language",
+    "nextBuildId",
+    "nextSetupId",
+    "selectedBuildId",
+    "deletedActions",
+    "builds",
+    "settings",
+}
+
+local function extractState(source)
+    local state = {}
+    if type(source) ~= "table" then return state end
+    for _, key in ipairs(STATE_KEYS) do
+        if source[key] ~= nil then state[key] = deepCopy(source[key]) end
+    end
+    return state
+end
+
+local function applyState(target, source)
+    for _, key in ipairs(STATE_KEYS) do
+        target[key] = deepCopy(source[key])
+    end
 end
 
 local fingerprintRequirementKeys = {
@@ -907,6 +940,37 @@ local function uniqueSetupName(build, baseName, exceptId)
     return name
 end
 
+local function currentLanguage()
+    return GetCVar and GetCVar("language.2") or ""
+end
+
+local function localizedSetName(setId)
+    if not setId then return nil end
+    if GetItemSetName then
+        local ok, name = pcall(GetItemSetName, setId)
+        if ok and type(name) == "string" and zo_strtrim(name) ~= "" then
+            return zo_strtrim(name)
+        end
+    end
+    if LibSets and LibSets.GetSetName then
+        local ok, name = pcall(LibSets.GetSetName, setId)
+        if ok and type(name) == "string" and zo_strtrim(name) ~= "" then
+            return zo_strtrim(name)
+        end
+    end
+end
+
+local function refreshRequirementLanguage(requirement)
+    local setName = localizedSetName(requirement.setId)
+    if setName then requirement.setName = setName end
+    if requirement.itemLink and requirement.itemLink ~= "" and GetItemLinkName then
+        local ok, itemName = pcall(GetItemLinkName, requirement.itemLink)
+        if ok and type(itemName) == "string" and zo_strtrim(itemName) ~= "" then
+            requirement.itemName = zo_strformat(SI_TOOLTIP_ITEM_NAME, itemName)
+        end
+    end
+end
+
 function Data:New()
     local data = setmetatable({}, { __index = self })
     data.saved = ZO_SavedVars:NewAccountWide(
@@ -916,12 +980,42 @@ function Data:New()
         defaults,
         GetWorldName()
     )
-    data:Migrate()
+    data.recovery = ZO_SavedVars:NewAccountWide(
+        "GravvyBuildPlanner_RecoveryData",
+        1,
+        nil,
+        recoveryDefaults,
+        GetWorldName()
+    )
+    local sourceVersion = tonumber(data.saved.schemaVersion) or 1
+    local snapshotted, snapshotMessage = data:CreateRecoverySnapshot(
+        "startup",
+        data.saved
+    )
+    local migrated, migrationMessage = data:Migrate()
+    if not migrated then
+        local recovered = data:RecoverLatestValidSnapshot()
+        if recovered then
+            data.startupMessage = GetString(
+                SI_GRAVVY_BUILD_PLANNER_DATA_RECOVERED
+            )
+        else
+            local fallback = data:PrepareCandidate(defaults)
+            applyState(data.saved, fallback or deepCopy(defaults))
+            data.startupMessage = migrationMessage
+                or GetString(SI_GRAVVY_BUILD_PLANNER_DATA_MIGRATION_FAILED)
+        end
+    elseif sourceVersion < SCHEMA_VERSION then
+        data:CreateRecoverySnapshot("post_migration", data.saved)
+    elseif not snapshotted then
+        data.startupMessage = snapshotMessage
+    end
     return data
 end
 
-function Data:Migrate()
+function Data:Normalize()
     local saved = self.saved
+    local languageChanged = saved.language ~= currentLanguage()
     saved.builds = type(saved.builds) == "table" and saved.builds or {}
     saved.deletedActions = type(saved.deletedActions) == "table" and saved.deletedActions or {}
     saved.settings = type(saved.settings) == "table" and saved.settings or {}
@@ -1070,6 +1164,9 @@ function Data:Migrate()
                 else
                     requirement = copyRequirement(requirement)
                     if requirement and Validation:IsRequirement(slotKey, requirement) then
+                        if languageChanged then
+                            refreshRequirementLanguage(requirement)
+                        end
                         setup.equipment[slotKey] = requirement
                     else
                         setup.equipment[slotKey] = nil
@@ -1108,6 +1205,9 @@ function Data:Migrate()
                     for _, entry in ipairs(entries) do
                         local requirement = normalizeAlternative(slotKey, entry, primary)
                         if requirement and #alternatives < MAX_ALTERNATIVES then
+                            if languageChanged then
+                                refreshRequirementLanguage(requirement)
+                            end
                             alternatives[#alternatives + 1] = requirement
                         end
                     end
@@ -1140,6 +1240,7 @@ function Data:Migrate()
         self:TrimRevisionHistory(build)
     end
     saved.schemaVersion = SCHEMA_VERSION
+    saved.language = currentLanguage()
 
     if #saved.builds == 0 then
         self:CreateBuild(GetString(SI_GRAVVY_BUILD_PLANNER_DEFAULT_BUILD))
@@ -1156,6 +1257,182 @@ function Data:Migrate()
     if not self:FindBuild(saved.selectedBuildId) then
         saved.selectedBuildId = saved.builds[1].id
     end
+end
+
+local function finiteNumber(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+function Data:ValidateState(saved)
+    if type(saved) ~= "table"
+        or saved.schemaVersion ~= SCHEMA_VERSION
+        or type(saved.language) ~= "string"
+        or type(saved.builds) ~= "table"
+        or #saved.builds < 1
+        or #saved.builds > MAX_BUILDS
+        or type(saved.deletedActions) ~= "table"
+        or #saved.deletedActions > MAX_DELETED_ACTIONS
+        or type(saved.settings) ~= "table"
+        or type(saved.settings.window) ~= "table"
+        or not finiteNumber(saved.settings.fontScale)
+        or saved.settings.fontScale < 0.9
+        or saved.settings.fontScale > 1.4
+    then
+        return false
+    end
+    local window = saved.settings.window
+    if (window.left ~= nil and not finiteNumber(window.left))
+        or (window.top ~= nil and not finiteNumber(window.top)) then
+        return false
+    end
+
+    local buildIds = {}
+    local setupIds = {}
+    local highestBuildId = 0
+    local highestSetupId = 0
+    for _, build in ipairs(saved.builds) do
+        if type(build) ~= "table"
+            or not Validation:WholeNumber(build.id, 1, MAX_ID)
+            or buildIds[build.id]
+            or type(build.name) ~= "string"
+            or build.name == ""
+            or type(build.setups) ~= "table"
+            or #build.setups < 1
+            or #build.setups > MAX_SETUPS
+            or type(build.revisions) ~= "table"
+            or #build.revisions > MAX_REVISIONS then
+            return false
+        end
+        buildIds[build.id] = true
+        highestBuildId = math.max(highestBuildId, build.id)
+        local selectedSetupFound = false
+        for _, setup in ipairs(build.setups) do
+            if type(setup) ~= "table"
+                or not Validation:WholeNumber(setup.id, 1, MAX_ID)
+                or setupIds[setup.id]
+                or type(setup.name) ~= "string"
+                or setup.name == ""
+                or not Validation:IsQuality(setup.defaultQuality)
+                or not Validation:IsLevel(setup.defaultLevel)
+                or not Validation:IsChampionPoints(setup.defaultChampionPoints)
+                or type(setup.equipment) ~= "table"
+                or type(setup.alternatives) ~= "table" then
+                return false
+            end
+            setupIds[setup.id] = true
+            highestSetupId = math.max(highestSetupId, setup.id)
+            if setup.id == build.selectedSetupId then selectedSetupFound = true end
+            for slotKey, requirement in pairs(setup.equipment) do
+                if not GravvyBuildPlannerSlots:IsValid(slotKey)
+                    or not Validation:IsRequirement(slotKey, requirement) then
+                    return false
+                end
+            end
+            for slotKey, alternatives in pairs(setup.alternatives) do
+                if not setup.equipment[slotKey]
+                    or type(alternatives) ~= "table"
+                    or #alternatives > MAX_ALTERNATIVES then
+                    return false
+                end
+                for _, requirement in ipairs(alternatives) do
+                    if not Validation:IsRequirement(slotKey, requirement) then
+                        return false
+                    end
+                end
+            end
+        end
+        if not selectedSetupFound then return false end
+    end
+    return buildIds[saved.selectedBuildId] == true
+        and Validation:WholeNumber(saved.nextBuildId, highestBuildId + 1, MAX_ID)
+        and Validation:WholeNumber(saved.nextSetupId, highestSetupId + 1, MAX_ID)
+end
+
+function Data:PrepareCandidate(source)
+    local candidateSaved = extractState(source)
+    local version = tonumber(candidateSaved.schemaVersion) or 1
+    if version ~= math.floor(version) or version < 1 or version > SCHEMA_VERSION then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_DATA_SCHEMA_UNSUPPORTED)
+    end
+    local candidate = setmetatable({ saved = candidateSaved }, { __index = self })
+    local ok = pcall(function() candidate:Normalize() end)
+    if not ok or not candidate:ValidateState(candidate.saved) then
+        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_DATA_MIGRATION_FAILED)
+    end
+    return candidate.saved
+end
+
+function Data:Migrate()
+    local candidate, message = self:PrepareCandidate(self.saved)
+    if not candidate then return false, message end
+    applyState(self.saved, candidate)
+    return true
+end
+
+function Data:CreateRecoverySnapshot(kind, source)
+    local recovery = self.recovery
+    if type(recovery) ~= "table" then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED)
+    end
+    recovery.snapshots = type(recovery.snapshots) == "table"
+        and recovery.snapshots or {}
+    recovery.nextId = math.max(1, math.floor(tonumber(recovery.nextId) or 1))
+    local snapshot = extractState(source or self.saved)
+    if type(snapshot.builds) ~= "table" then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED)
+    end
+    recovery.snapshots[#recovery.snapshots + 1] = {
+        id = recovery.nextId,
+        kind = tostring(kind or "checkpoint"),
+        createdAt = now(),
+        sourceSchema = tonumber(snapshot.schemaVersion) or 1,
+        world = GetWorldName(),
+        data = snapshot,
+    }
+    recovery.nextId = recovery.nextId + 1
+    while #recovery.snapshots > MAX_RECOVERY_SNAPSHOTS do
+        table.remove(recovery.snapshots, 1)
+    end
+    return true
+end
+
+function Data:GetRecoverySnapshots()
+    return type(self.recovery) == "table"
+        and type(self.recovery.snapshots) == "table"
+        and self.recovery.snapshots or {}
+end
+
+function Data:RecoverLatestValidSnapshot()
+    local snapshots = self:GetRecoverySnapshots()
+    for index = #snapshots, 1, -1 do
+        local candidate = self:PrepareCandidate(snapshots[index].data)
+        if candidate then
+            applyState(self.saved, candidate)
+            self:CreateRecoverySnapshot("automatic_restore", self.saved)
+            return true, snapshots[index]
+        end
+    end
+    return false
+end
+
+function Data:RestoreRecoverySnapshot(id)
+    for _, snapshot in ipairs(self:GetRecoverySnapshots()) do
+        if snapshot.id == id then
+            local candidate, message = self:PrepareCandidate(snapshot.data)
+            if not candidate then return false, message end
+            local saved, snapshotMessage = self:CreateRecoverySnapshot(
+                "pre_restore",
+                self.saved
+            )
+            if not saved then return false, snapshotMessage end
+            applyState(self.saved, candidate)
+            return true
+        end
+    end
+    return false, GetString(SI_GRAVVY_BUILD_PLANNER_RECOVERY_MISSING)
 end
 
 function Data:GetBuilds()

@@ -90,7 +90,9 @@ function RuntimeAudit:Run()
         issues = {},
     }
 
-    if apiVersion ~= self.owner.itemResolver.TESTED_API_VERSION then
+    local supportedApi = self.owner.itemResolver.TESTED_API_VERSIONS
+        and self.owner.itemResolver.TESTED_API_VERSIONS[apiVersion]
+    if not supportedApi then
         addIssue(report, zo_strformat(
             SI_GRAVVY_BUILD_PLANNER_AUDIT_API_CHANGED,
             apiVersion,
@@ -126,7 +128,7 @@ function RuntimeAudit:Run()
         and links.failed == 0
         and performancePassed
         and samplesComplete
-        and apiVersion == self.owner.itemResolver.TESTED_API_VERSION
+        and supportedApi == true
     self.lastReport = report
     self:Print(report)
     return report

@@ -3,7 +3,11 @@ GravvyBuildPlannerItemResolver = {}
 local Resolver = GravvyBuildPlannerItemResolver
 local Slots = GravvyBuildPlannerSlots
 
-Resolver.TESTED_API_VERSION = 101050
+Resolver.TESTED_API_VERSION = 101051
+Resolver.TESTED_API_VERSIONS = {
+    [101050] = true,
+    [101051] = true,
+}
 
 local armorEquipTypes = {
     head = EQUIP_TYPE_HEAD,

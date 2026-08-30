@@ -6,6 +6,9 @@ local addon = GravvyBuildPlanner
 
 function addon:Initialize()
     self.data = GravvyBuildPlannerData:New()
+    if self.data.startupMessage and d then
+        d(self.data.startupMessage)
+    end
     self.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
     self.skillCatalog:Refresh()
     self.championCatalog = GravvyBuildPlannerChampionCatalog:New()

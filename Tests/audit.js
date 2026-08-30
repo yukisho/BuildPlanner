@@ -138,14 +138,18 @@ for (const file of manifestFiles.filter((file) => file.endsWith(".lua"))) {
 }
 process.stdout.write("PASS virtual-control naming\n");
 
-const manifestApi = Number(manifestText.match(/^## APIVersion:\s*(\d+)/m)?.[1]);
+const manifestApis = (manifestText.match(/^## APIVersion:\s*([\d ]+)/m)?.[1] || "")
+  .trim()
+  .split(/\s+/)
+  .filter(Boolean)
+  .map(Number);
 const resolverText = fs.readFileSync(
   path.join(buildRoot, "Features", "ItemResolver.lua"),
   "utf8"
 );
 const testedApi = Number(resolverText.match(/TESTED_API_VERSION\s*=\s*(\d+)/)?.[1]);
-if (!manifestApi || manifestApi !== testedApi) {
-  fail(`item-link API baseline: manifest ${manifestApi}, resolver ${testedApi}`);
+if (!testedApi || manifestApis[manifestApis.length - 1] !== testedApi) {
+  fail(`item-link API baseline: manifest ${manifestApis.join(",")}, resolver ${testedApi}`);
 }
 process.stdout.write(`PASS item-link API baseline (${testedApi})\n`);
 

@@ -49,6 +49,12 @@ function GetTimeStamp()
     return timestamp
 end
 
+local testLanguage = "en"
+
+function GetCVar(name)
+    return name == "language.2" and testLanguage or ""
+end
+
 function GetWorldName()
     return "Test"
 end
@@ -92,8 +98,12 @@ EQUIP_SLOT_BACKUP_MAIN = 13
 EQUIP_SLOT_BACKUP_OFF = 14
 
 ZO_SavedVars = {}
-function ZO_SavedVars:NewAccountWide(_, _, _, defaults)
-    if TEST_SAVED then
+function ZO_SavedVars:NewAccountWide(name, _, _, defaults)
+    if name == "GravvyBuildPlanner_RecoveryData" and TEST_RECOVERY then
+        local saved = TEST_RECOVERY
+        TEST_RECOVERY = nil
+        return saved
+    elseif name == "GravvyBuildPlanner_Data" and TEST_SAVED then
         local saved = TEST_SAVED
         TEST_SAVED = nil
         return saved
@@ -128,6 +138,8 @@ expectEqual(firstSetup.defaultQuality, ITEM_QUALITY_LEGENDARY, "default quality"
 expectEqual(data:GetSettings().fontScale, 1, "default font scale")
 expectEqual(data:GetSettings().highContrast, false, "high contrast should be opt-in")
 expectEqual(data:GetSettings().nonColorIndicators, false, "text status prefixes should be opt-in")
+expectEqual(#data:GetRecoverySnapshots(), 1,
+    "startup should create a durable recovery copy outside the primary data")
 expectEqual(firstSetup.character.attributes.health, 0, "new setups should have an empty character plan")
 expectEqual(firstSetup.champion.warfare.slottables[1], 0, "new setups should have empty Champion slots")
 expectEqual(#firstSetup.consumables, 0, "new setups should have no consumable requirements")
@@ -751,7 +763,9 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 13, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 14, "migration should advance the saved-data schema")
+expect(#repaired:GetRecoverySnapshots() >= 2,
+    "schema migration should retain both pre- and post-migration recovery copies")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
     "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")
@@ -764,6 +778,41 @@ expectEqual(#repaired.saved.builds[1].setups[1].checklist, 0,
 expectEqual(repaired.saved.builds[1].setups[1].statSnapshots.front.values.maxHealth,
     30000, "migration should move legacy exact stats to the front-bar snapshot")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
+
+local futureState = copy(data.saved)
+futureState.schemaVersion = 99
+local detached = setmetatable({ saved = futureState }, { __index = GravvyBuildPlannerData })
+expectEqual(detached:Migrate(), false,
+    "a newer saved-data schema should be rejected")
+expectEqual(futureState.schemaVersion, 99,
+    "failed migration should not partially mutate the live table")
+
+TEST_SAVED = copy(futureState)
+TEST_RECOVERY = {
+    nextId = 2,
+    snapshots = {
+        {
+            id = 1,
+            kind = "last_known_good",
+            createdAt = 900,
+            sourceSchema = 14,
+            world = "Test",
+            data = copy(data.saved),
+        },
+    },
+}
+local recovered = GravvyBuildPlannerData:New()
+expectEqual(recovered.saved.schemaVersion, 14,
+    "startup should restore a compatible recovery after migration failure")
+expectEqual(recovered.startupMessage,
+    GetString(SI_GRAVVY_BUILD_PLANNER_DATA_RECOVERED),
+    "automatic recovery should be reported clearly")
+for index = 1, 8 do
+    expect(recovered:CreateRecoverySnapshot("test_" .. tostring(index)),
+        "recovery snapshots should remain writable")
+end
+expectEqual(#recovered:GetRecoverySnapshots(), 5,
+    "the external recovery store should remain bounded")
 
 local collectionSets = {
     [12] = "Order's Wrath",
@@ -812,6 +861,32 @@ expect(catalog:FindExact("Website Alternative Only"),
     "alternative-only saved sets should be rebuilt into autocomplete")
 data:DeleteBuild(catalogBuild.id)
 catalog:Refresh()
+
+local languageState = copy(data.saved)
+languageState.language = "en"
+languageState.builds[1].setups[1].equipment.head = {
+    setId = 12,
+    setName = "Order's Wrath",
+    armorType = 1,
+}
+languageState.builds[1].setups[1].equipment.chest = {
+    setName = "Manual Guide Set",
+    armorType = 1,
+}
+testLanguage = "es"
+collectionSets[12] = "Ira de la Orden"
+TEST_SAVED = languageState
+local translated = GravvyBuildPlannerData:New()
+expectEqual(translated.saved.language, "es",
+    "migration should record the language used for cached display names")
+expectEqual(translated.saved.builds[1].setups[1].equipment.head.setName,
+    "Ira de la Orden",
+    "linked set names should refresh after the ESO language changes")
+expectEqual(translated.saved.builds[1].setups[1].equipment.chest.setName,
+    "Manual Guide Set",
+    "manual name-only requirements should survive a language change")
+testLanguage = "en"
+collectionSets[12] = "Order's Wrath"
 
 BuildPlannerTestData = data
 BuildPlannerTestCatalog = catalog

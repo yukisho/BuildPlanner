@@ -537,3 +537,8 @@ ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_AUDIT_API_CHANGED", "ESO API <<1>> ha
 ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_AUDIT_SAMPLE_MISSING", "No planned <<1>> item was available for the representative-link check.")
 ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT_ISSUE", "<<1>> is truncated at <<2>> scale.")
 ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE_SLOW", "Inventory or setup matching exceeded the audit timing budget.")
+ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_DATA_MIGRATION_FAILED", "Build Planner could not safely migrate its saved data. The original data was preserved in the recovery store.")
+ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_DATA_SCHEMA_UNSUPPORTED", "Build Planner found saved data from a newer unsupported schema.")
+ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_DATA_RECOVERED", "Build Planner restored the newest valid recovery copy after saved-data migration failed.")
+ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED", "Build Planner could not create a saved-data recovery copy.")
+ZO_CreateStringId("SI_GRAVVY_BUILD_PLANNER_RECOVERY_MISSING", "That saved-data recovery copy no longer exists.")

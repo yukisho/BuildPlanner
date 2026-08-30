@@ -539,6 +539,11 @@ local strings = {
     SI_GRAVVY_BUILD_PLANNER_AUDIT_SAMPLE_MISSING = "No hay ningún objeto planeado de tipo <<1>> para comprobar su enlace.",
     SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT_ISSUE = "<<1>> se recorta con la escala <<2>>.",
     SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE_SLOW = "El inventario o la coincidencia de variantes superó el tiempo previsto.",
+    SI_GRAVVY_BUILD_PLANNER_DATA_MIGRATION_FAILED = "El planificador no pudo migrar los datos guardados de forma segura. Los datos originales se conservaron en la copia de recuperación.",
+    SI_GRAVVY_BUILD_PLANNER_DATA_SCHEMA_UNSUPPORTED = "El planificador encontró datos guardados de un esquema posterior no compatible.",
+    SI_GRAVVY_BUILD_PLANNER_DATA_RECOVERED = "El planificador restauró la copia válida más reciente tras fallar la migración.",
+    SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED = "El planificador no pudo crear una copia de recuperación de los datos.",
+    SI_GRAVVY_BUILD_PLANNER_RECOVERY_MISSING = "Esa copia de recuperación ya no existe.",
 }
 
 for stringId, translation in pairs(strings) do

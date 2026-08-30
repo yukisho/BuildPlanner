@@ -2,11 +2,11 @@
 ## Description: Plan ESO equipment setups and turn tradeable requirements into shopping lists.
 ## Author: Gravvy
 ## Version: 0.8.0
-## APIVersion: 101050
+## APIVersion: 101050 101051
 ## AddOnVersion: 29
 ## DependsOn: LibSets>=0009000
 ## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0
-## SavedVariables: GravvyBuildPlanner_Data
+## SavedVariables: GravvyBuildPlanner_Data GravvyBuildPlanner_RecoveryData
 
 # DISCLAIMER:
 #
