@@ -126,18 +126,34 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_SAVE)
                 elseif self.activeView == "checklist" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVE)
+                elseif self.activeView == "comparison" then
+                    local preset = GravvyBuildPlannerSwapPackages.PRESETS[
+                        self.swapPresetIndex or 1
+                    ]
+                    return zo_strformat(
+                        SI_GRAVVY_BUILD_PLANNER_SWAP_PRESET,
+                        GetString(preset.stringId)
+                    )
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_EDIT)
             end,
             keybind = "UI_SHORTCUT_PRIMARY",
-            enabled = function() return self:IsTargetEditable() end,
-            callback = function() self:ShowEditDialog() end,
+            enabled = function()
+                return self.activeView == "comparison" or self:IsTargetEditable()
+            end,
+            callback = function()
+                if self.activeView == "comparison" then
+                    self:CycleSwapPreset()
+                else
+                    self:ShowEditDialog()
+                end
+            end,
         },
         {
             name = function()
                 if self.activeView == "checklist" then
                     local data = self:GetTargetData()
-                    return GetString(data and data.completed
+                    return GetString(data and data.effectiveComplete
                         and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_INCOMPLETE
                         or SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_COMPLETE)
                 elseif self.activeView == "comparison" then
@@ -149,7 +165,7 @@ function Gamepad:InitializeKeybinds()
             visible = function()
                 if self.activeView == "checklist" then
                     local data = self:GetTargetData()
-                    return data and data.checklistIndex ~= nil
+                    return data and data.checklistIndex ~= nil and not data.automatic
                 elseif self.activeView == "comparison" then
                     local _, build = self.owner.data:GetCurrentSetup()
                     return #build.setups > 2
@@ -176,12 +192,14 @@ function Gamepad:InitializeKeybinds()
                     return GetString(SI_GRAVVY_BUILD_PLANNER_SUPPLY_REMOVE)
                 elseif self.activeView == "checklist" then
                     return GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_REMOVE)
+                elseif self.activeView == "comparison" then
+                    return GetString(SI_GRAVVY_BUILD_PLANNER_SWAP_CREATE)
                 end
                 return GetString(SI_GRAVVY_BUILD_PLANNER_CLEAR)
             end,
             keybind = "UI_SHORTCUT_TERTIARY",
             visible = function()
-                return self.activeView ~= "character" and self.activeView ~= "comparison"
+                return self.activeView ~= "character"
             end,
             enabled = function()
                 if self.activeView == "skills" then
@@ -198,15 +216,38 @@ function Gamepad:InitializeKeybinds()
                 elseif self.activeView == "checklist" then
                     local data = self:GetTargetData()
                     return data and data.checklistIndex ~= nil
+                elseif self.activeView == "comparison" then
+                    local _, build = self.owner.data:GetCurrentSetup()
+                    return #build.setups < GravvyBuildPlannerValidation.MAX_SETUPS
                 end
                 return self:IsTargetEditable() and self:GetTargetRequirement() ~= nil
             end,
-            callback = function() self:ClearTargetSlot() end,
+            callback = function()
+                if self.activeView == "comparison" then
+                    self:CreateSwapVariation()
+                else
+                    self:ClearTargetSlot()
+                end
+            end,
         },
         {
-            name = GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT),
+            name = function()
+                if self.activeView == "comparison" then
+                    return GetString(self.comparisonSwapOnly
+                        and SI_GRAVVY_BUILD_PLANNER_SWAP_SHOW_ALL
+                        or SI_GRAVVY_BUILD_PLANNER_SWAP_ONLY)
+                end
+                return GetString(SI_GRAVVY_BUILD_PLANNER_EXPORT)
+            end,
             keybind = "UI_SHORTCUT_QUATERNARY",
-            callback = function() self:ShowExportDialog() end,
+            callback = function()
+                if self.activeView == "comparison" then
+                    self.comparisonSwapOnly = not self.comparisonSwapOnly
+                    self:Refresh(true)
+                else
+                    self:ShowExportDialog()
+                end
+            end,
         },
         {
             name = GetString(SI_GRAVVY_BUILD_PLANNER_GAMEPAD_PREVIOUS_SETUP),
@@ -558,12 +599,15 @@ function Gamepad:Refresh(force)
         addEntry:SetFontScaleOnSelection(false)
         self.list:AddEntry("ZO_GamepadMenuEntryTemplate", addEntry)
         for index, item in ipairs(setup.checklist) do
-            local marker = item.completed and COMPLETE_MARKER or "- "
+            local detection = self.owner.checklistDetection:Evaluate(item)
+            local marker = detection.complete and COMPLETE_MARKER or "- "
             local entry = ZO_GamepadEntryData:New(marker .. item.name)
             entry.checklistIndex = index
             entry.abilityId = item.abilityId
             entry.targetRank = item.targetRank
             entry.completed = item.completed
+            entry.effectiveComplete = detection.complete
+            entry.automatic = detection.automatic
             entry:SetFontScaleOnSelection(false)
             entry:SetShowUnselectedSublabels(true)
             local categoryId = item.category == "passive"
@@ -580,6 +624,8 @@ function Gamepad:Refresh(force)
                     item.targetRank
                 )
             end
+            detail = detail .. " · "
+                .. self.owner.checklistDetection:StatusText(detection)
             entry:AddSubLabel(detail)
             if item.note ~= "" then
                 entry:AddSubLabel(item.note)
@@ -604,7 +650,9 @@ function Gamepad:Refresh(force)
             self.comparisonSetupId = target and target.id
         end
         self.setupName:SetText(target and (setup.name .. " ↔ " .. target.name) or setup.name)
-        local differences = GravvyBuildPlannerComparison:Build(setup, target)
+        local package = GravvyBuildPlannerSwapPackages:Build(setup, target)
+        local differences = self.comparisonSwapOnly
+            and package.rows or GravvyBuildPlannerComparison:Build(setup, target)
         if #differences == 0 then
             local message = target
                 and GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_NONE)
@@ -617,6 +665,7 @@ function Gamepad:Refresh(force)
                 local entry = ZO_GamepadEntryData:New(
                     difference.section .. " · " .. difference.label
                 )
+                entry.difference = difference
                 entry:SetFontScaleOnSelection(false)
                 entry:SetShowUnselectedSublabels(true)
                 entry:AddSubLabel(setup.name .. ": " .. difference.left)
@@ -760,6 +809,11 @@ function Gamepad:ToggleTargetChecklist()
         return
     end
     local setup, build = self.owner.data:GetCurrentSetup()
+    local entry = setup.checklist[data.checklistIndex]
+    if self.owner.checklistDetection:Evaluate(entry).automatic then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_AUTOMATIC_LOCKED), true)
+        return
+    end
     local ok, message = self.owner.data:SetChecklistCompleted(
         build.id,
         setup.id,
@@ -790,6 +844,32 @@ function Gamepad:CycleComparisonTarget()
     end
     selectedIndex = (selectedIndex % #candidates) + 1
     self.comparisonSetupId = candidates[selectedIndex].id
+    self:Refresh(true)
+end
+
+function Gamepad:CycleSwapPreset()
+    self.swapPresetIndex = ((self.swapPresetIndex or 1)
+        % #GravvyBuildPlannerSwapPackages.PRESETS) + 1
+    self:RefreshKeybinds()
+end
+
+function Gamepad:CreateSwapVariation()
+    local source, build = self.owner.data:GetCurrentSetup()
+    local preset = GravvyBuildPlannerSwapPackages.PRESETS[self.swapPresetIndex or 1]
+    local setup, message = GravvyBuildPlannerSwapPackages:CreateVariation(
+        self.owner.data,
+        build.id,
+        source.id,
+        preset.key
+    )
+    if not setup then
+        self:SetStatus(message, true)
+        return
+    end
+    self.owner.data:SelectSetup(build.id, source.id)
+    self.comparisonSetupId = setup.id
+    self.comparisonSwapOnly = true
+    self:SetStatus(message)
     self:Refresh(true)
 end
 

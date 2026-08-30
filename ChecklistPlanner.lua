@@ -170,7 +170,10 @@ function UI:CreateChecklistPlanner()
     self.checklistNameEdit = makeEdit(panel, "GravvyBuildPlannerChecklistName", 514, 136, 395, false, 100)
     self.checklistNameEdit:SetHandler("OnTextChanged", function() self:OnChecklistTextChanged() end)
     self.checklistNameEdit:SetHandler("OnKeyDown", function(_, key) self:OnChecklistKeyDown(key) end)
-    self.checklistNameEdit:SetHandler("OnFocusLost", function() self:ResolveChecklistPassive() end)
+    self.checklistNameEdit:SetHandler("OnFocusLost", function()
+        self:ResolveChecklistDetection()
+        self:ResolveChecklistPassive()
+    end)
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_TARGET_RANK), 514, 178, 110)
     self.checklistRankEdit = makeEdit(panel, "GravvyBuildPlannerChecklistRank", 630, 178, 90, true, 2)
     makeLabel(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_STATUS), 514, 220, 110)
@@ -189,6 +192,7 @@ function UI:CreateChecklistPlanner()
     end)
     self.checklistPreview:SetHandler("OnMouseExit", function() self:HideChecklistTooltip() end)
     self.checklistPreviewName = makeLabel(panel, "", 578, 406, 331, "ZoFontGame")
+    self.checklistDetectionStatus = makeLabel(panel, "", 578, 430, 331, "ZoFontGameSmall")
 
     local toggle = makeButton(panel, GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_COMPLETE), 170)
     toggle:SetAnchor(BOTTOMLEFT, panel, BOTTOMLEFT, 514, -20)
@@ -234,7 +238,8 @@ function UI:RefreshChecklistPlanner()
     self.checklistOffset = zo_clamp(self.checklistOffset, 0, lastOffset)
     local complete = 0
     for _, entry in ipairs(entries) do
-        complete = complete + (entry.completed and 1 or 0)
+        local result = self.owner.checklistDetection:Evaluate(entry)
+        complete = complete + (result.complete and 1 or 0)
     end
     for rowIndex = 1, ROW_COUNT do
         local row = self.checklistRows[rowIndex]
@@ -243,18 +248,21 @@ function UI:RefreshChecklistPlanner()
         row.targetRank = entry and entry.targetRank
         row:SetHidden(not entry)
         if entry then
-            local marker = entry.completed and COMPLETE_MARKER or "-"
+            local result = self.owner.checklistDetection:Evaluate(entry)
+            local marker = result.complete and COMPLETE_MARKER or "-"
             local rank = entry.targetRank and (" · " .. zo_strformat(
                 SI_GRAVVY_BUILD_PLANNER_CHECKLIST_RANK_VALUE,
                 entry.targetRank
             )) or ""
-            row:SetText(zo_strformat(
+            local summary = zo_strformat(
                 SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SUMMARY,
                 marker,
                 GetString(categoryStringIds[entry.category]),
                 entry.name,
                 rank
-            ))
+            )
+            row:SetText(summary .. " · "
+                .. self.owner.checklistDetection:StatusText(result))
         else
             row:SetText("")
         end
@@ -295,6 +303,12 @@ function UI:LoadChecklistEditor()
     local entry = self.selectedChecklistIndex and self:GetChecklist()[self.selectedChecklistIndex]
     self.loadingChecklist = true
     self.selectedChecklistEntry = entry
+    self.selectedChecklistDetection = entry and entry.detection and {
+        name = entry.name,
+        icon = entry.icon or "",
+        targetRank = entry.targetRank,
+        detection = entry.detection,
+    } or nil
     self.selectedChecklistPassive = entry and entry.abilityId
         and self.owner.skillCatalog:FindPassiveById(entry.abilityId)
         or nil
@@ -304,19 +318,27 @@ function UI:LoadChecklistEditor()
     setChoices(self.checklistCategoryCombo, categoryChoices(),
         entry and entry.category or "passive", function()
             self.selectedChecklistPassive = nil
+            self.selectedChecklistDetection = nil
             self:OnChecklistTextChanged()
         end)
     self.checklistNameEdit:SetText(entry and entry.name or "")
     self.checklistRankEdit:SetText(entry and entry.targetRank and tostring(entry.targetRank) or "")
-    setChoices(self.checklistStatusCombo, statusChoices(), entry and entry.completed or false)
+    local result = self.owner.checklistDetection:Evaluate(entry)
+    setChoices(self.checklistStatusCombo, statusChoices(), result.complete == true)
     self.checklistNoteEdit:SetText(entry and entry.note or "")
     self.checklistPreview:SetTexture(entry and entry.icon ~= "" and entry.icon or EMPTY_TEXTURE)
     self.checklistPreviewName:SetText(entry and entry.name
         or GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED))
+    self.checklistDetectionStatus:SetText(entry
+        and self.owner.checklistDetection:StatusText(result) or "")
     self.checklistSuggestionPanel:SetHidden(true)
     self.checklistToggleButton:SetText(GetString(entry and entry.completed
         and SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_INCOMPLETE
         or SI_GRAVVY_BUILD_PLANNER_CHECKLIST_MARK_COMPLETE))
+    if self.checklistStatusCombo.SetEnabled then
+        self.checklistStatusCombo:SetEnabled(not result.automatic)
+    end
+    self.checklistToggleButton:SetEnabled(entry ~= nil and not result.automatic)
     self.loadingChecklist = false
 end
 
@@ -325,18 +347,27 @@ function UI:OnChecklistTextChanged()
         return
     end
     self.selectedChecklistPassive = nil
-    if self.checklistCategoryCombo.selectedValue ~= "passive" then
+    self.selectedChecklistDetection = nil
+    if self.checklistStatusCombo.SetEnabled then
+        self.checklistStatusCombo:SetEnabled(true)
+    end
+    if self.checklistCategoryCombo.selectedValue == "other" then
         self.checklistSuggestionPanel:SetHidden(true)
         return
     end
-    local results = self.owner.skillCatalog:SearchPassives(self.checklistNameEdit:GetText(), 6)
+    local results = self.owner.checklistDetection:Search(
+        self.checklistCategoryCombo.selectedValue,
+        self.checklistNameEdit:GetText(),
+        6
+    )
     self.checklistSuggestionData = results
     self.checklistSuggestionIndex = 1
     self.checklistSuggestionPanel:SetHidden(#results == 0)
     for index, button in ipairs(self.checklistSuggestionButtons) do
         local entry = results[index]
         button:SetHidden(not entry)
-        button:SetText(entry and (entry.name .. " · " .. entry.skillLine) or "")
+        button:SetText(entry and (entry.name .. (entry.detail ~= ""
+            and " · " .. entry.detail or "")) or "")
     end
 end
 
@@ -345,13 +376,22 @@ function UI:ChooseChecklistSuggestion(index)
     if not entry then
         return
     end
-    self.selectedChecklistPassive = entry
+    self.selectedChecklistDetection = entry
+    self.selectedChecklistPassive = entry.detection.kind == "passive"
+        and self.owner.skillCatalog:FindPassiveById(entry.detection.id) or nil
     self.loadingChecklist = true
     self.checklistNameEdit:SetText(entry.name)
-    self.checklistRankEdit:SetText(tostring(entry.maxRank))
+    self.checklistRankEdit:SetText(entry.targetRank and tostring(entry.targetRank) or "")
     self.loadingChecklist = false
     self.checklistPreview:SetTexture(entry.icon ~= "" and entry.icon or EMPTY_TEXTURE)
-    self.checklistPreviewName:SetText(entry.name .. " · " .. entry.skillLine)
+    self.checklistPreviewName:SetText(entry.name .. (entry.detail ~= ""
+        and " · " .. entry.detail or ""))
+    self.checklistDetectionStatus:SetText(GetString(
+        SI_GRAVVY_BUILD_PLANNER_CHECKLIST_AUTOMATIC
+    ))
+    if self.checklistStatusCombo.SetEnabled then
+        self.checklistStatusCombo:SetEnabled(false)
+    end
     self.checklistSuggestionPanel:SetHidden(true)
 end
 
@@ -370,6 +410,18 @@ function UI:ResolveChecklistPassive()
         self.checklistPreviewName:SetText(entry.name .. " · " .. entry.skillLine)
     end
     return entry
+end
+
+function UI:ResolveChecklistDetection()
+    local category = self.checklistCategoryCombo.selectedValue
+    if category == "other" then return nil end
+    if not self.selectedChecklistDetection then
+        self.selectedChecklistDetection = self.owner.checklistDetection:Resolve(
+            category,
+            self.checklistNameEdit:GetText()
+        )
+    end
+    return self.selectedChecklistDetection
 end
 
 function UI:OnChecklistKeyDown(key)
@@ -392,7 +444,10 @@ function UI:SaveChecklistEntry()
     local name = zo_strtrim(self.checklistNameEdit:GetText())
     local rankText = zo_strtrim(self.checklistRankEdit:GetText())
     local rank = rankText ~= "" and tonumber(rankText) or nil
-    local passive = self:ResolveChecklistPassive()
+    local selected = self:ResolveChecklistDetection()
+    local passive = selected and selected.detection.kind == "passive"
+        and self.owner.skillCatalog:FindPassiveById(selected.detection.id)
+        or self:ResolveChecklistPassive()
     if name == "" or (rankText ~= "" and (not rank or rank ~= math.floor(rank)
         or rank < 1 or rank > 50)) or (passive and rank and rank > passive.maxRank) then
         self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHECKLIST), true)
@@ -408,12 +463,19 @@ function UI:SaveChecklistEntry()
         self.selectedChecklistIndex,
         {
             category = self.checklistCategoryCombo.selectedValue,
-            name = passive and passive.name or name,
+            name = selected and selected.name or passive and passive.name or name,
             targetRank = rank,
             completed = self.checklistStatusCombo.selectedValue == true,
             abilityId = progression and progression.abilityId
+                or selected and (selected.detection.kind == "passive"
+                    or selected.detection.kind == "ability") and selected.detection.id
                 or passive and passive.abilityId,
-            icon = progression and progression.icon or passive and passive.icon or "",
+            icon = selected and selected.icon or progression and progression.icon
+                or passive and passive.icon or "",
+            detection = selected and selected.detection or passive and {
+                kind = "passive",
+                id = progression and progression.abilityId or passive.abilityId,
+            },
             note = self.checklistNoteEdit:GetText(),
         }
     )
@@ -424,7 +486,7 @@ function UI:SaveChecklistEntry()
     self.selectedChecklistIndex = result
     self:RefreshChecklistPlanner()
     self:SetStatus(zo_strformat(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVED,
-        passive and passive.name or name))
+        selected and selected.name or passive and passive.name or name))
 end
 
 function UI:RemoveChecklistEntry()
@@ -453,6 +515,11 @@ function UI:ToggleChecklistCompleted()
     end
     local setup, build = self.owner.data:GetCurrentSetup()
     local entry = setup.checklist[self.selectedChecklistIndex]
+    local result = self.owner.checklistDetection:Evaluate(entry)
+    if result.automatic then
+        self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_AUTOMATIC_LOCKED), true)
+        return
+    end
     local ok, message = self.owner.data:SetChecklistCompleted(
         build.id,
         setup.id,

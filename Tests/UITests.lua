@@ -826,10 +826,12 @@ dofile("Readiness.lua")
 dofile("CharacterCapture.lua")
 dofile("SkillCatalog.lua")
 dofile("ChampionCatalog.lua")
+dofile("ChecklistDetection.lua")
 dofile("ConsumableCatalog.lua")
 dofile("Share.lua")
 dofile("Accessibility.lua")
 dofile("Comparison.lua")
+dofile("SwapPackages.lua")
 dofile("UI.lua")
 dofile("RevisionHistory.lua")
 dofile("ChampionPlanner.lua")
@@ -884,6 +886,7 @@ owner.skillCatalog:AddPassive("Advanced Species", "Animal Companions", 2, {
 })
 owner.championCatalog = GravvyBuildPlannerChampionCatalog:New()
 owner.championCatalog:Refresh()
+owner.checklistDetection = GravvyBuildPlannerChecklistDetection:New(owner)
 owner.consumableCatalog = GravvyBuildPlannerConsumableCatalog:New(owner.data)
 owner.consumableCatalog:Refresh()
 local nativeSkillTooltipUsed = false
@@ -1228,6 +1231,21 @@ ui:ToggleChecklistCompleted()
 expect(not BuildPlannerTestData:GetCurrentSetup().checklist[1].completed,
     "checklist completion should toggle from the planner")
 ui:ToggleChecklistCompleted()
+local passiveCatalogEntry = owner.skillCatalog:FindPassiveById(5002)
+passiveCatalogEntry.skill = { GetCurrentRank = function() return 2 end }
+local passiveDetection = owner.checklistDetection:Evaluate(
+    BuildPlannerTestData:GetCurrentSetup().checklist[1]
+)
+expect(passiveDetection.automatic and passiveDetection.complete,
+    "passive checklist ranks should be detected from live skill data")
+local championDetection = owner.checklistDetection:Evaluate({
+    targetRank = 50,
+    completed = false,
+    detection = { kind = "championSlotted", id = 3002 },
+})
+expect(championDetection.automatic and championDetection.complete
+        and championDetection.slotted,
+    "Champion checklist steps should detect both allocation and slot state")
 ui.selectedChecklistIndex = nil
 ui:LoadChecklistEditor()
 ui.checklistCategoryCombo.selectedValue = "unlock"
@@ -1247,6 +1265,33 @@ expect(ui.comparisonSetupId, "comparison should select another setup automatical
 expectEqual(#ui.comparisonSetupCombo.items,
     #BuildPlannerTestData:GetCurrentBuild().setups - 1,
     "comparison should list every other setup in the current build")
+ui:ToggleSwapOnly()
+expect(ui.comparisonSwapOnly, "keyboard comparison should expose a focused swap package")
+for _, change in ipairs(ui.comparisonDifferences) do
+    expect(change.sectionKey == "gear" or change.sectionKey == "skills"
+            or change.sectionKey == "champion" or change.sectionKey == "supplies",
+        "swap packages should group only actionable loadout changes")
+end
+expectEqual(ui.swapPresetKey, "boss",
+    "common variation creation should default to the Boss preset")
+local variationName
+local fakeSwapData = {
+    FindBuild = function() return { id = 1 } end,
+    FindSetup = function() return { id = 2 } end,
+    DuplicateSetup = function(_, _, _, name)
+        variationName = name
+        return { name = name }
+    end,
+}
+local variation = GravvyBuildPlannerSwapPackages:CreateVariation(
+    fakeSwapData,
+    1,
+    2,
+    "trash"
+)
+expect(variation and variationName == GetString(SI_GRAVVY_BUILD_PLANNER_SWAP_TRASH),
+    "swap packages should create common named setup variations")
+ui:ToggleSwapOnly()
 expect(ui.comparisonSetupCombo.itemsUpdated,
     "comparison should finalize its refreshed dropdown entries")
 expectEqual(ui.comparisonSetupCombo.m_dropdown.drawTier, DT_HIGH,
@@ -2175,6 +2220,19 @@ expectEqual(BuildPlannerTestData:GetCurrentSetup().checklist[3].category, "skill
     "gamepad progression planning should persist checklist types")
 gamepad:TogglePlannerView()
 expect(#gamepad.list.entries >= 1, "the gamepad comparison should show changes or an empty-state row")
+gamepad:CycleSwapPreset()
+expectEqual(gamepad.swapPresetIndex, 2,
+    "gamepad users should be able to cycle common swap variation presets")
+gamepad.comparisonSwapOnly = true
+gamepad:Refresh(true)
+for _, listEntry in ipairs(gamepad.list.entries) do
+    local data = listEntry.data or listEntry
+    if data.difference then
+        local key = data.difference.sectionKey
+        expect(key == "gear" or key == "skills" or key == "champion" or key == "supplies",
+            "gamepad swap view should show only actionable loadout changes")
+    end
+end
 gamepad:TogglePlannerView()
 expectEqual(gamepad:GetTargetSlot(), "head", "returning to Gear should restore equipment navigation")
 

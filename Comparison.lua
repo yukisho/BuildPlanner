@@ -41,6 +41,16 @@ local disciplineStringIds = {
     fitness = SI_GRAVVY_BUILD_PLANNER_CHAMPION_FITNESS,
 }
 
+local sectionKeys = {
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_SETUP] = "setup",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_GEAR] = "gear",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_SKILLS] = "skills",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHARACTER] = "character",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHAMPION] = "champion",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_SUPPLIES] = "supplies",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHECKLIST] = "checklist",
+}
+
 local function sameFields(left, right, fields)
     if left == nil or right == nil then
         return left == right
@@ -169,6 +179,7 @@ end
 local function add(rows, sectionId, label, left, right)
     rows[#rows + 1] = {
         section = GetString(sectionId),
+        sectionKey = sectionKeys[sectionId],
         label = label,
         left = shorten(left),
         right = shorten(right),

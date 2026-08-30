@@ -14,10 +14,12 @@ function Catalog:New()
         passiveEntries = {},
         passiveByName = {},
         passiveById = {},
+        skillLines = {},
+        skillLinesByKey = {},
     }, { __index = self })
 end
 
-function Catalog:AddAbility(abilityId, isUltimate, progression, skillLineInfo)
+function Catalog:AddAbility(abilityId, isUltimate, progression, skillLineInfo, skill)
     abilityId = tonumber(abilityId)
     if not abilityId or abilityId <= 0 then
         return
@@ -39,13 +41,16 @@ function Catalog:AddAbility(abilityId, isUltimate, progression, skillLineInfo)
         skillType = skillLineInfo and skillLineInfo.skillType,
         skillLineIndex = skillLineInfo and skillLineInfo.skillLineIndex,
         skillLine = skillLineInfo and skillLineInfo.name or "",
+        skill = skill,
+        morphSlot = progression and progression.GetMorphSlot
+            and progression:GetMorphSlot() or nil,
     }
     self.entries[#self.entries + 1] = entry
     self.byName[key] = entry
     self.byId[abilityId] = entry
 end
 
-function Catalog:AddPassive(name, skillLine, maxRank, progressions)
+function Catalog:AddPassive(name, skillLine, maxRank, progressions, skill, skillLineInfo)
     name = zo_strtrim(name or "")
     maxRank = tonumber(maxRank)
     if name == "" or not maxRank or maxRank < 1 or type(progressions) ~= "table" then
@@ -62,6 +67,9 @@ function Catalog:AddPassive(name, skillLine, maxRank, progressions)
         abilityId = last.abilityId,
         icon = last.icon or GetAbilityIcon(last.abilityId),
         progressions = progressions,
+        skill = skill,
+        skillType = skillLineInfo and skillLineInfo.skillType,
+        skillLineIndex = skillLineInfo and skillLineInfo.skillLineIndex,
     }
     self.passiveEntries[#self.passiveEntries + 1] = entry
     local key = normalize(name)
@@ -73,6 +81,21 @@ function Catalog:AddPassive(name, skillLine, maxRank, progressions)
     end
 end
 
+function Catalog:AddSkillLine(skillLine, skillType, skillLineIndex)
+    local name = skillLine and skillLine:GetName() or ""
+    if name == "" then
+        return
+    end
+    local entry = {
+        name = name,
+        skillType = skillType,
+        skillLineIndex = skillLineIndex,
+        skillLine = skillLine,
+    }
+    self.skillLines[#self.skillLines + 1] = entry
+    self.skillLinesByKey[tostring(skillType) .. ":" .. tostring(skillLineIndex)] = entry
+end
+
 function Catalog:Refresh()
     self.entries = {}
     self.byName = {}
@@ -80,6 +103,8 @@ function Catalog:Refresh()
     self.passiveEntries = {}
     self.passiveByName = {}
     self.passiveById = {}
+    self.skillLines = {}
+    self.skillLinesByKey = {}
     if not SKILLS_DATA_MANAGER then
         return
     end
@@ -92,6 +117,7 @@ function Catalog:Refresh()
                 skillLineIndex = skillLineIndex,
                 name = skillLine:GetName(),
             }
+            self:AddSkillLine(skillLine, skillTypeId, skillLineIndex)
             for _, skill in skillLine:SkillIterator() do
                 if skill:IsPassive() then
                     local progressions = {}
@@ -113,7 +139,9 @@ function Catalog:Refresh()
                             GetAbilityName(last.abilityId),
                             skillLine:GetName(),
                             numRanks,
-                            progressions
+                            progressions,
+                            skill,
+                            skillLineInfo
                         )
                     end
                 else
@@ -125,7 +153,8 @@ function Catalog:Refresh()
                                     progression:GetAbilityId(),
                                     skill:IsUltimate(),
                                     progression,
-                                    skillLineInfo
+                                    skillLineInfo,
+                                    skill
                                 )
                             end
                         end
@@ -136,7 +165,8 @@ function Catalog:Refresh()
                                 progression:GetAbilityId(),
                                 skill:IsUltimate(),
                                 progression,
-                                skillLineInfo
+                                skillLineInfo,
+                                skill
                             )
                         end
                     end
@@ -150,6 +180,9 @@ function Catalog:Refresh()
             return left.skillLine < right.skillLine
         end
         return left.name < right.name
+    end)
+    table.sort(self.skillLines, function(left, right)
+        return normalize(left.name) < normalize(right.name)
     end)
 end
 
@@ -191,6 +224,19 @@ function Catalog:GetPassiveProgression(entry, rank)
     entry = type(entry) == "table" and entry or self:FindPassiveById(entry)
     rank = tonumber(rank)
     return entry and rank and entry.progressions[rank]
+end
+
+function Catalog:FindSkillLine(skillType, skillLineIndex)
+    return self.skillLinesByKey[tostring(skillType) .. ":" .. tostring(skillLineIndex)]
+end
+
+function Catalog:FindSkillLineExact(name)
+    local wanted = normalize(name)
+    for _, entry in ipairs(self.skillLines) do
+        if normalize(entry.name) == wanted then
+            return entry
+        end
+    end
 end
 
 function Catalog:SearchPassives(text, limit)

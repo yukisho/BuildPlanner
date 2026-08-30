@@ -25,9 +25,11 @@ EquipmentSlots.lua
 ModelValidation.lua
 SkillCatalog.lua
 ChampionCatalog.lua
+ChecklistDetection.lua
 ConsumableCatalog.lua
 Data.lua
 Comparison.lua
+SwapPackages.lua
 SetCatalog.lua
 ItemResolver.lua
 StatImpact.lua

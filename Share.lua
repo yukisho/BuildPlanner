@@ -4,7 +4,7 @@ local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local Validation = GravvyBuildPlannerValidation
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 7
+local FORMAT_VERSION = 8
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = Validation.MAX_SETUPS
 local MAX_STRING = Validation.MAX_STRING
@@ -80,6 +80,18 @@ local checklistCategoryValues = {
 local checklistCategoryNames = {}
 for name, value in pairs(checklistCategoryValues) do
     checklistCategoryNames[value] = name
+end
+local checklistDetectionValues = {
+    passive = 1,
+    skillLine = 2,
+    ability = 3,
+    champion = 4,
+    championSlotted = 5,
+    trait = 6,
+}
+local checklistDetectionNames = {}
+for name, value in pairs(checklistDetectionValues) do
+    checklistDetectionNames[value] = name
 end
 
 Share.PREFIX = PREFIX
@@ -507,6 +519,28 @@ function Share.EncodeBuild(build)
             appendOptionalU32(parts, abilityId)
             appendString(parts, icon)
             appendString(parts, note)
+            local detection = entry.detection
+            local detectionKind = detection and checklistDetectionValues[detection.kind] or 0
+            if detection and not detectionKind then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            parts[#parts + 1] = string.char(detectionKind)
+            for _, keyName in ipairs({
+                "id",
+                "skillType",
+                "skillLineIndex",
+                "craftingType",
+                "researchLineIndex",
+                "traitIndex",
+            }) do
+                local value = detection and detection[keyName]
+                local normalized = value ~= nil
+                    and wholeNumber(value, 1, MAX_U32 - 1) or nil
+                if value ~= nil and not normalized then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                appendOptionalU32(parts, normalized)
+            end
         end
     end
 
@@ -822,6 +856,35 @@ function Share.DecodeCode(code)
                 local abilityId, abilityIdOk = readOptionalU32(reader)
                 local icon = reader:String(MAX_STRING, false)
                 local note = reader:String(MAX_NOTE, false)
+                local detection
+                if version >= 8 then
+                    local detectionValue = reader:Byte()
+                    if detectionValue == nil then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    local values = {}
+                    local valuesOk = true
+                    for valueIndex = 1, 6 do
+                        local value, ok = readOptionalU32(reader)
+                        values[valueIndex] = value
+                        valuesOk = valuesOk and ok
+                    end
+                    if not valuesOk or (detectionValue > 0
+                        and not checklistDetectionNames[detectionValue]) then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    if detectionValue > 0 then
+                        detection = {
+                            kind = checklistDetectionNames[detectionValue],
+                            id = values[1],
+                            skillType = values[2],
+                            skillLineIndex = values[3],
+                            craftingType = values[4],
+                            researchLineIndex = values[5],
+                            traitIndex = values[6],
+                        }
+                    end
+                end
                 local key = category and tostring(categoryValue) .. "\31"
                     .. zo_strlower(name or "")
                 if not category or seenChecklist[key] or not name or not targetRank
@@ -838,6 +901,7 @@ function Share.DecodeCode(code)
                     abilityId = abilityId,
                     icon = icon,
                     note = note,
+                    detection = detection,
                 }
             end
         end

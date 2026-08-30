@@ -267,6 +267,7 @@ local checklistSaved, checklistIndex = data:SetChecklistEntry(build.id, setup.id
     name = "Advanced Species",
     targetRank = 2,
     abilityId = 5002,
+    detection = { kind = "passive", id = 5002 },
     icon = "advanced-species.dds",
     completed = false,
     note = "Animal Companions",
@@ -280,6 +281,11 @@ expect(not data:SetChecklistEntry(build.id, setup.id, nil, {
     category = "passive",
     name = "Advanced Species",
 }), "duplicate checklist steps should be rejected within a category")
+expect(not data:SetChecklistEntry(build.id, setup.id, nil, {
+    category = "unlock",
+    name = "Broken Champion detector",
+    detection = { kind = "champion" },
+}), "automatic checklist detectors should require their stable ESO identifiers")
 
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
@@ -441,6 +447,8 @@ expectEqual(decodedBuild.setups[1].checklist[1].abilityId, 5002,
     "share codes should retain passive-skill identity")
 expect(decodedBuild.setups[1].checklist[1].completed,
     "share codes should retain checklist completion")
+expectEqual(decodedBuild.setups[1].checklist[1].detection.kind, "passive",
+    "share codes should retain automatic checklist detection")
 expectEqual(decodedBuild.setups[1].statSnapshots, nil,
     "share codes should exclude character-specific stat snapshots")
 local buildCount = #data:GetBuilds()
@@ -471,7 +479,10 @@ expectEqual(imported.setups[1].consumables[1].itemId, 12345,
     "import should preserve resolved consumable identity")
 expectEqual(imported.setups[1].checklist[1].targetRank, 2,
     "import should preserve progression targets")
-local damaged = shareCode:sub(1, -2) .. (shareCode:sub(-1) == "A" and "B" or "A")
+local damageAt = math.min(20, #shareCode - 1)
+local damagedCharacter = shareCode:sub(damageAt, damageAt) == "A" and "B" or "A"
+local damaged = shareCode:sub(1, damageAt - 1) .. damagedCharacter
+    .. shareCode:sub(damageAt + 1)
 expectEqual(GravvyBuildPlannerShare.DecodeCode(damaged), nil, "damaged share codes should fail their checksum")
 local hostileCases = {
     { key = "armorType", value = 99, slot = "head" },
@@ -720,7 +731,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 11, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 12, "migration should advance the saved-data schema")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
     "migration should add empty revision history")
 expectEqual(repaired.saved.builds[1].setups[1].character.raceId, 0, "migration should add character defaults")

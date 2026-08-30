@@ -1,5 +1,5 @@
 local UI = GravvyBuildPlannerUI
-local ROW_COUNT = 10
+local ROW_COUNT = 9
 local PANEL_WIDTH = 942
 local TABLE_INSET = 18
 local TABLE_WIDTH = PANEL_WIDTH - (TABLE_INSET * 2)
@@ -148,6 +148,36 @@ function UI:CreateComparisonPlanner()
     nextPage:SetAnchor(LEFT, previous, RIGHT, 8, 0)
     nextPage:SetHandler("OnClicked", function() self:PageComparison(1) end)
     self.comparisonPageLabel = makeLabel(panel, "", 234, 486, 250, "ZoFontGameSmall")
+    self.comparisonPageLabel:SetDimensions(126, 30)
+    self.swapOnlyButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SWAP_ONLY),
+        126
+    )
+    self.swapOnlyButton:SetAnchor(BOTTOMLEFT, panel, BOTTOMLEFT, 366, -14)
+    self.swapOnlyButton:SetHandler("OnClicked", function() self:ToggleSwapOnly() end)
+    self.swapPresetCombo = makeCombo(panel, "GravvyBuildPlannerSwapPreset", 500, 486, 132)
+    self.swapPresetKey = "boss"
+    for _, preset in ipairs(GravvyBuildPlannerSwapPackages.PRESETS) do
+        local presetKey = preset.key
+        self.swapPresetCombo:AddItem(self.swapPresetCombo:CreateItemEntry(
+            GetString(preset.stringId),
+            function()
+                self.swapPresetKey = presetKey
+            end
+        ), ZO_COMBOBOX_SUPPRESS_UPDATE)
+    end
+    if self.swapPresetCombo.UpdateItems then self.swapPresetCombo:UpdateItems() end
+    self.swapPresetCombo:SetSelectedItem(
+        GravvyBuildPlannerSwapPackages:GetPresetName(self.swapPresetKey)
+    )
+    self.swapCreateButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_SWAP_CREATE),
+        126
+    )
+    self.swapCreateButton:SetAnchor(BOTTOMLEFT, panel, BOTTOMLEFT, 640, -14)
+    self.swapCreateButton:SetHandler("OnClicked", function() self:CreateSwapVariation() end)
     self.readinessButton = makeButton(
         panel,
         GetString(SI_GRAVVY_BUILD_PLANNER_READINESS),
@@ -191,16 +221,18 @@ function UI:RefreshComparisonPlanner()
     ))
     self.comparisonRightHeader:SetText(target and target.name or "")
 
-    local differences = GravvyBuildPlannerComparison:Build(current, target)
+    local package = GravvyBuildPlannerSwapPackages:Build(current, target)
+    local differences = self.comparisonSwapOnly
+        and package.rows or GravvyBuildPlannerComparison:Build(current, target)
+    self.comparisonSwapPackage = package
     self.comparisonDifferences = differences
     local lastOffset = #differences > 0
         and math.floor((#differences - 1) / ROW_COUNT) * ROW_COUNT
         or 0
     self.comparisonOffset = zo_clamp(self.comparisonOffset, 0, lastOffset)
-    self.comparisonCountLabel:SetText(zo_strformat(
-        SI_GRAVVY_BUILD_PLANNER_COMPARE_DIFFERENCES,
-        #differences
-    ))
+    self.comparisonCountLabel:SetText(self.comparisonSwapOnly
+        and zo_strformat(SI_GRAVVY_BUILD_PLANNER_SWAP_CHANGES, #differences)
+        or zo_strformat(SI_GRAVVY_BUILD_PLANNER_COMPARE_DIFFERENCES, #differences))
     local emptyText
     if not target then
         emptyText = GetString(SI_GRAVVY_BUILD_PLANNER_COMPARE_NEEDS_SETUP)
@@ -229,6 +261,35 @@ function UI:RefreshComparisonPlanner()
         last,
         #differences
     ))
+end
+
+function UI:ToggleSwapOnly()
+    self.comparisonSwapOnly = not self.comparisonSwapOnly
+    self.comparisonOffset = 0
+    self.swapOnlyButton:SetText(GetString(self.comparisonSwapOnly
+        and SI_GRAVVY_BUILD_PLANNER_SWAP_SHOW_ALL
+        or SI_GRAVVY_BUILD_PLANNER_SWAP_ONLY))
+    self:RefreshComparisonPlanner()
+end
+
+function UI:CreateSwapVariation()
+    local source, build = self.owner.data:GetCurrentSetup()
+    local setup, message = GravvyBuildPlannerSwapPackages:CreateVariation(
+        self.owner.data,
+        build.id,
+        source.id,
+        self.swapPresetKey
+    )
+    if not setup then
+        self:SetStatus(message, true)
+        return
+    end
+    self.owner.data:SelectSetup(build.id, source.id)
+    self.comparisonSetupId = setup.id
+    self.comparisonSwapOnly = true
+    self.swapOnlyButton:SetText(GetString(SI_GRAVVY_BUILD_PLANNER_SWAP_SHOW_ALL))
+    self:Refresh()
+    self:SetStatus(message)
 end
 
 function UI:PageComparison(direction)

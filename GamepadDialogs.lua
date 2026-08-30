@@ -749,6 +749,7 @@ function Gamepad:InitializeChecklistDialog()
                 name = item and item.name or "",
                 targetRank = item and item.targetRank and tostring(item.targetRank) or "",
                 completed = item and item.completed or false,
+                detection = item and item.detection,
                 note = item and item.note or "",
             }
             dialog:setupFunc()
@@ -759,11 +760,17 @@ function Gamepad:InitializeChecklistDialog()
                 SI_GRAVVY_BUILD_PLANNER_CHECKLIST_CATEGORY,
                 checklistCategoryChoices,
                 function() return self.pendingChecklist.category end,
-                function(value) self.pendingChecklist.category = value end
+                function(value)
+                    self.pendingChecklist.category = value
+                    self.pendingChecklist.detection = nil
+                end
             ),
             textFieldEntry(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_NAME, {
                 value = function() return self.pendingChecklist.name end,
-                changed = function(value) self.pendingChecklist.name = value end,
+                changed = function(value)
+                    self.pendingChecklist.name = value
+                    self.pendingChecklist.detection = nil
+                end,
                 defaultText = GetString(SI_GRAVVY_BUILD_PLANNER_CHECKLIST_NAME),
                 maxChars = 100,
             }),
@@ -823,6 +830,13 @@ function Gamepad:SavePendingChecklist()
     local passive = pending.category == "passive"
         and self.owner.skillCatalog:FindPassiveExact(name)
         or nil
+    local selected = self.owner.checklistDetection:Resolve(pending.category, name)
+    if not selected and pending.detection then
+        selected = { name = name, icon = "", detection = pending.detection }
+    end
+    if selected and selected.detection.kind == "passive" then
+        passive = self.owner.skillCatalog:FindPassiveById(selected.detection.id) or passive
+    end
     if name == "" or (rankText ~= "" and (not rank or rank ~= math.floor(rank)
         or rank < 1 or rank > 50)) or (passive and rank and rank > passive.maxRank) then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_CHECKLIST)
@@ -837,12 +851,19 @@ function Gamepad:SavePendingChecklist()
         pending.index,
         {
             category = pending.category,
-            name = passive and passive.name or name,
+            name = selected and selected.name or passive and passive.name or name,
             targetRank = rank,
             completed = pending.completed == true,
             abilityId = progression and progression.abilityId
+                or selected and (selected.detection.kind == "passive"
+                    or selected.detection.kind == "ability") and selected.detection.id
                 or passive and passive.abilityId,
-            icon = progression and progression.icon or passive and passive.icon or "",
+            icon = selected and selected.icon or progression and progression.icon
+                or passive and passive.icon or "",
+            detection = selected and selected.detection or passive and {
+                kind = "passive",
+                id = progression and progression.abilityId or passive.abilityId,
+            },
             note = pending.note or "",
         }
     )
@@ -851,7 +872,7 @@ function Gamepad:SavePendingChecklist()
     end
     self:SetStatus(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_CHECKLIST_SAVED,
-        passive and passive.name or name
+        selected and selected.name or passive and passive.name or name
     ))
     self:Refresh(true)
     return true

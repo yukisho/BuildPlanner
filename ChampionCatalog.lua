@@ -84,6 +84,18 @@ function Catalog:FindExact(name, discipline)
     end
 end
 
+function Catalog:FindExactAny(name)
+    local wanted = normalize(name)
+    if wanted == "" then
+        return nil
+    end
+    for _, entry in ipairs(self.entries) do
+        if normalize(entry.name) == wanted then
+            return entry
+        end
+    end
+end
+
 function Catalog:Search(query, discipline, slottableOnly, limit)
     query = normalize(query)
     local results = {}

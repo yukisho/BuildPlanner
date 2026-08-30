@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 11
+local SCHEMA_VERSION = 12
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
 local MAX_REVISION_BYTES = 2097152
@@ -43,6 +43,14 @@ local validChecklistCategories = {
     skillLine = true,
     unlock = true,
     other = true,
+}
+local validChecklistDetectionKinds = {
+    passive = true,
+    skillLine = true,
+    ability = true,
+    champion = true,
+    championSlotted = true,
+    trait = true,
 }
 local validStatSnapshotKeys = {
     maxMagicka = true,
@@ -734,6 +742,38 @@ local function copyChecklistEntry(source)
             return nil
         end
         entry.icon = source.icon
+    end
+    if source.detection ~= nil then
+        local detection = source.detection
+        if type(detection) ~= "table" or not validChecklistDetectionKinds[detection.kind] then
+            return nil
+        end
+        local normalized = { kind = detection.kind }
+        for _, key in ipairs({
+            "id",
+            "skillType",
+            "skillLineIndex",
+            "craftingType",
+            "researchLineIndex",
+            "traitIndex",
+        }) do
+            if detection[key] ~= nil then
+                normalized[key] = readWholeNumber(detection[key], 1)
+                if not normalized[key] then
+                    return nil
+                end
+            end
+        end
+        local kind = normalized.kind
+        if ((kind == "passive" or kind == "ability" or kind == "champion"
+                or kind == "championSlotted") and not normalized.id)
+            or (kind == "skillLine" and (not normalized.skillType
+                or not normalized.skillLineIndex))
+            or (kind == "trait" and (not normalized.craftingType
+                or not normalized.researchLineIndex or not normalized.traitIndex)) then
+            return nil
+        end
+        entry.detection = normalized
     end
     return entry
 end
