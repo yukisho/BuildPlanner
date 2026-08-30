@@ -84,7 +84,14 @@ function UI:CreateComparisonPlanner()
     self.validationButton:SetHandler("OnClicked", function()
         self:OpenValidation(self.comparisonSetupId)
     end)
-    self.comparisonCountLabel = makeLabel(panel, "", 730, 16, 180, "ZoFontGameSmall")
+    self.walkthroughButton = makeButton(
+        panel,
+        GetString(SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH),
+        124
+    )
+    self.walkthroughButton:SetAnchor(TOPLEFT, panel, TOPLEFT, 722, 17)
+    self.walkthroughButton:SetHandler("OnClicked", function() self:OpenWalkthrough() end)
+    self.comparisonCountLabel = makeLabel(panel, "", 850, 16, 60, "ZoFontGameSmall")
     self.comparisonCountLabel:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
 
     local header = WINDOW_MANAGER:CreateControl(nil, panel, CT_CONTROL)

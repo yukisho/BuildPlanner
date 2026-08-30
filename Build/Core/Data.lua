@@ -1,7 +1,7 @@
 GravvyBuildPlannerData = {}
 
 local Data = GravvyBuildPlannerData
-local SCHEMA_VERSION = 14
+local SCHEMA_VERSION = 15
 local MAX_RECOVERY_SNAPSHOTS = 5
 local MAX_DELETED_ACTIONS = 20
 local MAX_REVISIONS = 20
@@ -18,6 +18,9 @@ local MAX_CONSUMABLE_QUANTITY = 9999
 local MAX_CHECKLIST_ENTRIES = 100
 local MAX_CHECKLIST_RANK = 50
 local MAX_STAT_CONTEXTS = 12
+local MAX_BUFF_ASSUMPTIONS = 20
+local MAX_CHARACTERS = 20
+local MAX_CHARACTER_ITEMS = 500
 local DEFAULT_QUALITY = ITEM_QUALITY_LEGENDARY or 5
 local Validation = GravvyBuildPlannerValidation
 local MAX_BUILDS = Validation.MAX_BUILDS
@@ -80,6 +83,7 @@ local defaults = {
     selectedBuildId = nil,
     deletedActions = {},
     builds = {},
+    characterEquipment = {},
     settings = {
         window = {},
         fontScale = 1,
@@ -135,6 +139,11 @@ local function now()
     return GetTimeStamp and GetTimeStamp() or 0
 end
 
+local function addonVersion()
+    return GravvyBuildPlanner and GravvyBuildPlanner.GetBuildVersion
+        and GravvyBuildPlanner:GetBuildVersion() or 0
+end
+
 local function deepCopy(value, seen)
     if type(value) ~= "table" then
         return value
@@ -159,6 +168,7 @@ local STATE_KEYS = {
     "selectedBuildId",
     "deletedActions",
     "builds",
+    "characterEquipment",
     "settings",
 }
 
@@ -174,6 +184,47 @@ end
 local function applyState(target, source)
     for _, key in ipairs(STATE_KEYS) do
         target[key] = deepCopy(source[key])
+    end
+end
+
+local function normalizeRecoveryStore(recovery)
+    if type(recovery) ~= "table" then return end
+    local snapshots = {}
+    local usedIds = {}
+    local highestId = 0
+    if type(recovery.snapshots) == "table" then
+        for index = 1, #recovery.snapshots do
+            local snapshot = recovery.snapshots[index]
+            if type(snapshot) == "table" and type(snapshot.data) == "table" then
+                local id = tonumber(snapshot.id)
+                id = id and math.floor(id) or nil
+                if id and id > 0 and id <= MAX_ID and not usedIds[id] then
+                    snapshots[#snapshots + 1] = snapshot
+                    usedIds[id] = true
+                    highestId = math.max(highestId, id)
+                end
+            end
+        end
+    end
+    while #snapshots > MAX_RECOVERY_SNAPSHOTS do
+        local removed = table.remove(snapshots, 1)
+        usedIds[removed.id] = nil
+    end
+    recovery.snapshots = snapshots
+    local requestedId = tonumber(recovery.nextId)
+    if not requestedId or requestedId ~= requestedId
+        or requestedId == math.huge or requestedId == -math.huge then
+        requestedId = 1
+    end
+    recovery.nextId = math.max(
+        highestId + 1,
+        math.floor(requestedId)
+    )
+    if recovery.nextId > MAX_ID then
+        recovery.nextId = 1
+        while usedIds[recovery.nextId] do
+            recovery.nextId = recovery.nextId + 1
+        end
     end
 end
 
@@ -235,6 +286,7 @@ local function setupFingerprintPayload(setup)
         character = setup.character,
         champion = {},
         consumables = {},
+        buffAssumptions = setup.buffAssumptions,
     }
     for _, slotKey in ipairs(GravvyBuildPlannerSlots.ORDER) do
         local requirement = setup.equipment and setup.equipment[slotKey]
@@ -427,7 +479,8 @@ local function copySkillBars(source, strict)
     for _, barKey in ipairs({ "front", "back" }) do
         local bar = source[barKey]
         if bar ~= nil and type(bar) ~= "table" then
-            return strict and nil or bars
+            if strict then return nil end
+            return bars
         end
         for slotIndex, entry in pairs(bar or {}) do
             slotIndex = tonumber(slotIndex)
@@ -770,6 +823,113 @@ local function copyConsumables(source, strict)
     return entries
 end
 
+local function copyAssumptionList(source, strict)
+    if source == nil then return {} end
+    if type(source) ~= "table" or #source > MAX_BUFF_ASSUMPTIONS then
+        if strict then return nil end
+        return {}
+    end
+    local result = {}
+    local seen = {}
+    for _, value in ipairs(source) do
+        local name = type(value) == "string"
+            and plain(value, MAX_STRING_LENGTH, false) or nil
+        local key = name and zo_strlower(name)
+        if not name or seen[key] then
+            if strict then return nil end
+        else
+            seen[key] = true
+            result[#result + 1] = name
+        end
+    end
+    return result
+end
+
+local function copyBuffAssumptions(source, strict)
+    if source == nil then
+        return { food = "", potion = "", selfBuffs = {}, groupBuffs = {}, targetConditions = {} }
+    end
+    if type(source) ~= "table" then
+        if strict then return nil end
+        return copyBuffAssumptions()
+    end
+    local food = type(source.food) == "string"
+        and plain(source.food, MAX_STRING_LENGTH, true) or nil
+    local potion = type(source.potion) == "string"
+        and plain(source.potion, MAX_STRING_LENGTH, true) or nil
+    local selfBuffs = copyAssumptionList(source.selfBuffs, strict)
+    local groupBuffs = copyAssumptionList(source.groupBuffs, strict)
+    local targetConditions = copyAssumptionList(source.targetConditions, strict)
+    if not food or not potion or not selfBuffs or not groupBuffs or not targetConditions then
+        if strict then return nil end
+        return copyBuffAssumptions()
+    end
+    return {
+        food = food,
+        potion = potion,
+        selfBuffs = selfBuffs,
+        groupBuffs = groupBuffs,
+        targetConditions = targetConditions,
+    }
+end
+
+local function copyCharacterEquipment(source, strict)
+    if source == nil then return {} end
+    if type(source) ~= "table" or #source > MAX_CHARACTERS then
+        if strict then return nil end
+        return {}
+    end
+    local characters = {}
+    local seenCharacters = {}
+    for _, sourceCharacter in ipairs(source) do
+        local id = type(sourceCharacter) == "table"
+            and type(sourceCharacter.id) == "string"
+            and plain(sourceCharacter.id, MAX_NAME_LENGTH, false)
+        local name = type(sourceCharacter) == "table"
+            and type(sourceCharacter.name) == "string"
+            and plain(sourceCharacter.name, MAX_NAME_LENGTH, false)
+        local items = type(sourceCharacter) == "table" and sourceCharacter.items
+        if not id or not name or seenCharacters[id] or type(items) ~= "table"
+            or #items > MAX_CHARACTER_ITEMS then
+            if strict then return nil end
+        else
+            local copiedItems = {}
+            local seenItems = {}
+            for _, sourceItem in ipairs(items) do
+                local itemKey = type(sourceItem) == "table"
+                    and type(sourceItem.itemKey) == "string"
+                    and plain(sourceItem.itemKey, MAX_STRING_LENGTH, false)
+                local itemLink = type(sourceItem) == "table" and sourceItem.itemLink
+                local location = type(sourceItem) == "table" and sourceItem.location
+                local count = type(sourceItem) == "table"
+                    and Validation:WholeNumber(sourceItem.count or 1, 1, 999)
+                if not itemKey or seenItems[itemKey]
+                    or not Validation:IsItemLink(itemLink) or itemLink == ""
+                    or (location ~= "equipped" and location ~= "backpack")
+                    or not count then
+                    if strict then return nil end
+                else
+                    seenItems[itemKey] = true
+                    copiedItems[#copiedItems + 1] = {
+                        itemKey = itemKey,
+                        itemLink = itemLink,
+                        location = location,
+                        count = count,
+                    }
+                end
+            end
+            seenCharacters[id] = true
+            characters[#characters + 1] = {
+                id = id,
+                name = name,
+                updatedAt = readWholeNumber(sourceCharacter.updatedAt, 0) or 0,
+                items = copiedItems,
+            }
+        end
+    end
+    return characters
+end
+
 local function copyChecklistEntry(source)
     if type(source) ~= "table" or not validChecklistCategories[source.category]
         or type(source.name) ~= "string" then
@@ -987,6 +1147,7 @@ function Data:New()
         recoveryDefaults,
         GetWorldName()
     )
+    normalizeRecoveryStore(data.recovery)
     local sourceVersion = tonumber(data.saved.schemaVersion) or 1
     local snapshotted, snapshotMessage = data:CreateRecoverySnapshot(
         "startup",
@@ -1027,6 +1188,7 @@ function Data:Normalize()
     )
     saved.settings.highContrast = saved.settings.highContrast == true
     saved.settings.nonColorIndicators = saved.settings.nonColorIndicators == true
+    saved.characterEquipment = copyCharacterEquipment(saved.characterEquipment, false)
     local window = saved.settings.window
     window.left = tonumber(window.left)
     window.top = tonumber(window.top)
@@ -1151,6 +1313,7 @@ function Data:Normalize()
             setup.champion = copyChampionPlan(setup.champion, false)
             setup.consumables = copyConsumables(setup.consumables, false)
             setup.checklist = copyChecklist(setup.checklist, false)
+            setup.buffAssumptions = copyBuffAssumptions(setup.buffAssumptions, false)
             setup.statSnapshots = copyStatSnapshots(setup.statSnapshots, setup.statSnapshot)
             setup.statSnapshot = nil
             setup.acquisition = type(setup.acquisition) == "table" and setup.acquisition or {}
@@ -1276,6 +1439,7 @@ function Data:ValidateState(saved)
         or type(saved.deletedActions) ~= "table"
         or #saved.deletedActions > MAX_DELETED_ACTIONS
         or type(saved.settings) ~= "table"
+        or not copyCharacterEquipment(saved.characterEquipment, true)
         or type(saved.settings.window) ~= "table"
         or not finiteNumber(saved.settings.fontScale)
         or saved.settings.fontScale < 0.9
@@ -1319,7 +1483,8 @@ function Data:ValidateState(saved)
                 or not Validation:IsLevel(setup.defaultLevel)
                 or not Validation:IsChampionPoints(setup.defaultChampionPoints)
                 or type(setup.equipment) ~= "table"
-                or type(setup.alternatives) ~= "table" then
+                or type(setup.alternatives) ~= "table"
+                or not copyBuffAssumptions(setup.buffAssumptions, true) then
                 return false
             end
             setupIds[setup.id] = true
@@ -1377,9 +1542,7 @@ function Data:CreateRecoverySnapshot(kind, source)
     if type(recovery) ~= "table" then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED)
     end
-    recovery.snapshots = type(recovery.snapshots) == "table"
-        and recovery.snapshots or {}
-    recovery.nextId = math.max(1, math.floor(tonumber(recovery.nextId) or 1))
+    normalizeRecoveryStore(recovery)
     local snapshot = extractState(source or self.saved)
     if type(snapshot.builds) ~= "table" then
         return false, GetString(SI_GRAVVY_BUILD_PLANNER_RECOVERY_CREATE_FAILED)
@@ -1389,7 +1552,9 @@ function Data:CreateRecoverySnapshot(kind, source)
         kind = tostring(kind or "checkpoint"),
         createdAt = now(),
         sourceSchema = tonumber(snapshot.schemaVersion) or 1,
+        addonVersion = addonVersion(),
         world = GetWorldName(),
+        checksum = fingerprint(snapshot),
         data = snapshot,
     }
     recovery.nextId = recovery.nextId + 1
@@ -1408,11 +1573,16 @@ end
 function Data:RecoverLatestValidSnapshot()
     local snapshots = self:GetRecoverySnapshots()
     for index = #snapshots, 1, -1 do
-        local candidate = self:PrepareCandidate(snapshots[index].data)
+        local snapshot = snapshots[index]
+        local intact = type(snapshot) == "table"
+            and type(snapshot.data) == "table"
+            and (snapshot.checksum == nil
+                or snapshot.checksum == fingerprint(snapshot.data))
+        local candidate = intact and self:PrepareCandidate(snapshot.data)
         if candidate then
             applyState(self.saved, candidate)
             self:CreateRecoverySnapshot("automatic_restore", self.saved)
-            return true, snapshots[index]
+            return true, snapshot
         end
     end
     return false
@@ -1421,6 +1591,10 @@ end
 function Data:RestoreRecoverySnapshot(id)
     for _, snapshot in ipairs(self:GetRecoverySnapshots()) do
         if snapshot.id == id then
+            if snapshot.checksum ~= nil
+                and snapshot.checksum ~= fingerprint(snapshot.data) then
+                return false, GetString(SI_GRAVVY_BUILD_PLANNER_DATA_MIGRATION_FAILED)
+            end
             local candidate, message = self:PrepareCandidate(snapshot.data)
             if not candidate then return false, message end
             local saved, snapshotMessage = self:CreateRecoverySnapshot(
@@ -1629,6 +1803,7 @@ function Data:DuplicateBuild(id, name)
             champion = copyChampionPlan(sourceSetup.champion, false),
             consumables = copyConsumables(sourceSetup.consumables, false),
             checklist = copyChecklist(sourceSetup.checklist, false),
+            buffAssumptions = copyBuffAssumptions(sourceSetup.buffAssumptions, false),
             acquisition = {},
             createdAt = timestamp,
             updatedAt = timestamp,
@@ -1763,6 +1938,10 @@ function Data:NormalizeImportedBuild(source, exceptBuildId)
         if not checklist then
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
+        local buffAssumptions = copyBuffAssumptions(sourceSetup.buffAssumptions, true)
+        if not buffAssumptions then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
 
         build.setups[#build.setups + 1] = {
             id = self.saved.nextSetupId + #build.setups,
@@ -1778,6 +1957,7 @@ function Data:NormalizeImportedBuild(source, exceptBuildId)
             champion = champion,
             consumables = consumables,
             checklist = checklist,
+            buffAssumptions = buffAssumptions,
             statSnapshots = copyStatSnapshots(
                 sourceSetup.statSnapshots,
                 sourceSetup.statSnapshot
@@ -1806,6 +1986,11 @@ function Data:ImportBuild(source)
     if not build then
         return nil, message
     end
+    local snapshotted, snapshotMessage = self:CreateRecoverySnapshot(
+        "pre_import",
+        self.saved
+    )
+    if not snapshotted then return nil, snapshotMessage end
     self.saved.nextBuildId = self.saved.nextBuildId + 1
     self.saved.nextSetupId = self.saved.nextSetupId + #build.setups
     self.saved.builds[#self.saved.builds + 1] = build
@@ -1833,9 +2018,14 @@ function Data:NormalizeRevisionSnapshot(source, buildId)
             return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
         end
         setup.id = setupId
+        setup.createdAt = readWholeNumber(sourceSetup.createdAt, 0) or 0
+        setup.updatedAt = readWholeNumber(sourceSetup.updatedAt, 0)
+            or setup.createdAt
         usedIds[setupId] = true
     end
     normalized.id = nil
+    normalized.createdAt = nil
+    normalized.updatedAt = nil
     normalized.revisions = nil
     normalized.nextRevisionId = nil
     normalized.selectedSetupIndex = selectedSetupIndex
@@ -2103,6 +2293,8 @@ function Data:CreateSetup(buildId, name, source)
         champion = source and copyChampionPlan(source.champion, false) or blankChampionPlan(),
         consumables = source and copyConsumables(source.consumables, false) or {},
         checklist = source and copyChecklist(source.checklist, false) or {},
+        buffAssumptions = source and copyBuffAssumptions(source.buffAssumptions, false)
+            or copyBuffAssumptions(),
         acquisition = {},
         createdAt = now(),
         updatedAt = now(),
@@ -2612,6 +2804,70 @@ function Data:SetChecklistCompleted(buildId, setupId, index, completed)
     entry.completed = completed == true
     setup.updatedAt = now()
     build.updatedAt = setup.updatedAt
+    return true
+end
+
+function Data:SetBuffAssumptions(buildId, setupId, values)
+    local build = self:FindBuild(buildId)
+    local setup = self:FindSetup(build, setupId)
+    local assumptions = copyBuffAssumptions(values, true)
+    if not setup then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_SETUP_MISSING)
+    end
+    if not assumptions then
+        return false, GetString(SI_GRAVVY_BUILD_PLANNER_ERROR_ASSUMPTIONS)
+    end
+    setup.buffAssumptions = assumptions
+    setup.updatedAt = now()
+    build.updatedAt = setup.updatedAt
+    return true, assumptions
+end
+
+function Data:GetCharacterEquipment()
+    return self.saved.characterEquipment
+end
+
+local function sameCharacterItems(left, right)
+    if #left ~= #right then return false end
+    for index, item in ipairs(left) do
+        local other = right[index]
+        if not other or item.itemKey ~= other.itemKey
+            or item.itemLink ~= other.itemLink
+            or item.location ~= other.location
+            or item.count ~= other.count then
+            return false
+        end
+    end
+    return true
+end
+
+function Data:UpdateCharacterEquipment(characterId, characterName, items)
+    characterId = plain(tostring(characterId or ""), MAX_NAME_LENGTH, false)
+    characterName = plain(tostring(characterName or ""), MAX_NAME_LENGTH, false)
+    if not characterId or not characterName or type(items) ~= "table" then
+        return false
+    end
+    local candidate = {
+        id = characterId,
+        name = characterName,
+        updatedAt = now(),
+        items = items,
+    }
+    local normalized = copyCharacterEquipment({ candidate }, true)
+    if not normalized then return false end
+    local characters = self.saved.characterEquipment
+    for index, character in ipairs(characters) do
+        if character.id == characterId then
+            if character.name == normalized[1].name
+                and sameCharacterItems(character.items, normalized[1].items) then
+                return true
+            end
+            characters[index] = normalized[1]
+            return true
+        end
+    end
+    characters[#characters + 1] = normalized[1]
+    while #characters > MAX_CHARACTERS do table.remove(characters, 1) end
     return true
 end
 

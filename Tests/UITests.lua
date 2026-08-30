@@ -251,7 +251,11 @@ local function newControl(name, parent)
         return self.children[childName]
     end
     function control:SetDimensions(width, height) self.width, self.height = width, height end
+    function control:SetWidth(width) self.width = width end
     function control:SetHeight(height) self.height = height end
+    function control:SetResizeToFitPadding(horizontal, vertical)
+        self.resizePadding = { horizontal, vertical }
+    end
     function control:SetAnchor(...) self.anchor = { ... } end
     function control:ClearAnchors() end
     function control:SetAnchorFill() end
@@ -291,6 +295,14 @@ local function newControl(name, parent)
 end
 
 WINDOW_MANAGER = {}
+local lastResetScroll
+function ZO_Scroll_SetUseFadeGradient(control, enabled)
+    control.fadeGradient = enabled
+end
+function ZO_Scroll_ResetToTop(control)
+    control.resetCount = (control.resetCount or 0) + 1
+    lastResetScroll = control
+end
 local virtualControlNames = {}
 function WINDOW_MANAGER:CreateTopLevelWindow(name)
     local control = newControl(name)
@@ -550,6 +562,7 @@ function GetAbilityName(abilityId) return abilities[abilityId] and abilities[abi
 function GetAbilityIcon(abilityId) return abilities[abilityId] and abilities[abilityId].icon or "" end
 function GetUnitSilhouetteTexture() return "player-silhouette" end
 function GetRawUnitName() return "Test Warden" end
+function GetCurrentCharacterId() return "current-character" end
 function GetActiveWeaponPairInfo() return ACTIVE_WEAPON_PAIR_MAIN end
 function GetPlayerStat(statType) return statType * 10 end
 function GetCriticalStrikeChance(rating) return rating / 100 end
@@ -818,6 +831,7 @@ function InitializeTooltip() end
 function ClearTooltip(tooltip) tooltip.link = nil end
 
 dofile("Build/UI/Shared/UIHelpers.lua")
+dofile("Build/UI/Shared/Help.lua")
 dofile("Build/Features/Enchantments.lua")
 dofile("Build/Features/ItemResolver.lua")
 dofile("Build/Features/StatImpact.lua")
@@ -826,6 +840,7 @@ dofile("Build/Features/Acquisition.lua")
 dofile("Build/Core/Inventory.lua")
 dofile("Build/Integrations/ShoppingIntegration.lua")
 dofile("Build/Features/Readiness.lua")
+dofile("Build/Features/Walkthrough.lua")
 dofile("Build/Features/CharacterCapture.lua")
 dofile("Build/Features/SkillCatalog.lua")
 dofile("Build/Features/ChampionCatalog.lua")
@@ -833,6 +848,7 @@ dofile("Build/Features/ChecklistDetection.lua")
 dofile("Build/Features/ConsumableCatalog.lua")
 dofile("Build/Features/Share.lua")
 dofile("Build/UI/Shared/Accessibility.lua")
+dofile("Build/Features/BuffAssumptions.lua")
 dofile("Build/Features/Comparison.lua")
 dofile("Build/Features/SwapPackages.lua")
 dofile("Build/UI/Keyboard/UI.lua")
@@ -842,6 +858,8 @@ dofile("Build/UI/Keyboard/SuppliesPlanner.lua")
 dofile("Build/UI/Keyboard/ChecklistPlanner.lua")
 dofile("Build/UI/Keyboard/ComparisonPlanner.lua")
 dofile("Build/UI/Keyboard/StatImpactUI.lua")
+dofile("Build/UI/Keyboard/BuffAssumptionsUI.lua")
+dofile("Build/UI/Keyboard/WalkthroughUI.lua")
 dofile("Build/UI/Keyboard/BuildValidationUI.lua")
 dofile("Build/UI/Keyboard/ReadinessUI.lua")
 dofile("Build/UI/Shared/Settings.lua")
@@ -860,6 +878,7 @@ owner.buildValidation = GravvyBuildPlannerBuildValidation:New(owner)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
 owner.readiness = GravvyBuildPlannerReadiness:New(owner)
+owner.walkthrough = GravvyBuildPlannerWalkthrough:New(owner)
 owner.capture = GravvyBuildPlannerCharacterCapture:New(owner)
 owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
@@ -919,6 +938,14 @@ expectEqual(GravvyBuildPlannerStatImpact, statImpactEngine,
     "creating the stat window should not replace the calculation engine")
 expectEqual(GravvyBuildPlannerStatImpactWindow, ui.statImpactDialog,
     "the stat impact window should use a distinct control name")
+expectEqual(GravvyBuildPlannerBuffAssumptionsWindow, ui.buffAssumptionsDialog,
+    "the assumptions window should use a distinct control name")
+expect(type(GravvyBuildPlannerBuffAssumptions.Format) == "function",
+    "the assumptions dialog should not replace its feature module")
+expectEqual(GravvyBuildPlannerWalkthroughWindow, ui.walkthroughDialog,
+    "the walkthrough window should use a distinct control name")
+expect(type(GravvyBuildPlannerWalkthrough.Build) == "function",
+    "the walkthrough dialog should not replace its feature module")
 local virtualControlAudit = GravvyBuildPlannerUIHelpers:AuditVirtualControls()
 expect(virtualControlAudit.checked > 0 and virtualControlAudit.failed == 0,
     "virtual UI templates should have unique, verifiable parent names")
@@ -989,12 +1016,28 @@ expectEqual(ui.statImpactDialog.height, 760,
     "the stat impact window should leave room for capture guidance")
 expectEqual(GravvyBuildPlannerAccessibility.fonts[ui.statImpactEffectRows[1]], "ZoFontGame",
     "planned gear effects should use the normal game font")
+ui:OpenBuffAssumptions()
+expect(not ui.buffAssumptionsDialog:IsHidden(),
+    "keyboard users should be able to edit setup assumptions")
+ui.buffAssumptionEdits.food:SetText("Lava Foot Soup-and-Saltrice")
+ui.buffAssumptionEdits.potion:SetText("Essence of Weapon Power")
+ui.buffAssumptionEdits.selfBuffs:SetText("Major Brutality\nMajor Brutality\nMinor Force")
+ui.buffAssumptionEdits.groupBuffs:SetText("Major Courage")
+ui.buffAssumptionEdits.targetConditions:SetText("Off Balance\nUnder 25% Health")
+ui:SaveBuffAssumptions()
+expectEqual(#BuildPlannerTestData:GetCurrentSetup().buffAssumptions.selfBuffs, 2,
+    "assumption entry should deduplicate repeated lines")
 ui:OpenStatImpact()
 expect(not ui.statImpactDialog:IsHidden(), "stat impact should open for the selected setup")
 expect(ui.statImpactRows[1].live:GetText() ~= "—",
     "stat impact should read live character-sheet values")
 expect(#(ui.statImpactEffects or {}) > 0,
     "stat impact should show resolvable planned gear effects")
+expectEqual(ui.statImpactEffects[1].label,
+    GetString(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_NOT_CALCULATED),
+    "stat impact should keep assumptions outside calculated gear effects")
+expect(ui.statImpactEffects[1].description:find("Major Courage", 1, true),
+    "stat impact should show the setup's descriptive buff context")
 expect(ui.statImpactCoverageLabel:GetText():find("Equipped match", 1, true),
     "stat impact should show worn-gear match coverage before capture")
 ui:RequestStatImpactCapture()
@@ -1338,6 +1381,31 @@ ui.checklistNoteEdit:SetText("Unlock Undaunted Mettle")
 ui:SaveChecklistEntry()
 expectEqual(#BuildPlannerTestData:GetCurrentSetup().checklist, 2,
     "keyboard progression steps should persist")
+local walkthroughReport = owner.walkthrough:Build(
+    BuildPlannerTestData:GetCurrentSetup()
+)
+expect(walkthroughReport.total > 6,
+    "the walkthrough should cover gear, skills, progression, and stat capture")
+expectEqual(walkthroughReport.steps[walkthroughReport.total - 1].action, "statImpact",
+    "the walkthrough should finish with front-bar stat capture")
+expectEqual(walkthroughReport.steps[walkthroughReport.total].value, "back",
+    "the walkthrough should finish with back-bar stat capture")
+expect(walkthroughReport.steps[1].planned ~= ""
+        and walkthroughReport.steps[1].current ~= ""
+        and walkthroughReport.steps[1].instruction ~= "",
+    "walkthrough tasks should explain the plan, current state, and next action")
+ui:OpenWalkthrough()
+expect(not ui.walkthroughDialog:IsHidden(),
+    "keyboard users should be able to open the guided walkthrough")
+expect(ui.walkthroughProgress:GetText():find("tasks ready", 1, true),
+    "the walkthrough should display overall completion progress")
+expect(ui.walkthroughPlanned:GetText() ~= ""
+        and ui.walkthroughCurrent:GetText() ~= ""
+        and ui.walkthroughInstruction:GetText() ~= "",
+    "the walkthrough window should present each task in actionable sections")
+expect(ui.walkthroughOpen:GetText() ~= "Open This Step",
+    "the walkthrough action should name the planner it will open")
+ui.walkthroughDialog:SetHidden(true)
 ui:SetView("comparison")
 expect(not ui.comparisonPanel:IsHidden(), "keyboard users should be able to compare setups")
 expectEqual(ui.comparisonHeader.width, ui.comparisonRows[1].width,
@@ -1380,6 +1448,15 @@ expect(ui.comparisonSetupCombo.itemsUpdated,
 expectEqual(ui.comparisonSetupCombo.m_dropdown.drawTier, DT_HIGH,
     "comparison choices should render above the results table")
 expect(#ui.comparisonDifferences > 0, "comparison should include only changed setup fields")
+local foundAssumptionDifference = false
+for _, change in ipairs(ui.comparisonDifferences) do
+    if change.sectionKey == "assumptions" then
+        foundAssumptionDifference = true
+        break
+    end
+end
+expect(foundAssumptionDifference,
+    "setup comparison should include changed buff assumptions")
 expect(not ui.comparisonRows[1]:IsHidden(), "changed fields should be visible in the comparison table")
 local comparisonCurrent, comparisonBuild = BuildPlannerTestData:GetCurrentSetup()
 local comparisonTarget = BuildPlannerTestData:FindSetup(
@@ -1449,6 +1526,16 @@ expectEqual(
 )
 expectEqual(
     gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[6].text,
+    SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS,
+    "gamepad build management should expose setup assumptions"
+)
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[7].text,
+    SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH,
+    "gamepad build management should expose the guided walkthrough"
+)
+expectEqual(
+    gamepadDialogs["GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"].parametricList[8].text,
     SI_GRAVVY_BUILD_PLANNER_REVISIONS,
     "gamepad build management should expose revision history"
 )
@@ -1478,6 +1565,9 @@ expectEqual(gamepad.statImpactContextKey, "unbuffed",
 local gamepadRevisionAction = gamepadDialogs[
     "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
 ].parametricList[6]
+gamepadRevisionAction = gamepadDialogs[
+    "GRAVVY_BUILD_PLANNER_GAMEPAD_MANAGE"
+].parametricList[8]
 gamepadRevisionAction.templateData.callback()
 expectEqual(shownGamepadDialog, "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION",
     "gamepad users should be able to browse revision history")
@@ -1656,11 +1746,19 @@ expect(ui.window:IsHidden(), "planner should start hidden")
 ui:ShowHelp()
 expect(not ui.helpDialog:IsHidden(), "in-game help should be available from the planner")
 expect(cameraUIMode, "standalone help should request ESO UI mode")
-expectEqual(#ui.helpPages, 4, "keyboard help should be split into readable pages")
+expectEqual(#ui.helpPages, 5, "keyboard help should be split into readable pages")
+expect(ui.helpScroll and ui.helpScrollChild,
+    "keyboard help should use ESO's scroll container")
+expectEqual(ui.helpContent.parent, ui.helpScrollChild,
+    "help text should resize inside the scrolling child")
+expectEqual(ui.helpScroll.fadeGradient, false,
+    "help scrolling should not fade the first or last line")
 expectEqual(owner.accessibility.fonts[ui.helpContent], "ZoFontGame",
     "keyboard help should use the larger normal game font")
 ui.helpNextButton.handlers.OnClicked()
 expectEqual(ui.helpPage, 2, "keyboard help should advance to the next page")
+expectEqual(lastResetScroll, ui.helpScroll,
+    "changing help pages should reset the scroll position")
 expect(ui.helpContent:GetText():find("CHARACTER\nChoose Character", 1, true),
     "the Character help heading should remain separate from its description")
 ui.helpNextButton.handlers.OnClicked()
@@ -1968,6 +2066,69 @@ expectEqual(feetMatch.alternativeIndex, 1, "owned matches should identify the ch
 local ringMatches = (owner.inventory:GetMatch(setup.id, "ring1") and 1 or 0)
     + (owner.inventory:GetMatch(setup.id, "ring2") and 1 or 0)
 expectEqual(ringMatches, 1, "one owned ring should not satisfy two planned slots")
+
+BuildPlannerTestData:UpdateCharacterEquipment("remote-character", "Storage Warden", {
+    {
+        itemKey = "item:remote-head",
+        itemLink = "owned:head",
+        location = "backpack",
+        count = 1,
+    },
+})
+testBags[BAG_WORN] = {}
+owner.inventory:Refresh()
+local remoteHeadMatch = owner.inventory:GetMatch(setup.id, "head")
+expect(remoteHeadMatch and remoteHeadMatch.remote,
+    "cached gear on another character should satisfy a setup")
+expectEqual(remoteHeadMatch.characterName, "Storage Warden",
+    "cross-character matches should identify their holder")
+local remoteReadiness = owner.readiness:BuildReport(setup)
+local remoteHeadEntry
+for _, entry in ipairs(remoteReadiness.entries) do
+    if entry.slotKey == "head" then remoteHeadEntry = entry break end
+end
+expect(remoteHeadEntry.location:find("Storage Warden", 1, true),
+    "readiness should show the character holding a matched piece")
+testBags[BAG_WORN] = { "owned:head" }
+owner.inventory:Refresh()
+
+local dependencySetups = {
+    {
+        id = 99101,
+        defaultQuality = ITEM_QUALITY_LEGENDARY,
+        defaultLevel = 50,
+        defaultChampionPoints = 160,
+        equipment = { ring1 = { setId = 34, setName = "Pillar of Nirn" } },
+        alternatives = {},
+    },
+    {
+        id = 99102,
+        defaultQuality = ITEM_QUALITY_LEGENDARY,
+        defaultLevel = 50,
+        defaultChampionPoints = 160,
+        equipment = { ring1 = { setId = 34, setName = "Pillar of Nirn" } },
+        alternatives = {},
+    },
+}
+local dependencyOwner = {
+    acquisition = owner.acquisition,
+    data = {
+        GetBuilds = function()
+            return {{ id = 99100, name = "Shared Gear", setups = dependencySetups }}
+        end,
+        GetSetupFingerprint = function(_, value) return tostring(value.id) end,
+    },
+}
+local dependencyInventory = GravvyBuildPlannerInventory:New(dependencyOwner)
+dependencyInventory.items = {{
+    itemLink = "owned:ring",
+    itemKey = "item:shared-ring",
+    count = 1,
+    location = "backpack",
+}}
+dependencyInventory.itemsLoaded = true
+expectEqual(#dependencyInventory:GetSharedDependencies(99101, "ring1"), 1,
+    "the equipment index should detect setups sharing one physical item")
 itemLinks["best:x"] = {
     itemId = 8801, name = "Ring of X", setId = 880, setName = "Set X",
     equipType = EQUIP_TYPE_RING, armorType = ARMORTYPE_NONE,
@@ -2056,6 +2217,8 @@ local scaleOwner = {
         GetBuilds = function() return {{ setups = scaleSetups }} end,
         GetCurrentSetup = function() return scaleSetups[1] end,
         GetSetupFingerprint = function(_, value) return tostring(value.id) end,
+        UpdateCharacterEquipment = function() return true end,
+        GetCharacterEquipment = function() return {} end,
     },
 }
 local scaleInventory = GravvyBuildPlannerInventory:New(scaleOwner)
@@ -2232,8 +2395,8 @@ expectEqual(
         for _ in pairs(gamepadDialogs) do count = count + 1 end
         return count
     end)(),
-    18,
-    "gamepad editing, management, validation, readiness, revisions, sharing, export, and help dialogs should register"
+    20,
+    "gamepad editing, management, assumptions, walkthrough, validation, readiness, revisions, sharing, export, and help dialogs should register"
 )
 gamepadPreferred = true
 gamepad:Show()
@@ -2494,7 +2657,16 @@ EVENT_MANAGER = {
     end,
     UnregisterForEvent = function() end,
 }
+function GetAddOnManager()
+    return {
+        GetNumAddOns = function() return 1 end,
+        GetAddOnInfo = function() return "GravvyBuildPlanner" end,
+        GetAddOnVersion = function() return 29 end,
+    }
+end
 dofile("Build/GravvyBuildPlanner.lua")
+expectEqual(GravvyBuildPlanner:GetBuildVersion(), 29,
+    "the add-on build number should come from its manifest metadata")
 EVENT_MANAGER.addOnLoaded(nil, "GravvyBuildPlanner")
 expect(SLASH_COMMANDS["/buildplanner"], "long slash command should be registered")
 expect(SLASH_COMMANDS["/gbp"], "short slash command should be registered")

@@ -4,7 +4,7 @@ local Share = GravvyBuildPlannerShare
 local Slots = GravvyBuildPlannerSlots
 local Validation = GravvyBuildPlannerValidation
 local PREFIX = "GBP1:"
-local FORMAT_VERSION = 8
+local FORMAT_VERSION = 9
 local MAX_CODE_LENGTH = 100000
 local MAX_SETUPS = Validation.MAX_SETUPS
 local MAX_STRING = Validation.MAX_STRING
@@ -17,6 +17,7 @@ local MAX_CHAMPION_ALLOCATIONS = 200
 local MAX_CHAMPION_POINTS = 1000
 local MAX_CONSUMABLES = 20
 local MAX_CHECKLIST_ENTRIES = 100
+local MAX_BUFF_ASSUMPTIONS = 20
 local MAX_U32 = 4294967295
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
@@ -542,6 +543,33 @@ function Share.EncodeBuild(build)
                 appendOptionalU32(parts, normalized)
             end
         end
+        local assumptions = setup.buffAssumptions or {}
+        local food = assumptions.food or ""
+        local potion = assumptions.potion or ""
+        if type(food) ~= "string" or type(potion) ~= "string"
+            or #food > MAX_STRING or #potion > MAX_STRING then
+            return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+        end
+        appendString(parts, food)
+        appendString(parts, potion)
+        for _, key in ipairs({ "selfBuffs", "groupBuffs", "targetConditions" }) do
+            local entries = assumptions[key] or {}
+            if type(entries) ~= "table" or #entries > MAX_BUFF_ASSUMPTIONS then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            local seen = {}
+            parts[#parts + 1] = string.char(#entries)
+            for _, value in ipairs(entries) do
+                local normalized = type(value) == "string"
+                    and zo_strlower(trim(value)) or nil
+                if not normalized or normalized == "" or #value > MAX_STRING
+                    or seen[normalized] then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                seen[normalized] = true
+                appendString(parts, value)
+            end
+        end
     end
 
     local body = table.concat(parts)
@@ -620,6 +648,13 @@ function Share.DecodeCode(code)
             },
             consumables = {},
             checklist = {},
+            buffAssumptions = {
+                food = "",
+                potion = "",
+                selfBuffs = {},
+                groupBuffs = {},
+                targetConditions = {},
+            },
             acquisition = {},
         }
         local equipmentCount = reader:Byte()
@@ -903,6 +938,31 @@ function Share.DecodeCode(code)
                     note = note,
                     detection = detection,
                 }
+            end
+        end
+        if version >= 9 then
+            local food = reader:String(MAX_STRING, false)
+            local potion = reader:String(MAX_STRING, false)
+            if food == nil or potion == nil then
+                return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+            end
+            setup.buffAssumptions.food = food
+            setup.buffAssumptions.potion = potion
+            for _, key in ipairs({ "selfBuffs", "groupBuffs", "targetConditions" }) do
+                local count = reader:Byte()
+                if not count or count > MAX_BUFF_ASSUMPTIONS then
+                    return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                end
+                local seen = {}
+                for _ = 1, count do
+                    local value = reader:String(MAX_STRING, true)
+                    local normalized = value and zo_strlower(trim(value))
+                    if not value or seen[normalized] then
+                        return nil, GetString(SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_DATA)
+                    end
+                    seen[normalized] = true
+                    setup.buffAssumptions[key][#setup.buffAssumptions[key] + 1] = value
+                end
             end
         end
         build.setups[#build.setups + 1] = setup

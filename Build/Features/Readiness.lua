@@ -31,14 +31,22 @@ local function slotName(slotKey)
     return GetString(slotStringIds[slotKey])
 end
 
-local function locationName(location)
-    return GetString(location == "equipped"
+local function locationName(location, characterName)
+    local base = GetString(location == "equipped"
         and SI_GRAVVY_BUILD_PLANNER_OWNED_EQUIPPED
         or location == "backpack"
             and SI_GRAVVY_BUILD_PLANNER_OWNED_BACKPACK
             or location == "bank"
                 and SI_GRAVVY_BUILD_PLANNER_OWNED_BANK
                 or SI_GRAVVY_BUILD_PLANNER_READINESS_NO_LOCATION)
+    if characterName and characterName ~= "" then
+        return zo_strformat(
+            SI_GRAVVY_BUILD_PLANNER_CROSS_CHARACTER_HOLDER,
+            characterName,
+            base
+        )
+    end
+    return base
 end
 
 local function hasDifference(match, wanted)
@@ -88,6 +96,7 @@ function Readiness:BuildReport(setup)
         adjustable = 0,
         missing = 0,
         conflicting = 0,
+        sharedDependencies = 0,
         routes = {
             owned = 0, buy = 0, craft = 0, farm = 0,
             reconstruct = 0, transmute = 0, unknown = 0,
@@ -191,16 +200,30 @@ function Readiness:BuildReport(setup)
                 report.materials.transmuteCrystals = report.materials.transmuteCrystals
                     + TRANSMUTE_COST
             end
+            local sharedUses = match and self.owner.inventory:GetSharedDependencies(
+                setup.id,
+                slotKey
+            ) or {}
+            if #sharedUses > 0 then
+                report.sharedDependencies = report.sharedDependencies + #sharedUses
+                work[#work + 1] = zo_strformat(
+                    SI_GRAVVY_BUILD_PLANNER_CROSS_CHARACTER_SHARED,
+                    #sharedUses
+                )
+            end
             report.entries[#report.entries + 1] = {
                 slotKey = slotKey,
                 slot = slotName(slotKey),
                 status = status,
                 route = route,
-                location = match and locationName(match.location)
-                    or contested and locationName(contested.location)
+                location = match and locationName(match.location, match.characterName)
+                    or contested and locationName(contested.location, contested.characterName)
                     or GetString(SI_GRAVVY_BUILD_PLANNER_READINESS_NO_LOCATION),
                 work = table.concat(work, ", "),
                 differences = match and match.differences or {},
+                sharedUses = sharedUses,
+                requirement = matchedRequirement,
+                match = match,
             }
         end
     end

@@ -20,6 +20,7 @@ Localization/es.lua
 Localization/fr.lua
 
 UI/Shared/UIHelpers.lua
+UI/Shared/Help.lua
 Features/Enchantments.lua
 Core/EquipmentSlots.lua
 Core/ModelValidation.lua
@@ -28,6 +29,7 @@ Features/ChampionCatalog.lua
 Features/ChecklistDetection.lua
 Features/ConsumableCatalog.lua
 Core/Data.lua
+Features/BuffAssumptions.lua
 Features/Comparison.lua
 Features/SwapPackages.lua
 Features/SetCatalog.lua
@@ -38,6 +40,7 @@ Features/Acquisition.lua
 Core/Inventory.lua
 Integrations/ShoppingIntegration.lua
 Features/Readiness.lua
+Features/Walkthrough.lua
 Features/CharacterCapture.lua
 UI/Shared/Accessibility.lua
 UI/Keyboard/UI.lua
@@ -47,6 +50,8 @@ UI/Keyboard/SuppliesPlanner.lua
 UI/Keyboard/ChecklistPlanner.lua
 UI/Keyboard/ComparisonPlanner.lua
 UI/Keyboard/StatImpactUI.lua
+UI/Keyboard/BuffAssumptionsUI.lua
+UI/Keyboard/WalkthroughUI.lua
 UI/Keyboard/BuildValidationUI.lua
 UI/Keyboard/ReadinessUI.lua
 Features/Share.lua

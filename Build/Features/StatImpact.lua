@@ -533,6 +533,7 @@ function StatImpact:BuildReport(setup, bar, contextKey, compareSetup)
         compareSnapshotStale = compareSetup
             and self.owner.data:IsStatSnapshotStale(compareSetup, bar, contextKey) or nil,
         contextKey = contextKey or "general",
+        assumptions = GravvyBuildPlannerBuffAssumptions:Format(effectSetup),
     }
 end
 

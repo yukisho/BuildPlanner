@@ -388,6 +388,8 @@ function UI:Initialize()
     self:CreateChecklistPlanner()
     self:CreateComparisonPlanner()
     self:CreateStatImpactDialog()
+    self:CreateBuffAssumptionsDialog()
+    self:CreateWalkthroughDialog()
     self:CreateValidationDialog()
     self:CreateReadinessDialog()
     self:CreateNameDialog()
@@ -1351,42 +1353,37 @@ function UI:CreateHelpDialog()
         664,
         "ZoFontWinH2"
     )
-    local function helpPage(...)
-        local text = table.concat({ ... })
-        return (text:gsub("^%s+", ""))
-    end
-    self.helpPages = {
-        helpPage(GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)),
-        helpPage(
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
-        ),
-        helpPage(
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
-        ),
-        helpPage(
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_VALIDATION),
-            GetString(SI_GRAVVY_BUILD_PLANNER_HELP_READINESS)
-        ),
-    }
+    self.helpPages = GravvyBuildPlannerHelp:GetPages()
     self.helpPage = 1
-    self.helpContent = makeLabel(
+
+    self.helpScroll = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         dialog,
-        "",
-        22,
-        52,
-        656,
-        "ZoFontGame"
+        "ZO_ScrollContainer",
+        "HelpScroll"
+    )
+    self.helpScroll:SetAnchor(TOPLEFT, dialog, TOPLEFT, 22, 52)
+    self.helpScroll:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -22, -58)
+    if ZO_Scroll_SetUseFadeGradient then
+        ZO_Scroll_SetUseFadeGradient(self.helpScroll, false)
+    end
+    self.helpScrollChild = self.helpScroll:GetNamedChild("ScrollChild")
+    self.helpScrollChild:SetResizeToFitPadding(0, 16)
+    self.helpContent = WINDOW_MANAGER:CreateControl(
+        nil,
+        self.helpScrollChild,
+        CT_LABEL
+    )
+    GravvyBuildPlannerAccessibility:SetFont(self.helpContent, "ZoFontGame")
+    self.helpContent:SetColor(0.88, 0.86, 0.8, 1)
+    self.helpContent:SetAnchor(
+        TOPLEFT,
+        self.helpScrollChild,
+        TOPLEFT,
+        0,
+        0
     )
     self.helpContent:SetVerticalAlignment(TEXT_ALIGN_TOP)
-    self.helpContent:SetHeight(580)
+    self.helpContent:SetWidth(620)
 
     local close = makeButton(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_CLOSE), 100)
     close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
@@ -1413,6 +1410,9 @@ end
 function UI:RefreshHelp()
     self.helpPage = zo_clamp(self.helpPage or 1, 1, #self.helpPages)
     self.helpContent:SetText(self.helpPages[self.helpPage])
+    if ZO_Scroll_ResetToTop then
+        ZO_Scroll_ResetToTop(self.helpScroll)
+    end
     self.helpPageLabel:SetText(zo_strformat(
         SI_GRAVVY_BUILD_PLANNER_HELP_PAGE,
         self.helpPage,

@@ -104,8 +104,9 @@ function UI:CreateReadinessDialog()
     close:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
 end
 
-function UI:OpenReadiness()
+function UI:OpenReadiness(slotKey)
     self.readinessOffset = 0
+    self.readinessTargetSlot = slotKey
     self.readinessDialog:SetHidden(false)
     self:RefreshReadiness()
 end
@@ -125,6 +126,15 @@ function UI:RefreshReadiness()
         report.shopping.included,
         report.shopping.glyphs
     ))
+    if self.readinessTargetSlot then
+        for index, entry in ipairs(report.entries) do
+            if entry.slotKey == self.readinessTargetSlot then
+                self.readinessOffset = math.floor((index - 1) / ROWS) * ROWS
+                break
+            end
+        end
+        self.readinessTargetSlot = nil
+    end
     local lastOffset = #report.entries > 0
         and math.floor((#report.entries - 1) / ROWS) * ROWS or 0
     self.readinessOffset = zo_clamp(self.readinessOffset, 0, lastOffset)

@@ -20,6 +20,8 @@ local REVISION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_REVISION"
 local STAT_IMPACT_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_STAT_IMPACT"
 local VALIDATION_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_VALIDATION"
 local READINESS_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_READINESS"
+local ASSUMPTIONS_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_ASSUMPTIONS"
+local WALKTHROUGH_DIALOG = "GRAVVY_BUILD_PLANNER_GAMEPAD_WALKTHROUGH"
 local DEFAULT_VALUE = -1
 
 local slotStringIds = {
@@ -373,6 +375,8 @@ function Gamepad:InitializeDialogs()
     self:InitializeStatImpactDialog()
     self:InitializeValidationDialog()
     self:InitializeReadinessDialog()
+    self:InitializeAssumptionsDialog()
+    self:InitializeWalkthroughDialog()
     self:InitializeRevisionDialog()
     self:InitializeNameDialog()
     self:InitializeConfirmDialog()
@@ -1462,6 +1466,12 @@ function Gamepad:InitializeManageDialog()
             actionEntry(SI_GRAVVY_BUILD_PLANNER_READINESS, function()
                 releaseAndOpen(MANAGE_DIALOG, function() self:ShowReadinessDialog() end)
             end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowAssumptionsDialog() end)
+            end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH, function()
+                releaseAndOpen(MANAGE_DIALOG, function() self:ShowWalkthroughDialog() end)
+            end),
             actionEntry(SI_GRAVVY_BUILD_PLANNER_REVISIONS, function()
                 self:OpenRevisionsFromManage()
             end),
@@ -1862,6 +1872,203 @@ function Gamepad:InitializeReadinessDialog()
                 end,
             },
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },
+        },
+    })
+end
+
+function Gamepad:ShowAssumptionsDialog()
+    local setup = self.owner.data:GetCurrentSetup()
+    local values = setup.buffAssumptions or {}
+    self.pendingAssumptions = {
+        food = values.food or "",
+        potion = values.potion or "",
+        selfBuffs = GravvyBuildPlannerBuffAssumptions:Join(values.selfBuffs),
+        groupBuffs = GravvyBuildPlannerBuffAssumptions:Join(values.groupBuffs),
+        targetConditions = GravvyBuildPlannerBuffAssumptions:Join(values.targetConditions),
+    }
+    ZO_Dialogs_ShowGamepadDialog(ASSUMPTIONS_DIALOG)
+end
+
+function Gamepad:SaveAssumptions()
+    local setup, build = self.owner.data:GetCurrentSetup()
+    local pending = self.pendingAssumptions or {}
+    local ok, message = self.owner.data:SetBuffAssumptions(build.id, setup.id, {
+        food = pending.food or "",
+        potion = pending.potion or "",
+        selfBuffs = GravvyBuildPlannerBuffAssumptions:Split(pending.selfBuffs),
+        groupBuffs = GravvyBuildPlannerBuffAssumptions:Split(pending.groupBuffs),
+        targetConditions = GravvyBuildPlannerBuffAssumptions:Split(pending.targetConditions),
+    })
+    if not ok then showError(message) return end
+    self:SetStatus(GetString(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_SAVED))
+    ZO_Dialogs_ReleaseDialogOnButtonPress(ASSUMPTIONS_DIALOG)
+    self:Refresh(true)
+    self.owner.ui:Refresh()
+end
+
+function Gamepad:InitializeAssumptionsDialog()
+    local function assumptionField(stringId, key, multiline)
+        return textFieldEntry(stringId, {
+            value = function() return self.pendingAssumptions[key] or "" end,
+            changed = function(value) self.pendingAssumptions[key] = value end,
+            defaultText = GetString(stringId),
+            maxChars = multiline and 4000 or 512,
+            multiline = multiline,
+        })
+    end
+    ZO_Dialogs_RegisterCustomDialog(ASSUMPTIONS_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_TITLE },
+        mainText = { text = SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_HELP },
+        parametricList = {
+            assumptionField(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_FOOD, "food", false),
+            assumptionField(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_POTION, "potion", false),
+            assumptionField(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_SELF, "selfBuffs", true),
+            assumptionField(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_GROUP, "groupBuffs", true),
+            assumptionField(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_TARGET, "targetConditions", true),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_SAVE,
+                callback = function() self:SaveAssumptions() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(ASSUMPTIONS_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:ShowWalkthroughDialog()
+    local chooseFirstNeeded = self.walkthroughIndex == nil
+    self.walkthroughIndex = self.walkthroughIndex or 1
+    self.walkthroughReport = self.owner.walkthrough:Build(
+        self.owner.data:GetCurrentSetup()
+    )
+    if chooseFirstNeeded then
+        for index, step in ipairs(self.walkthroughReport.steps) do
+            if not step.complete then
+                self.walkthroughIndex = index
+                break
+            end
+        end
+    end
+    self.walkthroughIndex = zo_clamp(
+        self.walkthroughIndex,
+        1,
+        math.max(1, self.walkthroughReport.total)
+    )
+    ZO_Dialogs_ShowGamepadDialog(WALKTHROUGH_DIALOG)
+end
+
+function Gamepad:PageWalkthrough(direction)
+    self.walkthroughIndex = zo_clamp(
+        (self.walkthroughIndex or 1) + direction,
+        1,
+        math.max(1, self.walkthroughReport and self.walkthroughReport.total or 1)
+    )
+    releaseAndOpen(WALKTHROUGH_DIALOG, function() self:ShowWalkthroughDialog() end)
+end
+
+function Gamepad:NextNeededWalkthrough()
+    local report = self.walkthroughReport
+    if not report or report.total == 0 then return end
+    for offset = 1, report.total do
+        local index = ((self.walkthroughIndex - 1 + offset) % report.total) + 1
+        if not report.steps[index].complete then
+            self.walkthroughIndex = index
+            releaseAndOpen(WALKTHROUGH_DIALOG, function()
+                self:ShowWalkthroughDialog()
+            end)
+            return
+        end
+    end
+end
+
+function Gamepad:OpenWalkthroughStep()
+    local step = self.walkthroughReport
+        and self.walkthroughReport.steps[self.walkthroughIndex]
+    if not step then return end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(WALKTHROUGH_DIALOG)
+    if step.action == "readiness" then
+        zo_callLater(function() self:ShowReadinessDialog() end, 10)
+    elseif step.action == "assumptions" then
+        zo_callLater(function() self:ShowAssumptionsDialog() end, 10)
+    elseif step.action == "skills" or step.action == "champion"
+        or step.action == "checklist" then
+        self.activeView = step.action
+        self:Refresh(true)
+    elseif step.action == "statImpact" then
+        self.statImpactBar = step.value
+        zo_callLater(function() self:ShowStatImpactDialog() end, 10)
+    end
+end
+
+function Gamepad:InitializeWalkthroughDialog()
+    ZO_Dialogs_RegisterCustomDialog(WALKTHROUGH_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        title = { text = SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_TITLE },
+        mainText = { text = function()
+            local report = self.walkthroughReport
+            local step = report and report.steps[self.walkthroughIndex]
+            if not step then return GetString(SI_GRAVVY_BUILD_PLANNER_NOT_PLANNED) end
+            local progress = zo_strformat(
+                SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_PROGRESS,
+                report.complete,
+                report.total,
+                self.walkthroughIndex
+            )
+            local status = GetString(step.complete
+                and SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_COMPLETE
+                or SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_INCOMPLETE)
+            return progress .. "\n" .. (step.phaseProgress or step.phase)
+                .. " · " .. status .. "\n\n" .. step.title
+                .. "\n\n" .. GetString(
+                    SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_PLANNED_LABEL
+                ) .. "\n" .. step.planned
+                .. "\n\n" .. GetString(
+                    SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_CURRENT_LABEL
+                ) .. "\n" .. step.current
+                .. "\n\n" .. GetString(
+                    SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_NEXT_ACTION_LABEL
+                ) .. "\n" .. step.instruction
+        end },
+        parametricList = {
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_PREVIOUS,
+                function() self:PageWalkthrough(-1) end,
+                function() return (self.walkthroughIndex or 1) > 1 end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_NEXT,
+                function() self:PageWalkthrough(1) end,
+                function()
+                    return self.walkthroughReport
+                        and self.walkthroughIndex < self.walkthroughReport.total
+                end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_NEXT_NEEDED,
+                function() self:NextNeededWalkthrough() end,
+                function()
+                    return self.walkthroughReport
+                        and self.walkthroughReport.complete
+                            < self.walkthroughReport.total
+                end),
+            actionEntry(SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_OPEN_STEP,
+                function() self:OpenWalkthroughStep() end),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CLOSE,
+                callback = cancelDialog(WALKTHROUGH_DIALOG),
+            },
         },
     })
 end
@@ -2331,19 +2538,7 @@ function Gamepad:InitializeHelpDialog()
         gamepadInfo = { dialogType = GAMEPAD_DIALOGS.BASIC },
         title = { text = SI_GRAVVY_BUILD_PLANNER_HELP_TITLE },
         mainText = { text = function()
-            return GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CONTENT)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_ALTERNATIVES)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SKILLS)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHARACTER)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHAMPION)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_SUPPLIES)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CHECKLIST)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_COMPARE)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_STAT_IMPACT)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_VALIDATION)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_READINESS)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_CAPTURE)
-                .. GetString(SI_GRAVVY_BUILD_PLANNER_HELP_REVISIONS)
+            return GravvyBuildPlannerHelp:GetCombinedContent()
         end },
         buttons = {
             { keybind = "DIALOG_NEGATIVE", text = SI_DIALOG_CLOSE },

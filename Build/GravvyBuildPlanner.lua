@@ -4,6 +4,18 @@ GravvyBuildPlanner = {
 
 local addon = GravvyBuildPlanner
 
+function addon:GetBuildVersion()
+    if not GetAddOnManager then return 0 end
+    local manager = GetAddOnManager()
+    for index = 1, manager:GetNumAddOns() do
+        local name = manager:GetAddOnInfo(index)
+        if name == self.name then
+            return manager:GetAddOnVersion(index)
+        end
+    end
+    return 0
+end
+
 function addon:Initialize()
     self.data = GravvyBuildPlannerData:New()
     if self.data.startupMessage and d then
@@ -24,6 +36,7 @@ function addon:Initialize()
     self.inventory = GravvyBuildPlannerInventory:New(self)
     self.shopping = GravvyBuildPlannerShoppingIntegration:New(self)
     self.readiness = GravvyBuildPlannerReadiness:New(self)
+    self.walkthrough = GravvyBuildPlannerWalkthrough:New(self)
     self.capture = GravvyBuildPlannerCharacterCapture:New(self)
     self.accessibility = GravvyBuildPlannerAccessibility
     self.accessibility:Initialize(self)

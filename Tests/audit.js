@@ -130,6 +130,23 @@ for (const file of collectRuntimeFiles(buildRoot)) {
 }
 process.stdout.write(`PASS manifest coverage (${manifestFiles.length} files)\n`);
 
+const savedVariables = (manifestText.match(/^## SavedVariables:\s*(.+)$/m)?.[1] || "")
+  .trim()
+  .split(/\s+/)
+  .filter(Boolean);
+for (const required of ["GravvyBuildPlanner_Data", "GravvyBuildPlanner_RecoveryData"]) {
+  if (!savedVariables.includes(required)) fail(`missing SavedVariables owner: ${required}`);
+}
+process.stdout.write("PASS SavedVariables ownership\n");
+
+for (const file of manifestFiles.filter((file) => file.endsWith(".xml"))) {
+  const source = fs.readFileSync(path.join(buildRoot, file), "utf8");
+  if (/<(?:CenterColor|EdgeColor)\b/i.test(source)) {
+    fail(`invalid backdrop color element: ${file}`);
+  }
+}
+process.stdout.write("PASS XML backdrop elements\n");
+
 for (const file of manifestFiles.filter((file) => file.endsWith(".lua"))) {
   const source = fs.readFileSync(path.join(buildRoot, file), "utf8");
   if (/CreateControlFromVirtual\s*\(\s*nil\b/s.test(source)) {
@@ -148,9 +165,16 @@ const resolverText = fs.readFileSync(
   "utf8"
 );
 const testedApi = Number(resolverText.match(/TESTED_API_VERSION\s*=\s*(\d+)/)?.[1]);
+const supportedApis = [...resolverText.matchAll(/\[(10\d+)\]\s*=\s*true/g)]
+  .map((match) => Number(match[1]));
 if (!testedApi || manifestApis[manifestApis.length - 1] !== testedApi) {
   fail(`item-link API baseline: manifest ${manifestApis.join(",")}, resolver ${testedApi}`);
 }
+for (const api of supportedApis) {
+  if (!manifestApis.includes(api)) fail(`supported API missing from manifest: ${api}`);
+}
+const manifestAddonVersion = Number(manifestText.match(/^## AddOnVersion:\s*(\d+)/m)?.[1]);
+if (!manifestAddonVersion) fail("missing manifest AddOnVersion");
 process.stdout.write(`PASS item-link API baseline (${testedApi})\n`);
 
 function requireBefore(dependency, dependent) {
@@ -163,13 +187,18 @@ function requireBefore(dependency, dependent) {
 
 for (const [dependency, dependent] of [
   ["UI/Shared/UIHelpers.lua", "UI/Keyboard/UI.lua"],
+  ["UI/Shared/Help.lua", "UI/Keyboard/UI.lua"],
+  ["UI/Shared/Help.lua", "UI/Gamepad/GamepadDialogs.lua"],
   ["Core/EquipmentSlots.lua", "Core/Data.lua"],
   ["Core/ModelValidation.lua", "Core/Data.lua"],
   ["Core/Data.lua", "Core/Inventory.lua"],
+  ["Features/BuffAssumptions.lua", "Features/StatImpact.lua"],
   ["Features/ItemResolver.lua", "Features/Acquisition.lua"],
   ["Features/Acquisition.lua", "Core/Inventory.lua"],
+  ["Features/Readiness.lua", "Features/Walkthrough.lua"],
   ["UI/Shared/Accessibility.lua", "UI/Keyboard/UI.lua"],
   ["UI/Keyboard/UI.lua", "UI/Keyboard/RevisionHistory.lua"],
+  ["UI/Keyboard/UI.lua", "UI/Keyboard/BuffAssumptionsUI.lua"],
   ["UI/Gamepad/Gamepad.lua", "UI/Gamepad/GamepadDialogs.lua"],
   ["UI/Gamepad/GamepadDialogs.lua", "GravvyBuildPlanner.lua"],
 ]) {

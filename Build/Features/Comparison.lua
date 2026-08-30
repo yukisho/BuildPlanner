@@ -49,6 +49,7 @@ local sectionKeys = {
     [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHAMPION] = "champion",
     [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_SUPPLIES] = "supplies",
     [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHECKLIST] = "checklist",
+    [SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_ASSUMPTIONS] = "assumptions",
 }
 
 local function sameFields(left, right, fields)
@@ -387,6 +388,24 @@ function Comparison:Build(left, right)
             add(rows, SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_CHECKLIST,
                 GetString(checklistStringIds[entry.category]) .. " · " .. entry.name,
                 checklistSummary(leftEntry), checklistSummary(rightEntry))
+        end
+    end
+    local leftAssumptions = left.buffAssumptions or {}
+    local rightAssumptions = right.buffAssumptions or {}
+    for _, row in ipairs({
+        { "food", SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_FOOD },
+        { "potion", SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_POTION },
+        { "selfBuffs", SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_SELF, true },
+        { "groupBuffs", SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_GROUP, true },
+        { "targetConditions", SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_TARGET, true },
+    }) do
+        local leftValue = row[3] and table.concat(leftAssumptions[row[1]] or {}, ", ")
+            or leftAssumptions[row[1]] or ""
+        local rightValue = row[3] and table.concat(rightAssumptions[row[1]] or {}, ", ")
+            or rightAssumptions[row[1]] or ""
+        if leftValue ~= rightValue then
+            add(rows, SI_GRAVVY_BUILD_PLANNER_COMPARE_SECTION_ASSUMPTIONS,
+                GetString(row[2]), leftValue, rightValue)
         end
     end
     return rows

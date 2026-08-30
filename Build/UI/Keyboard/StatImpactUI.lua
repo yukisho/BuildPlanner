@@ -284,6 +284,16 @@ function UI:CreateStatImpactDialog()
     )
     refresh:SetAnchor(LEFT, clear, RIGHT, 8, 0)
     refresh:SetHandler("OnClicked", function() self:RefreshStatImpact() end)
+    local assumptions = makeButton(
+        dialog,
+        GetString(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS),
+        150
+    )
+    assumptions:SetAnchor(LEFT, refresh, RIGHT, 8, 0)
+    assumptions:SetHandler("OnClicked", function()
+        local setup = self:GetStatImpactSetup()
+        self:OpenBuffAssumptions(setup.id)
+    end)
     local close = makeButton(dialog, GetString(SI_DIALOG_CLOSE), 90)
     close:SetAnchor(BOTTOMRIGHT, dialog, BOTTOMRIGHT, -18, -14)
     close:SetHandler("OnClicked", function() dialog:SetHidden(true) end)
@@ -529,6 +539,10 @@ function UI:RefreshStatImpact()
             description = change.left .. " → " .. change.right,
         }
     end
+    effects[#effects + 1] = {
+        label = GetString(SI_GRAVVY_BUILD_PLANNER_ASSUMPTIONS_NOT_CALCULATED),
+        description = report.assumptions,
+    }
     for _, effect in ipairs(report.effects) do effects[#effects + 1] = effect end
     self.statImpactEffects = effects
     local lastOffset = #effects > 0

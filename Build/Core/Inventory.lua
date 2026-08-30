@@ -9,6 +9,25 @@ local function addBag(bags, bagId, location)
     end
 end
 
+local function currentCharacter()
+    local name = GetRawUnitName and GetRawUnitName("player")
+        or GetUnitName and GetUnitName("player") or ""
+    if name == "" then name = GetString(SI_GRAVVY_BUILD_PLANNER_CHARACTER) end
+    local id = GetCurrentCharacterId and GetCurrentCharacterId() or name
+    return tostring(id or name), name
+end
+
+local function physicalItemKey(bagId, slotIndex, characterId)
+    if GetItemUniqueId then
+        local uniqueId = GetItemUniqueId(bagId, slotIndex)
+        if uniqueId ~= nil then
+            local value = Id64ToString and Id64ToString(uniqueId) or tostring(uniqueId)
+            if value ~= "" and value ~= "0" then return "item:" .. value end
+        end
+    end
+    return table.concat({ "slot", tostring(characterId), tostring(bagId), tostring(slotIndex) }, ":")
+end
+
 function Inventory:New(owner)
     local inventory = setmetatable({
         owner = owner,
@@ -90,18 +109,62 @@ end
 
 function Inventory:ReadItems()
     local items = {}
+    local seenItemKeys = {}
+    local characterId, characterName = currentCharacter()
+    local characterItems = {}
     for _, bag in ipairs(self.bags) do
         local size = GetBagSize(bag.id) or 0
         for slotIndex = 0, size - 1 do
             local itemLink = GetItemLink(bag.id, slotIndex, LINK_STYLE_DEFAULT)
             if itemLink and itemLink ~= "" then
-                items[#items + 1] = {
+                local item = {
                     bagId = bag.id,
                     slotIndex = slotIndex,
                     location = bag.location,
                     itemLink = itemLink,
                     count = math.max(1, GetSlotStackSize(bag.id, slotIndex) or 1),
+                    itemKey = physicalItemKey(bag.id, slotIndex, characterId),
+                    characterId = bag.location ~= "bank" and characterId or nil,
+                    characterName = bag.location ~= "bank" and characterName or nil,
                 }
+                items[#items + 1] = item
+                seenItemKeys[item.itemKey] = true
+                if bag.location == "equipped" or bag.location == "backpack" then
+                    characterItems[#characterItems + 1] = {
+                        itemKey = item.itemKey,
+                        itemLink = item.itemLink,
+                        location = item.location,
+                        count = item.count,
+                    }
+                end
+            end
+        end
+    end
+    self.owner.data:UpdateCharacterEquipment(characterId, characterName, characterItems)
+    local cachedCharacters = {}
+    for _, character in ipairs(self.owner.data:GetCharacterEquipment()) do
+        cachedCharacters[#cachedCharacters + 1] = character
+    end
+    table.sort(cachedCharacters, function(left, right)
+        return (left.updatedAt or 0) > (right.updatedAt or 0)
+    end)
+    for _, character in ipairs(cachedCharacters) do
+        if character.id ~= characterId then
+            for index, savedItem in ipairs(character.items) do
+                if not seenItemKeys[savedItem.itemKey] then
+                    items[#items + 1] = {
+                        bagId = "character:" .. character.id,
+                        slotIndex = index,
+                        location = savedItem.location,
+                        itemLink = savedItem.itemLink,
+                        count = savedItem.count,
+                        itemKey = savedItem.itemKey,
+                        characterId = character.id,
+                        characterName = character.name,
+                        remote = true,
+                    }
+                    seenItemKeys[savedItem.itemKey] = true
+                end
             end
         end
     end
@@ -220,6 +283,8 @@ local function matchScore(match, candidateIndex)
     end
     score = score + math.max(0, 10 - candidateIndex) * 10
     score = score + math.max(0, 10 - #(match.differences or {}))
+    if not match.remote then score = score + 5 end
+    if match.location == "equipped" then score = score + 2 end
     return score
 end
 
@@ -267,6 +332,11 @@ function Inventory:MatchSetup(setup)
                     match.location = item.location
                     match.bagId = item.bagId
                     match.slotIndex = item.slotIndex
+                    match.itemKey = item.itemKey
+                    match.characterId = item.characterId
+                    match.characterName = item.characterName
+                    match.remote = item.remote == true
+                    match.count = item.count
                     match.alternativeIndex = candidateIndex > 1
                         and candidateIndex - 1
                         or nil
@@ -378,6 +448,48 @@ function Inventory:NotifyViews()
     end
 end
 
+function Inventory:BuildSharedUsage()
+    local usage = {}
+    for _, build in ipairs(self.owner.data:GetBuilds()) do
+        for _, setup in ipairs(build.setups) do
+            self:EnsureSetup(setup)
+            for slotKey, match in pairs(self.matches[setup.id] or {}) do
+                if match.itemKey then
+                    local entry = usage[match.itemKey]
+                    if not entry then
+                        entry = { count = math.max(1, tonumber(match.count) or 1), uses = {} }
+                        usage[match.itemKey] = entry
+                    end
+                    entry.uses[#entry.uses + 1] = {
+                        buildId = build.id,
+                        buildName = build.name,
+                        setupId = setup.id,
+                        setupName = setup.name,
+                        slotKey = slotKey,
+                    }
+                end
+            end
+        end
+    end
+    self.sharedUsage = usage
+    return usage
+end
+
+function Inventory:GetSharedDependencies(setupId, slotKey)
+    self:EnsureSetup(setupId)
+    local match = self.matches[setupId] and self.matches[setupId][slotKey]
+    if not match or not match.itemKey then return {} end
+    local usage = self.sharedUsage or self:BuildSharedUsage()
+    local entry = usage[match.itemKey]
+    local others = {}
+    for _, use in ipairs(entry and entry.uses or {}) do
+        if use.setupId ~= setupId or use.slotKey ~= slotKey then
+            others[#others + 1] = use
+        end
+    end
+    return others
+end
+
 function Inventory:Refresh(readBags)
     if readBags ~= false or not self.itemsLoaded then
         self.items = self:ReadItems()
@@ -389,6 +501,7 @@ function Inventory:Refresh(readBags)
     self.matches = {}
     self.progress = {}
     self.matchFingerprints = {}
+    self.sharedUsage = nil
     self:EnsureSetup(self.owner.data:GetCurrentSetup())
     self:NotifyViews()
 end
@@ -396,6 +509,7 @@ end
 function Inventory:RefreshSetup(setup)
     setup = setup or self.owner.data:GetCurrentSetup()
     if not setup then return end
+    self.sharedUsage = nil
     self:EnsureSetup(setup)
     self:NotifyViews()
 end
@@ -426,5 +540,10 @@ function Inventory:GetMatch(setupId, slotKey, requirement, setup)
     current.location = match.location
     current.bagId = match.bagId
     current.slotIndex = match.slotIndex
+    current.itemKey = match.itemKey
+    current.characterId = match.characterId
+    current.characterName = match.characterName
+    current.remote = match.remote
+    current.count = match.count
     return current
 end

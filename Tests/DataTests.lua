@@ -12,6 +12,21 @@ local function copy(value)
     return result
 end
 
+local function equivalent(left, right, seen)
+    if type(left) ~= type(right) then return false end
+    if type(left) ~= "table" then return left == right end
+    seen = seen or {}
+    if seen[left] == right then return true end
+    seen[left] = right
+    for key, value in pairs(left) do
+        if not equivalent(value, right[key], seen) then return false end
+    end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
+
 function ZO_CreateStringId(name, value)
     _G[name] = name
     strings[name] = value
@@ -58,6 +73,10 @@ end
 function GetWorldName()
     return "Test"
 end
+
+GravvyBuildPlanner = {
+    GetBuildVersion = function() return 29 end,
+}
 
 GENDER_MALE = 1
 function GetRaceName(_, raceId)
@@ -144,6 +163,10 @@ expectEqual(firstSetup.character.attributes.health, 0, "new setups should have a
 expectEqual(firstSetup.champion.warfare.slottables[1], 0, "new setups should have empty Champion slots")
 expectEqual(#firstSetup.consumables, 0, "new setups should have no consumable requirements")
 expectEqual(#firstSetup.checklist, 0, "new setups should have an empty progression checklist")
+expectEqual(firstSetup.buffAssumptions.food, "",
+    "new setups should have empty buff assumptions")
+expectEqual(#data:GetCharacterEquipment(), 0,
+    "new accounts should have an empty character equipment index")
 
 local build = data:CreateBuild("Warden DPS", {
     classId = 5,
@@ -299,6 +322,56 @@ expect(not data:SetChecklistEntry(build.id, setup.id, nil, {
     detection = { kind = "champion" },
 }), "automatic checklist detectors should require their stable ESO identifiers")
 
+ok = data:SetBuffAssumptions(build.id, setup.id, {
+    food = "Lava Foot Soup-and-Saltrice",
+    potion = "Essence of Weapon Power",
+    selfBuffs = { "Major Brutality", "Major Savagery" },
+    groupBuffs = { "Major Courage" },
+    targetConditions = { "Off Balance", "Under 25% Health" },
+})
+expect(ok, "setup buff assumptions should be saved")
+expectEqual(setup.buffAssumptions.groupBuffs[1], "Major Courage",
+    "group-buff assumptions should retain their order")
+local tooManyAssumptions = {}
+for index = 1, 21 do tooManyAssumptions[index] = "Buff " .. tostring(index) end
+expect(not data:SetBuffAssumptions(build.id, setup.id, {
+    food = "",
+    potion = "",
+    selfBuffs = tooManyAssumptions,
+}), "buff assumption lists should enforce their size limit")
+expectEqual(setup.buffAssumptions.food, "Lava Foot Soup-and-Saltrice",
+    "failed assumption updates should not partially change the setup")
+
+expect(data:UpdateCharacterEquipment("char-a", "Aranel", {
+    {
+        itemKey = "item:1001",
+        itemLink = "saved feet link",
+        location = "backpack",
+        count = 1,
+    },
+}), "character equipment should be indexed account-wide")
+expectEqual(data:GetCharacterEquipment()[1].name, "Aranel",
+    "the equipment index should retain its character holder")
+local unchangedEquipmentTime = data:GetCharacterEquipment()[1].updatedAt
+expect(data:UpdateCharacterEquipment("char-a", "Aranel", {
+    {
+        itemKey = "item:1001",
+        itemLink = "saved feet link",
+        location = "backpack",
+        count = 1,
+    },
+}), "an unchanged character equipment scan should remain valid")
+expectEqual(data:GetCharacterEquipment()[1].updatedAt, unchangedEquipmentTime,
+    "unchanged equipment scans should not churn SavedVariables")
+expect(not data:UpdateCharacterEquipment("char-b", "Bad Holder", {
+    {
+        itemKey = "item:bad",
+        itemLink = "not an item link",
+        location = "mail",
+        count = 1,
+    },
+}), "the equipment index should reject invalid item locations")
+
 ok = data:SetEquipment(build.id, setup.id, "waist", { weaponType = WEAPONTYPE_AXE })
 expect(not ok, "weapon type should not be accepted in an armor slot")
 
@@ -399,6 +472,10 @@ expect(variant.character ~= setup.character, "character plans should be copied i
 expect(variant.champion ~= setup.champion, "Champion plans should be copied independently")
 expect(variant.consumables ~= setup.consumables, "consumable plans should be copied independently")
 expect(variant.checklist ~= setup.checklist, "progression checklists should be copied independently")
+expect(variant.buffAssumptions ~= setup.buffAssumptions,
+    "buff assumptions should be copied independently")
+expectEqual(variant.buffAssumptions.targetConditions[2], "Under 25% Health",
+    "setup copies should retain target assumptions")
 expectEqual(next(variant.acquisition), nil, "setup copy should not copy acquisition state")
 
 local duplicate = data:DuplicateBuild(build.id)
@@ -424,6 +501,19 @@ local localSnapshotSaved = data:SetStatSnapshot(build.id, build.setups[1].id, "f
     values = { maxHealth = 31000 },
 })
 expect(localSnapshotSaved, "a setup should accept a local stat snapshot")
+expect(not data:IsStatSnapshotStale(build.setups[1], "front"),
+    "a stat snapshot should begin current for its saved assumptions")
+local savedAssumptions = copy(build.setups[1].buffAssumptions)
+savedAssumptions.groupBuffs[#savedAssumptions.groupBuffs + 1] = "Minor Courage"
+expect(data:SetBuffAssumptions(build.id, build.setups[1].id, savedAssumptions),
+    "buff assumptions should remain independently editable")
+expect(data:IsStatSnapshotStale(build.setups[1], "front"),
+    "changing assumptions should stale an exact snapshot without changing its totals")
+table.remove(savedAssumptions.groupBuffs)
+expect(data:SetBuffAssumptions(build.id, build.setups[1].id, savedAssumptions),
+    "the original assumptions should be restorable")
+expect(not data:IsStatSnapshotStale(build.setups[1], "front"),
+    "restoring the capture assumptions should make its fingerprint current again")
 local shareCode = GravvyBuildPlannerShare.EncodeBuild(build)
 expect(shareCode and shareCode:sub(1, 5) == "GBP1:", "builds should encode as GBP1 codes")
 local decodedBuild = GravvyBuildPlannerShare.DecodeCode(shareCode)
@@ -461,12 +551,25 @@ expect(decodedBuild.setups[1].checklist[1].completed,
     "share codes should retain checklist completion")
 expectEqual(decodedBuild.setups[1].checklist[1].detection.kind, "passive",
     "share codes should retain automatic checklist detection")
+expectEqual(decodedBuild.setups[1].buffAssumptions.potion,
+    "Essence of Weapon Power",
+    "share codes should retain buff assumptions")
+expectEqual(decodedBuild.setups[1].buffAssumptions.targetConditions[1],
+    "Off Balance",
+    "share codes should retain ordered target conditions")
 expectEqual(decodedBuild.setups[1].statSnapshots, nil,
     "share codes should exclude character-specific stat snapshots")
 local buildCount = #data:GetBuilds()
 local imported = data:ImportBuild(decodedBuild)
 expect(imported, "decoded builds should import")
 expectEqual(#data:GetBuilds(), buildCount + 1, "import should add exactly one build")
+local importSnapshots = data:GetRecoverySnapshots()
+expectEqual(importSnapshots[#importSnapshots].kind, "pre_import",
+    "build imports should preserve the state they are about to change")
+expect(type(importSnapshots[#importSnapshots].checksum) == "string",
+    "recovery snapshots should carry an integrity checksum")
+expectEqual(importSnapshots[#importSnapshots].addonVersion, 29,
+    "recovery snapshots should record the creating add-on version")
 expect(imported.name ~= build.name, "import should resolve a duplicate build name")
 expectEqual(
     imported.setups[1].acquisition.waist.preferredRoute,
@@ -491,6 +594,8 @@ expectEqual(imported.setups[1].consumables[1].itemId, 12345,
     "import should preserve resolved consumable identity")
 expectEqual(imported.setups[1].checklist[1].targetRank, 2,
     "import should preserve progression targets")
+expectEqual(imported.setups[1].buffAssumptions.selfBuffs[2], "Major Savagery",
+    "import should preserve buff assumptions")
 local damageAt = math.min(20, #shareCode - 1)
 local damagedCharacter = shareCode:sub(damageAt, damageAt) == "A" and "B" or "A"
 local damaged = shareCode:sub(1, damageAt - 1) .. damagedCharacter
@@ -763,7 +868,7 @@ expect(
     type(repaired.saved.builds[1].setups[1].alternatives) == "table",
     "migration should add ordered slot alternatives"
 )
-expectEqual(repaired.saved.schemaVersion, 14, "migration should advance the saved-data schema")
+expectEqual(repaired.saved.schemaVersion, 15, "migration should advance the saved-data schema")
 expect(#repaired:GetRecoverySnapshots() >= 2,
     "schema migration should retain both pre- and post-migration recovery copies")
 expectEqual(#repaired.saved.builds[1].revisions, 0,
@@ -775,9 +880,24 @@ expectEqual(#repaired.saved.builds[1].setups[1].consumables, 0,
     "migration should add consumable defaults")
 expectEqual(#repaired.saved.builds[1].setups[1].checklist, 0,
     "migration should add checklist defaults")
+expectEqual(repaired.saved.builds[1].setups[1].buffAssumptions.food, "",
+    "migration should add buff-assumption defaults")
+expectEqual(#repaired.saved.characterEquipment, 0,
+    "migration should add the account equipment index")
 expectEqual(repaired.saved.builds[1].setups[1].statSnapshots.front.values.maxHealth,
     30000, "migration should move legacy exact stats to the front-bar snapshot")
 expect(repaired:FindBuild(repaired.saved.selectedBuildId), "selected build should be repaired")
+
+local idempotentState = copy(data.saved)
+local idempotent = setmetatable(
+    { saved = idempotentState },
+    { __index = GravvyBuildPlannerData }
+)
+expect(idempotent:Migrate(), "a current saved-data schema should normalize")
+local normalizedOnce = copy(idempotent.saved)
+expect(idempotent:Migrate(), "repeating a current migration should still succeed")
+expect(equivalent(idempotent.saved, normalizedOnce),
+    "saved-data migration should be idempotent")
 
 local futureState = copy(data.saved)
 futureState.schemaVersion = 99
@@ -795,14 +915,14 @@ TEST_RECOVERY = {
             id = 1,
             kind = "last_known_good",
             createdAt = 900,
-            sourceSchema = 14,
+            sourceSchema = 15,
             world = "Test",
             data = copy(data.saved),
         },
     },
 }
 local recovered = GravvyBuildPlannerData:New()
-expectEqual(recovered.saved.schemaVersion, 14,
+expectEqual(recovered.saved.schemaVersion, 15,
     "startup should restore a compatible recovery after migration failure")
 expectEqual(recovered.startupMessage,
     GetString(SI_GRAVVY_BUILD_PLANNER_DATA_RECOVERED),
@@ -813,6 +933,32 @@ for index = 1, 8 do
 end
 expectEqual(#recovered:GetRecoverySnapshots(), 5,
     "the external recovery store should remain bounded")
+local restoreSnapshots = recovered:GetRecoverySnapshots()
+local restoreId = restoreSnapshots[#restoreSnapshots - 1].id
+local restoredName = restoreSnapshots[#restoreSnapshots - 1].data.builds[1].name
+recovered.saved.builds[1].name = "Changed after checkpoint"
+expect(recovered:RestoreRecoverySnapshot(restoreId),
+    "a valid recovery checkpoint should restore atomically")
+expectEqual(recovered.saved.builds[1].name, restoredName,
+    "manual recovery should replace the primary state")
+local corruptSnapshots = recovered:GetRecoverySnapshots()
+local corrupt = corruptSnapshots[#corruptSnapshots]
+corrupt.checksum = "corrupt"
+local recoveredOlder, recoveredSnapshot = recovered:RecoverLatestValidSnapshot()
+expect(recoveredOlder and recoveredSnapshot.id ~= corrupt.id,
+    "automatic recovery should skip a snapshot whose checksum does not match")
+
+TEST_SAVED = copy(data.saved)
+TEST_RECOVERY = {
+    nextId = "invalid",
+    snapshots = {
+        "invalid",
+        { id = -1, data = {} },
+    },
+}
+local repairedRecovery = GravvyBuildPlannerData:New()
+expectEqual(#repairedRecovery:GetRecoverySnapshots(), 1,
+    "startup should discard malformed recovery metadata before writing a checkpoint")
 
 local collectionSets = {
     [12] = "Order's Wrath",
