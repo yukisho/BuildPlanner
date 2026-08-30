@@ -1,0 +1,61 @@
+## Title: |cFFAA33Build Planner|r
+## Description: Plan ESO equipment setups and turn tradeable requirements into shopping lists.
+## Author: Gravvy
+## Version: 0.8.0
+## APIVersion: 101050
+## AddOnVersion: 29
+## DependsOn: LibSets>=0009000
+## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0
+## SavedVariables: GravvyBuildPlanner_Data
+
+# DISCLAIMER:
+#
+# This Add-on is not created by, affiliated with or sponsored by ZeniMax
+# Media Inc. or its affiliates. The Elder Scrolls® and related logos are
+# registered trademarks or trademarks of ZeniMax Media Inc. in the United
+# States and/or other countries. All rights reserved.
+
+Localization/en.lua
+Localization/es.lua
+Localization/fr.lua
+
+UI/Shared/UIHelpers.lua
+Features/Enchantments.lua
+Core/EquipmentSlots.lua
+Core/ModelValidation.lua
+Features/SkillCatalog.lua
+Features/ChampionCatalog.lua
+Features/ChecklistDetection.lua
+Features/ConsumableCatalog.lua
+Core/Data.lua
+Features/Comparison.lua
+Features/SwapPackages.lua
+Features/SetCatalog.lua
+Features/ItemResolver.lua
+Features/StatImpact.lua
+Features/BuildValidation.lua
+Features/Acquisition.lua
+Core/Inventory.lua
+Integrations/ShoppingIntegration.lua
+Features/Readiness.lua
+Features/CharacterCapture.lua
+UI/Shared/Accessibility.lua
+UI/Keyboard/UI.lua
+UI/Keyboard/RevisionHistory.lua
+UI/Keyboard/ChampionPlanner.lua
+UI/Keyboard/SuppliesPlanner.lua
+UI/Keyboard/ChecklistPlanner.lua
+UI/Keyboard/ComparisonPlanner.lua
+UI/Keyboard/StatImpactUI.lua
+UI/Keyboard/BuildValidationUI.lua
+UI/Keyboard/ReadinessUI.lua
+Features/Share.lua
+UI/Shared/Settings.lua
+Features/RuntimeAudit.lua
+UI/Gamepad/Gamepad.lua
+UI/Gamepad/Gamepad.xml
+UI/Gamepad/GamepadDialogs.lua
+Integrations/MainMenu.lua
+GravvyBuildPlanner.lua
+
+Bindings.xml

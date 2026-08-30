@@ -706,10 +706,10 @@ function UI:CreateSkillPlanner()
     suggestions:SetHidden(true)
     suggestions:SetDrawTier(DT_HIGH)
     self.skillSuggestionPanel = suggestions
-    local suggestionBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
-        nil,
+    local suggestionBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         suggestions,
-        "ZO_DefaultBackdrop"
+        "ZO_DefaultBackdrop",
+        "SkillSuggestionBackdrop"
     )
     suggestionBackdrop:SetAnchorFill(suggestions)
     self.skillSuggestionButtons = {}
@@ -975,10 +975,10 @@ function UI:CreateEditor()
     end)
     self.previewButton:SetHandler("OnMouseExit", function() self:HideItemTooltip() end)
 
-    local previewBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
-        nil,
+    local previewBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         self.previewButton,
-        "ZO_DefaultBackdrop"
+        "ZO_DefaultBackdrop",
+        "PreviewBackdrop"
     )
     previewBackdrop:SetAnchorFill(self.previewButton)
     GravvyBuildPlannerAccessibility:RegisterBackdrop(

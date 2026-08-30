@@ -108,6 +108,47 @@ function Inventory:ReadItems()
     return items
 end
 
+local function milliseconds()
+    if GetGameTimeMilliseconds then return GetGameTimeMilliseconds() end
+    return 0
+end
+
+function Inventory:Benchmark()
+    local readStarted = milliseconds()
+    local items = self:ReadItems()
+    local readMs = milliseconds() - readStarted
+    local originalItems = self.items
+    self.items = items
+
+    local setups = 0
+    local requirements = 0
+    local alternatives = 0
+    local matchStarted = milliseconds()
+    for _, build in ipairs(self.owner.data:GetBuilds()) do
+        for _, setup in ipairs(build.setups) do
+            setups = setups + 1
+            for _, slotKey in ipairs(Slots.ORDER) do
+                if setup.equipment[slotKey] then requirements = requirements + 1 end
+                alternatives = alternatives
+                    + #((setup.alternatives and setup.alternatives[slotKey]) or {})
+            end
+            self:MatchSetup(setup)
+        end
+    end
+    local matchMs = milliseconds() - matchStarted
+    self.items = originalItems
+
+    return {
+        items = #items,
+        setups = setups,
+        requirements = requirements,
+        alternatives = alternatives,
+        readMs = math.max(0, readMs),
+        matchMs = math.max(0, matchMs),
+        totalMs = math.max(0, readMs + matchMs),
+    }
+end
+
 local function addFlowEdge(graph, from, to, capacity, cost, match, itemIndex)
     local forward = {
         to = to,

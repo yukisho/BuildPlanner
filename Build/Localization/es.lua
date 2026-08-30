@@ -526,6 +526,19 @@ local strings = {
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION = "Ese código usa una versión no compatible.",
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_PREFIX = "Pega un código de configuración que comience por <<1>>.",
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_LONG = "Esa configuración es demasiado grande para codificarla o importarla.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_TITLE = "|cFFAA33Auditoría del planificador|r",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_CONTROLS = "Controles virtuales: <<1>> comprobados, <<2>> fallidos",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT = "Diseños de texto: <<1>> comprobados, <<2>> recortados",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LINKS = "Enlaces de objetos: <<1>> comprobados, <<2>> fallidos (API <<3>>)",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE = "Inventario: <<1>> objetos en <<2>> ms. Coincidencia: <<3>> variantes, <<4>> requisitos y <<5>> alternativas en <<6>> ms.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_ISSUE = "Problema: <<1>>",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_MORE_ISSUES = "...y <<1>> problemas más.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PASSED = "La auditoría se completó correctamente.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_FAILED = "La auditoría encontró algo que revisar.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_API_CHANGED = "La API <<1>> de ESO no está verificada; se esperaba <<2>>.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_SAMPLE_MISSING = "No hay ningún objeto planeado de tipo <<1>> para comprobar su enlace.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT_ISSUE = "<<1>> se recorta con la escala <<2>>.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE_SLOW = "El inventario o la coincidencia de variantes superó el tiempo previsto.",
 }
 
 for stringId, translation in pairs(strings) do

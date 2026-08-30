@@ -3,6 +3,8 @@ GravvyBuildPlannerItemResolver = {}
 local Resolver = GravvyBuildPlannerItemResolver
 local Slots = GravvyBuildPlannerSlots
 
+Resolver.TESTED_API_VERSION = 101050
+
 local armorEquipTypes = {
     head = EQUIP_TYPE_HEAD,
     shoulders = EQUIP_TYPE_SHOULDERS,
@@ -327,6 +329,98 @@ function Resolver:CreateGlyphLink(category, requirement, setup, quality)
         return nil
     end
     return itemLink, name
+end
+
+function Resolver:AuditRepresentativeLinks(samples)
+    local report = { checked = 0, failed = 0, issues = {} }
+    local tiers = {
+        { level = 1, championPoints = 0 },
+        { level = 50, championPoints = 0 },
+        { level = 50, championPoints = 10 },
+        { level = 50, championPoints = 150 },
+        { level = 50, championPoints = 160 },
+    }
+    local qualities = {
+        ITEM_QUALITY_NORMAL,
+        ITEM_QUALITY_MAGIC,
+        ITEM_QUALITY_ARCANE,
+        ITEM_QUALITY_ARTIFACT,
+        ITEM_QUALITY_LEGENDARY,
+    }
+    local function failure(message)
+        report.failed = report.failed + 1
+        if #report.issues < 12 then report.issues[#report.issues + 1] = message end
+    end
+
+    for _, sample in ipairs(samples or {}) do
+        for _, tier in ipairs(tiers) do
+            for _, quality in ipairs(qualities) do
+                local requirement = {}
+                for key, value in pairs(sample.requirement) do requirement[key] = value end
+                requirement.level = tier.level
+                requirement.championPoints = tier.championPoints
+                requirement.quality = quality
+                report.checked = report.checked + 1
+                local result = self:Resolve(sample.slotKey, requirement, sample.setup)
+                if not result or not result.itemLink then
+                    failure(sample.family .. " preview")
+                elseif not self:MatchesRequestedLevel(
+                    result.itemLink,
+                    requirement,
+                    sample.setup
+                ) then
+                    failure(sample.family .. " level")
+                elseif not self:MatchesSlot(
+                    sample.slotKey,
+                    requirement,
+                    result.itemLink
+                ) then
+                    failure(sample.family .. " slot")
+                elseif requirement.traitType
+                    and requirement.traitType ~= ITEM_TRAIT_TYPE_NONE
+                    and GetItemLinkTraitInfo
+                    and GetItemLinkTraitInfo(result.itemLink) ~= requirement.traitType then
+                    failure(sample.family .. " trait")
+                elseif requirement.enchantmentCategory
+                    and not result.enchantmentMatches then
+                    failure(sample.family .. " enchantment")
+                end
+            end
+        end
+    end
+
+    local glyphSetup = samples and samples[1] and samples[1].setup or {
+        defaultLevel = 50,
+        defaultChampionPoints = 160,
+        defaultQuality = ITEM_QUALITY_LEGENDARY,
+    }
+    for _, family in ipairs({ "armor", "jewelry", "weapon" }) do
+        for _, category in ipairs(GravvyBuildPlannerEnchantments:GetCategories(family)) do
+            if glyphItemIds[category] then
+                for _, tier in ipairs(tiers) do
+                    local requirement = {
+                        level = tier.level,
+                        championPoints = tier.championPoints,
+                    }
+                    report.checked = report.checked + 1
+                    local link = self:CreateGlyphLink(
+                        category,
+                        requirement,
+                        glyphSetup,
+                        ITEM_QUALITY_LEGENDARY
+                    )
+                    if not link or not self:MatchesRequestedLevel(
+                        link,
+                        requirement,
+                        glyphSetup
+                    ) then
+                        failure(family .. " glyph " .. tostring(category))
+                    end
+                end
+            end
+        end
+    end
+    return report
 end
 
 function Resolver:BuildResult(itemLink, requirement, setup, quality, pieceId, collectionSlot)

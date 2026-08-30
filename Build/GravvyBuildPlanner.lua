@@ -30,6 +30,7 @@ function addon:Initialize()
     self.share:Initialize()
     self.gamepad = GravvyBuildPlannerGamepad:New(self)
     self.gamepad:Initialize()
+    self.runtimeAudit = GravvyBuildPlannerRuntimeAudit:New(self)
     self.checklistDetection:Initialize()
     self.inventory:Initialize()
     GravvyBuildPlannerSettings:Initialize(self)
@@ -44,6 +45,7 @@ function addon:Initialize()
             self.ui:ShowHelp()
         end
     end
+    SLASH_COMMANDS["/gbpaudit"] = function() self.runtimeAudit:Run() end
 end
 
 function addon:ToggleWindow()

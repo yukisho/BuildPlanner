@@ -526,6 +526,19 @@ local strings = {
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_VERSION = "Ce code utilise une version non prise en charge.",
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_PREFIX = "Collez un code de configuration commençant par <<1>>.",
     SI_GRAVVY_BUILD_PLANNER_SHARE_ERROR_LONG = "Cette configuration est trop volumineuse pour être encodée ou importée.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_TITLE = "|cFFAA33Audit du planificateur|r",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_CONTROLS = "Contrôles virtuels : <<1>> vérifiés, <<2>> en échec",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT = "Mises en page : <<1>> vérifiées, <<2>> tronquées",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LINKS = "Liens d’objet : <<1>> vérifiés, <<2>> en échec (API <<3>>)",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE = "Inventaire : <<1>> objets en <<2>> ms. Correspondance : <<3>> variantes, <<4>> exigences et <<5>> alternatives en <<6>> ms.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_ISSUE = "Problème : <<1>>",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_MORE_ISSUES = "...et <<1>> autres problèmes.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PASSED = "L’audit d’exécution a réussi.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_FAILED = "L’audit d’exécution a trouvé un élément à vérifier.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_API_CHANGED = "L’API ESO <<1>> n’a pas été vérifiée ; <<2>> était attendue.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_SAMPLE_MISSING = "Aucun objet <<1>> planifié n’est disponible pour vérifier son lien.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_LAYOUT_ISSUE = "<<1>> est tronqué à l’échelle <<2>>.",
+    SI_GRAVVY_BUILD_PLANNER_AUDIT_PERFORMANCE_SLOW = "L’inventaire ou la correspondance des variantes a dépassé le temps prévu.",
 }
 
 for stringId, translation in pairs(strings) do

@@ -113,11 +113,11 @@ local function expectEqual(actual, expected, message)
     end
 end
 
-dofile("Localization/en.lua")
-dofile("EquipmentSlots.lua")
-dofile("ModelValidation.lua")
-dofile("Data.lua")
-dofile("Share.lua")
+dofile("Build/Localization/en.lua")
+dofile("Build/Core/EquipmentSlots.lua")
+dofile("Build/Core/ModelValidation.lua")
+dofile("Build/Core/Data.lua")
+dofile("Build/Features/Share.lua")
 
 local data = GravvyBuildPlannerData:New()
 local firstBuild = data:GetCurrentBuild()
@@ -791,7 +791,7 @@ function GetItemSetName(setId)
     return collectionSets[setId]
 end
 
-dofile("SetCatalog.lua")
+dofile("Build/Features/SetCatalog.lua")
 local catalog = GravvyBuildPlannerSetCatalog:New(data)
 expectEqual(catalog:FindExact("pillar of nirn").setId, 34, "set lookup should ignore case")
 expect(catalog:FindExact("Whorl of the Depths"), "saved manual sets should be searchable")

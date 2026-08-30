@@ -4,7 +4,7 @@ Build Planner data model
 Saved data is account-wide and stored in GravvyBuildPlanner_Data. The top-level
 schemaVersion is independent of the ESO SavedVariables version so migrations can
 repair or reshape existing records without changing the storage name.
-Version 0.8.0 writes schema 11.
+Version 0.8.0 writes schema 13.
 
 Build
 -----
@@ -34,7 +34,7 @@ Setup
 
 A setup is a named variation of a build. It stores default quality, level, and
 Champion Points plus equipment requirements keyed by the canonical slot names in
-EquipmentSlots.lua. It also owns the setup's skill bars, character and Champion
+Core/EquipmentSlots.lua. It also owns the setup's skill bars, character and Champion
 plans, consumable requirements, and a progression checklist.
 Acquisition results live in a separate table and are not copied when a build or
 setup is duplicated.
@@ -194,9 +194,10 @@ Derived inventory matches and collection states are recalculated after import
 rather than copied. Character-specific stat snapshots and local revision
 checkpoints are also excluded.
 
-Build Planner writes format version 7 codes and continues to accept versions 1
-through 6, created before equipment alternatives, skill bars, character plans,
-Champion plans, consumable requirements, and progression checklists were added.
+Build Planner writes format version 8 codes and continues to accept versions 1
+through 7, created before equipment alternatives, skill bars, character plans,
+Champion plans, consumable requirements, progression checklists, and automatic
+checklist detection metadata were added.
 
 The payload is length-delimited, versioned, and checksummed. Import validates
 the complete decoded build before assigning new build and setup IDs or changing

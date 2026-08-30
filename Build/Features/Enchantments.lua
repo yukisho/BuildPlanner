@@ -103,3 +103,11 @@ function Enchantments:IsValidForFamily(family, category)
     end
     return false
 end
+
+function Enchantments:GetCategories(family)
+    local result = {}
+    for _, category in ipairs(categories[family] or {}) do
+        result[#result + 1] = category
+    end
+    return result
+end

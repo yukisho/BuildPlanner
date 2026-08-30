@@ -91,10 +91,10 @@ function UI:CreateComparisonPlanner()
     header:SetAnchor(TOPLEFT, panel, TOPLEFT, TABLE_INSET, 58)
     header:SetDimensions(TABLE_WIDTH, 34)
     self.comparisonHeader = header
-    local headerBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
-        nil,
+    local headerBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         header,
-        "ZO_DefaultBackdrop"
+        "ZO_DefaultBackdrop",
+        "ComparisonHeaderBackdrop"
     )
     headerBackdrop:SetAnchorFill(header)
     headerBackdrop:SetCenterColor(0.08, 0.07, 0.05, 0.95)

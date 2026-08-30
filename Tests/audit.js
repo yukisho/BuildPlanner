@@ -3,6 +3,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
+const buildRoot = path.join(root, "Build");
 const fengariScript = path.join(
   root,
   "node_modules",
@@ -84,7 +85,11 @@ function localizationEntries(file) {
   return entries;
 }
 
-const languages = ["Localization/en.lua", "Localization/es.lua", "Localization/fr.lua"];
+const languages = [
+  "Build/Localization/en.lua",
+  "Build/Localization/es.lua",
+  "Build/Localization/fr.lua",
+];
 const base = localizationEntries(languages[0]);
 for (const language of languages.slice(1)) {
   const entries = localizationEntries(language);
@@ -97,19 +102,80 @@ for (const language of languages.slice(1)) {
 }
 process.stdout.write(`PASS localization parity (${base.size} keys)\n`);
 
-const manifestText = fs.readFileSync(path.join(root, "GravvyBuildPlanner.txt"), "utf8");
+const manifestText = fs.readFileSync(
+  path.join(buildRoot, "GravvyBuildPlanner.txt"),
+  "utf8"
+);
 const manifestFiles = manifestText
   .split(/\r?\n/)
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#") && /\.(lua|xml)$/i.test(line));
 for (const file of manifestFiles) {
-  if (!fs.existsSync(path.join(root, file))) fail(`missing manifest file: ${file}`);
+  if (!fs.existsSync(path.join(buildRoot, file))) fail(`missing manifest file: ${file}`);
 }
-const rootRuntimeLua = fs.readdirSync(root).filter((file) => file.endsWith(".lua"));
-for (const file of rootRuntimeLua) {
-  if (!manifestFiles.includes(file)) fail(`runtime Lua omitted from manifest: ${file}`);
+function collectRuntimeFiles(directory, prefix = "") {
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...collectRuntimeFiles(path.join(directory, entry.name), relative));
+    } else if (/\.(lua|xml)$/i.test(entry.name)) {
+      files.push(relative);
+    }
+  }
+  return files;
+}
+for (const file of collectRuntimeFiles(buildRoot)) {
+  if (!manifestFiles.includes(file)) fail(`runtime file omitted from manifest: ${file}`);
 }
 process.stdout.write(`PASS manifest coverage (${manifestFiles.length} files)\n`);
+
+for (const file of manifestFiles.filter((file) => file.endsWith(".lua"))) {
+  const source = fs.readFileSync(path.join(buildRoot, file), "utf8");
+  if (/CreateControlFromVirtual\s*\(\s*nil\b/s.test(source)) {
+    fail(`anonymous virtual control: ${file}`);
+  }
+}
+process.stdout.write("PASS virtual-control naming\n");
+
+const manifestApi = Number(manifestText.match(/^## APIVersion:\s*(\d+)/m)?.[1]);
+const resolverText = fs.readFileSync(
+  path.join(buildRoot, "Features", "ItemResolver.lua"),
+  "utf8"
+);
+const testedApi = Number(resolverText.match(/TESTED_API_VERSION\s*=\s*(\d+)/)?.[1]);
+if (!manifestApi || manifestApi !== testedApi) {
+  fail(`item-link API baseline: manifest ${manifestApi}, resolver ${testedApi}`);
+}
+process.stdout.write(`PASS item-link API baseline (${testedApi})\n`);
+
+function requireBefore(dependency, dependent) {
+  const dependencyIndex = manifestFiles.indexOf(dependency);
+  const dependentIndex = manifestFiles.indexOf(dependent);
+  if (dependencyIndex < 0 || dependentIndex < 0 || dependencyIndex > dependentIndex) {
+    fail(`manifest load order: ${dependency} before ${dependent}`);
+  }
+}
+
+for (const [dependency, dependent] of [
+  ["UI/Shared/UIHelpers.lua", "UI/Keyboard/UI.lua"],
+  ["Core/EquipmentSlots.lua", "Core/Data.lua"],
+  ["Core/ModelValidation.lua", "Core/Data.lua"],
+  ["Core/Data.lua", "Core/Inventory.lua"],
+  ["Features/ItemResolver.lua", "Features/Acquisition.lua"],
+  ["Features/Acquisition.lua", "Core/Inventory.lua"],
+  ["UI/Shared/Accessibility.lua", "UI/Keyboard/UI.lua"],
+  ["UI/Keyboard/UI.lua", "UI/Keyboard/RevisionHistory.lua"],
+  ["UI/Gamepad/Gamepad.lua", "UI/Gamepad/GamepadDialogs.lua"],
+  ["UI/Gamepad/GamepadDialogs.lua", "GravvyBuildPlanner.lua"],
+]) {
+  requireBefore(dependency, dependent);
+}
+if (manifestFiles[manifestFiles.length - 1] !== "Bindings.xml"
+    || manifestFiles[manifestFiles.length - 2] !== "GravvyBuildPlanner.lua") {
+  fail("manifest load order: bootstrap and bindings must remain last");
+}
+process.stdout.write("PASS manifest load order\n");
 
 run("git", ["diff", "--check"]);
 process.stdout.write("PASS git diff --check\nBuild Planner audit passed\n");

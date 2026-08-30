@@ -280,6 +280,7 @@ local function newControl(name, parent)
     function control:SetText(value) self.text = value or "" end
     function control:GetText() return self.text end
     function control:SetTexture(value) self.texture = value end
+    function control:WasTruncated() return self.truncated == true end
     function control:GetLeft() return self.left end
     function control:GetTop() return self.top end
     function control:StartMoving() end
@@ -530,8 +531,8 @@ function GetItemLinkName(link)
         return itemLinks[link].name
     end
     local fields = getLinkFields(link)
-    if fields and tonumber(fields[1]) == 26588 then
-        return "Truly Superb Glyph of Stamina"
+    if fields and tonumber(fields[1]) then
+        return "Test Item " .. tostring(fields[1])
     end
     return ""
 end
@@ -730,6 +731,8 @@ function GetItemLinkRequiredChampionPoints(link)
         return 160
     elseif subType >= 308 and subType <= 312 then
         return 150
+    elseif subType == 165 then
+        return 10
     end
     return 0
 end
@@ -814,36 +817,37 @@ end
 function InitializeTooltip() end
 function ClearTooltip(tooltip) tooltip.link = nil end
 
-dofile("UIHelpers.lua")
-dofile("Enchantments.lua")
-dofile("ItemResolver.lua")
-dofile("StatImpact.lua")
-dofile("BuildValidation.lua")
-dofile("Acquisition.lua")
-dofile("Inventory.lua")
-dofile("ShoppingIntegration.lua")
-dofile("Readiness.lua")
-dofile("CharacterCapture.lua")
-dofile("SkillCatalog.lua")
-dofile("ChampionCatalog.lua")
-dofile("ChecklistDetection.lua")
-dofile("ConsumableCatalog.lua")
-dofile("Share.lua")
-dofile("Accessibility.lua")
-dofile("Comparison.lua")
-dofile("SwapPackages.lua")
-dofile("UI.lua")
-dofile("RevisionHistory.lua")
-dofile("ChampionPlanner.lua")
-dofile("SuppliesPlanner.lua")
-dofile("ChecklistPlanner.lua")
-dofile("ComparisonPlanner.lua")
-dofile("StatImpactUI.lua")
-dofile("BuildValidationUI.lua")
-dofile("ReadinessUI.lua")
-dofile("Settings.lua")
-dofile("Gamepad.lua")
-dofile("GamepadDialogs.lua")
+dofile("Build/UI/Shared/UIHelpers.lua")
+dofile("Build/Features/Enchantments.lua")
+dofile("Build/Features/ItemResolver.lua")
+dofile("Build/Features/StatImpact.lua")
+dofile("Build/Features/BuildValidation.lua")
+dofile("Build/Features/Acquisition.lua")
+dofile("Build/Core/Inventory.lua")
+dofile("Build/Integrations/ShoppingIntegration.lua")
+dofile("Build/Features/Readiness.lua")
+dofile("Build/Features/CharacterCapture.lua")
+dofile("Build/Features/SkillCatalog.lua")
+dofile("Build/Features/ChampionCatalog.lua")
+dofile("Build/Features/ChecklistDetection.lua")
+dofile("Build/Features/ConsumableCatalog.lua")
+dofile("Build/Features/Share.lua")
+dofile("Build/UI/Shared/Accessibility.lua")
+dofile("Build/Features/Comparison.lua")
+dofile("Build/Features/SwapPackages.lua")
+dofile("Build/UI/Keyboard/UI.lua")
+dofile("Build/UI/Keyboard/RevisionHistory.lua")
+dofile("Build/UI/Keyboard/ChampionPlanner.lua")
+dofile("Build/UI/Keyboard/SuppliesPlanner.lua")
+dofile("Build/UI/Keyboard/ChecklistPlanner.lua")
+dofile("Build/UI/Keyboard/ComparisonPlanner.lua")
+dofile("Build/UI/Keyboard/StatImpactUI.lua")
+dofile("Build/UI/Keyboard/BuildValidationUI.lua")
+dofile("Build/UI/Keyboard/ReadinessUI.lua")
+dofile("Build/UI/Shared/Settings.lua")
+dofile("Build/Features/RuntimeAudit.lua")
+dofile("Build/UI/Gamepad/Gamepad.lua")
+dofile("Build/UI/Gamepad/GamepadDialogs.lua")
 
 local owner = {
     data = BuildPlannerTestData,
@@ -915,6 +919,51 @@ expectEqual(GravvyBuildPlannerStatImpact, statImpactEngine,
     "creating the stat window should not replace the calculation engine")
 expectEqual(GravvyBuildPlannerStatImpactWindow, ui.statImpactDialog,
     "the stat impact window should use a distinct control name")
+local virtualControlAudit = GravvyBuildPlannerUIHelpers:AuditVirtualControls()
+expect(virtualControlAudit.checked > 0 and virtualControlAudit.failed == 0,
+    "virtual UI templates should have unique, verifiable parent names")
+local auditMessages = {}
+CHAT_SYSTEM = {
+    AddMessage = function(_, message) auditMessages[#auditMessages + 1] = message end,
+}
+function GetAPIVersion() return 101050 end
+local auditSetup = {
+    equipment = {
+        head = { setId = 1 },
+        ring1 = { setId = 2 },
+        frontMain = { setId = 3 },
+    },
+}
+local runtimeAudit = GravvyBuildPlannerRuntimeAudit:New({
+    data = { GetBuilds = function() return {{ setups = { auditSetup } }} end },
+    accessibility = {
+        AuditTextGeometry = function()
+            return { checked = 24, failed = 0, issues = {} }
+        end,
+    },
+    gamepad = {},
+    itemResolver = {
+        TESTED_API_VERSION = 101050,
+        AuditRepresentativeLinks = function(_, samples)
+            return { checked = #samples * 25, failed = 0, issues = {} }
+        end,
+    },
+    inventory = {
+        Benchmark = function()
+            return {
+                items = 500,
+                setups = 40,
+                requirements = 560,
+                alternatives = 80,
+                readMs = 20,
+                matchMs = 100,
+            }
+        end,
+    },
+})
+local runtimeReport = runtimeAudit:Run()
+expect(runtimeReport.passed and #auditMessages >= 5,
+    "the in-game audit should combine control, layout, link, and performance checks")
 expectEqual(ui.window.height, 728,
     "keyboard window should make room for the dedicated navigation row")
 expectEqual(ui.gearTab.anchor[5], 119,
@@ -1555,6 +1604,9 @@ for quality = ITEM_QUALITY_NORMAL, ITEM_QUALITY_LEGENDARY do
     expectEqual(subtype, 366 + quality - 1,
         "all supported gear qualities should retain their CP160 subtype")
 end
+local glyphLinkAudit = owner.itemResolver:AuditRepresentativeLinks({})
+expect(glyphLinkAudit.checked > 100 and glyphLinkAudit.failed == 0,
+    "the API smoke check should validate every supported glyph across gear tiers")
 expect(owner.itemResolver:Resolve("ring1", { setId = 34 }, resolverSetup), "resolver should find jewelry pieces")
 expect(owner.itemResolver:Resolve("frontMain", {
     setId = 34,
@@ -1653,6 +1705,13 @@ owner.accessibility:Refresh()
 expect(ui.status.font:find("test%-font|22"), "font scaling should reapply registered control fonts")
 expectEqual(ui.status.height, 36,
     "font scaling should expand registered single-line text geometry within its row")
+local layoutAudit = owner.accessibility:AuditTextGeometry({ 1, 1.2, 1.4 })
+expect(layoutAudit.checked > 0 and layoutAudit.failed == 0,
+    "registered keyboard text should survive the supported font scales")
+expectEqual(BuildPlannerTestData:GetSettings().fontScale, 1.2,
+    "layout diagnostics should restore the player's selected font scale")
+expectEqual(ui.status.height, 36,
+    "layout diagnostics should restore scaled control geometry")
 BuildPlannerTestData:GetSettings().highContrast = true
 owner.accessibility:Refresh()
 local highContrastBackdrops = 0
@@ -2009,6 +2068,12 @@ expectEqual(scaleInventory.matches[scaleSetups[2].id], nil,
 scaleInventory:GetProgress(scaleSetups[2].id)
 expect(scaleInventory.matches[scaleSetups[2].id],
     "deferred setup progress should be calculated when requested")
+local scaleItems = scaleInventory.items
+local performanceSample = scaleInventory:Benchmark()
+expectEqual(performanceSample.setups, 40,
+    "the runtime benchmark should exercise every saved setup")
+expectEqual(scaleInventory.items, scaleItems,
+    "performance measurement should restore the cached inventory table")
 owner.inventory:Refresh()
 local setupProgress = owner.inventory:GetProgress(setup.id)
 expectEqual(
@@ -2386,7 +2451,7 @@ expect(
     "switching to gamepad mode should close the mouse-driven planner cleanly"
 )
 
-dofile("MainMenu.lua")
+dofile("Build/Integrations/MainMenu.lua")
 GravvyBuildPlannerMainMenu:Initialize(owner)
 LibMainMenu2 = {
     Init = function(self) self.initialized = true end,
@@ -2428,11 +2493,12 @@ EVENT_MANAGER = {
     end,
     UnregisterForEvent = function() end,
 }
-dofile("GravvyBuildPlanner.lua")
+dofile("Build/GravvyBuildPlanner.lua")
 EVENT_MANAGER.addOnLoaded(nil, "GravvyBuildPlanner")
 expect(SLASH_COMMANDS["/buildplanner"], "long slash command should be registered")
 expect(SLASH_COMMANDS["/gbp"], "short slash command should be registered")
 expect(SLASH_COMMANDS["/buildplannerhelp"], "help slash command should be registered")
+expect(SLASH_COMMANDS["/gbpaudit"], "runtime audit command should be registered")
 gamepadPreferred = true
 GravvyBuildPlanner:ToggleWindow()
 expect(

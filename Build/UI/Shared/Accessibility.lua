@@ -46,11 +46,7 @@ end
 
 function Accessibility:ApplyTextGeometry(control, geometry)
     local scale = tonumber(self:GetSettings().fontScale) or 1
-    local currentHeight = control.GetHeight and control:GetHeight() or control.height
     local scaledHeight = math.floor((geometry.height * math.min(scale, 1.2)) + 0.5)
-    if currentHeight and currentHeight > geometry.height * 1.2 then
-        return
-    end
     if control.SetDimensions then
         control:SetDimensions(geometry.width, scaledHeight)
     end
@@ -101,6 +97,60 @@ function Accessibility:Refresh()
     if self.owner.gamepad then
         self.owner.gamepad:Refresh()
     end
+end
+
+local function controlIsTruncated(control)
+    if control.WasTruncated then
+        local ok, truncated = pcall(control.WasTruncated, control)
+        if ok then return truncated == true, true end
+    end
+    if control.GetTextWidth and control.GetWidth then
+        local okWidth, textWidth = pcall(control.GetTextWidth, control)
+        local okControl, controlWidth = pcall(control.GetWidth, control)
+        if okWidth and okControl and textWidth and controlWidth then
+            return textWidth > controlWidth + 1, true
+        end
+    end
+    return false, false
+end
+
+function Accessibility:AuditTextGeometry(scales)
+    local settings = self:GetSettings()
+    local originalScale = settings.fontScale
+    local report = { checked = 0, failed = 0, issues = {}, scales = scales }
+
+    for _, scale in ipairs(scales or { 1, 1.2, 1.4 }) do
+        settings.fontScale = scale
+        for control, fontName in pairs(self.fonts) do
+            self:ApplyFont(control, fontName)
+        end
+        for control, geometry in pairs(self.textGeometry) do
+            self:ApplyTextGeometry(control, geometry)
+        end
+        for control in pairs(self.textGeometry) do
+            local truncated, measurable = controlIsTruncated(control)
+            if measurable then report.checked = report.checked + 1 end
+            if truncated then
+                report.failed = report.failed + 1
+                if #report.issues < 12 then
+                    local name = control.GetName and control:GetName() or nil
+                    report.issues[#report.issues + 1] = {
+                        scale = scale,
+                        name = name and name ~= "" and name or tostring(control),
+                    }
+                end
+            end
+        end
+    end
+
+    settings.fontScale = originalScale
+    for control, fontName in pairs(self.fonts) do
+        self:ApplyFont(control, fontName)
+    end
+    for control, geometry in pairs(self.textGeometry) do
+        self:ApplyTextGeometry(control, geometry)
+    end
+    return report
 end
 
 function Accessibility:FormatStatus(message, isError)

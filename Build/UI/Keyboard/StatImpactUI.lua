@@ -161,10 +161,10 @@ function UI:CreateStatImpactDialog()
     local statHeader = WINDOW_MANAGER:CreateControl(nil, dialog, CT_CONTROL)
     statHeader:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 158)
     statHeader:SetDimensions(430, 28)
-    local statHeaderBackdrop = WINDOW_MANAGER:CreateControlFromVirtual(
-        nil,
+    local statHeaderBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
         statHeader,
-        "ZO_DefaultBackdrop"
+        "ZO_DefaultBackdrop",
+        "StatHeaderBackdrop"
     )
     statHeaderBackdrop:SetAnchorFill(statHeader)
     statHeaderBackdrop:SetCenterColor(0.08, 0.07, 0.05, 0.95)
