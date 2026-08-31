@@ -130,6 +130,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             <label class="grow">Selected setup<select id="setup-select"></select></label>
             <button type="button" id="add-setup">Add Setup</button>
             <button type="button" class="secondary" id="duplicate-setup">Duplicate</button>
+            <button type="button" class="secondary" id="move-setup-up">Move Up</button>
+            <button type="button" class="secondary" id="move-setup-down">Move Down</button>
             <button type="button" class="danger" id="remove-setup">Remove</button>
         </div>
         <div id="setup-fields" class="grid" style="margin-top:16px"></div>

@@ -39,6 +39,7 @@
     const VERSION = 9;
     const PREFIX = "GBP1:";
     const SLOTS = ["head", "shoulders", "chest", "hands", "waist", "legs", "feet", "neck", "ring1", "ring2", "frontMain", "frontOff", "backMain", "backOff"];
+    const TWO_HANDED = new Set([4, 5, 6, 8, 9, 12, 13, 15]);
     const REQ_STRINGS = ["setName", "itemName", "itemLink", "enchantmentName", "note"];
     const REQ_NUMBERS = ["setId", "itemId", "armorType", "weaponType", "traitType", "enchantmentId", "enchantmentCategory", "quality", "level", "championPoints"];
     const ROUTES = { buy: 1, craft: 2, farm: 3, reconstruct: 4, transmute: 5, unknown: 6 };
@@ -171,6 +172,11 @@
 
         const equipment = value.equipment || {};
         object(equipment, "equipment");
+        for (const [main, off] of [["frontMain", "frontOff"], ["backMain", "backOff"]]) {
+            if (equipment[main] && TWO_HANDED.has(equipment[main].weaponType) && equipment[off]) {
+                fail(main + " is two-handed, so " + off + " must be empty");
+            }
+        }
         const equippedSlots = SLOTS.filter((slot) => equipment[slot] != null);
         writer.byte(equippedSlots.length);
 

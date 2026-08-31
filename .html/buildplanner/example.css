@@ -61,7 +61,12 @@ legend { padding:0 8px; color:var(--gold-light); font-weight:750; }
 .inline-check input { width:auto; min-height:0; margin:0; }
 .errors { border-color:#9d4339; background:#321c1b; color:var(--error); }
 .errors h2 { color:var(--error); }
+.error-link { min-height:30px; margin-left:8px; padding:3px 8px; border-color:currentColor; background:transparent; color:inherit; font-size:.82rem; }
 .success { color:var(--success); }
+.developer-example { margin-top:24px; padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:#111319; }
+.developer-example summary { color:var(--gold-light); font-weight:750; cursor:pointer; }
+.developer-example h3 { margin-top:18px; }
+.developer-example pre { min-height:0; max-height:360px; }
 .output-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 pre { min-height:330px; max-height:680px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere;
     margin:0; padding:14px; border:1px solid var(--line); border-radius:6px; background:#0c0e12; }

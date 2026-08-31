@@ -38,6 +38,7 @@ VERSION = 9
 PREFIX = "GBP1:"
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 SLOTS = ["head", "shoulders", "chest", "hands", "waist", "legs", "feet", "neck", "ring1", "ring2", "frontMain", "frontOff", "backMain", "backOff"]
+TWO_HANDED = {4, 5, 6, 8, 9, 12, 13, 15}
 REQ_STRINGS = ["setName", "itemName", "itemLink", "enchantmentName", "note"]
 REQ_NUMBERS = ["setId", "itemId", "armorType", "weaponType", "traitType", "enchantmentId", "enchantmentCategory", "quality", "level", "championPoints"]
 ROUTES = {"buy": 1, "craft": 2, "farm": 3, "reconstruct": 4, "transmute": 5, "unknown": 6}
@@ -167,6 +168,10 @@ def write_setup(writer, value):
     writer.u32(integer(value.get("defaultChampionPoints", 160), 0, 160, "defaultChampionPoints"))
 
     equipment = obj(value.get("equipment") or {}, "equipment")
+    for main_slot, off_slot in (("frontMain", "frontOff"), ("backMain", "backOff")):
+        main = equipment.get(main_slot)
+        if isinstance(main, dict) and main.get("weaponType") in TWO_HANDED and equipment.get(off_slot) is not None:
+            raise ValueError(f"{main_slot} is two-handed, so {off_slot} must be empty")
     equipped = [slot for slot in SLOTS if equipment.get(slot) is not None]
     writer.byte(len(equipped))
     for slot in equipped:

@@ -21,3 +21,4 @@ node_modules/
 *.pyc
 !/Tests/GeneratorImportTest.lua
 !/Tests/GeneratorParityTest.js
+!/Tests/WebGeneratorValidationTest.js

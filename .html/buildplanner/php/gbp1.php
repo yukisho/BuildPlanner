@@ -37,6 +37,7 @@ const GBP_VERSION = 9;
 const GBP_PREFIX = 'GBP1:';
 const GBP_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const GBP_SLOTS = ['head', 'shoulders', 'chest', 'hands', 'waist', 'legs', 'feet', 'neck', 'ring1', 'ring2', 'frontMain', 'frontOff', 'backMain', 'backOff'];
+const GBP_TWO_HANDED = [4, 5, 6, 8, 9, 12, 13, 15];
 const GBP_REQ_STRINGS = ['setName', 'itemName', 'itemLink', 'enchantmentName', 'note'];
 const GBP_REQ_NUMBERS = ['setId', 'itemId', 'armorType', 'weaponType', 'traitType', 'enchantmentId', 'enchantmentCategory', 'quality', 'level', 'championPoints'];
 const GBP_ROUTES = ['buy' => 1, 'craft' => 2, 'farm' => 3, 'reconstruct' => 4, 'transmute' => 5, 'unknown' => 6];
@@ -197,6 +198,13 @@ function gbpSetup(GBPWriter $writer, array $value): void
 
     $equipment = $value['equipment'] ?? [];
     if (!is_array($equipment)) throw new InvalidArgumentException('equipment must be an object');
+    foreach ([['frontMain', 'frontOff'], ['backMain', 'backOff']] as [$mainSlot, $offSlot]) {
+        $main = $equipment[$mainSlot] ?? null;
+        if (is_array($main) && in_array($main['weaponType'] ?? null, GBP_TWO_HANDED, true)
+            && array_key_exists($offSlot, $equipment) && $equipment[$offSlot] !== null) {
+            throw new InvalidArgumentException("$mainSlot is two-handed, so $offSlot must be empty");
+        }
+    }
     $equipped = array_values(array_filter(GBP_SLOTS,
         static fn($slot) => array_key_exists($slot, $equipment) && $equipment[$slot] !== null));
     $writer->byte(count($equipped));

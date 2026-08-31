@@ -159,6 +159,7 @@
         label.append(document.createTextNode(labelText));
         const control = create(settings.multiline ? "textarea" : "input");
         if (!settings.multiline) control.type = settings.type || "text";
+        if (settings.id) control.id = settings.id;
         if (settings.maxLength) control.maxLength = settings.maxLength;
         if (settings.placeholder) control.placeholder = settings.placeholder;
         if (settings.min != null) control.min = settings.min;
@@ -209,7 +210,7 @@
 
     function renderBuildAndSetup() {
         buildFields.replaceChildren();
-        textField(buildFields, "Build name", build, "name", { maxLength: 100, keepEmpty: true });
+        textField(buildFields, "Build name", build, "name", { id: "build-name", maxLength: 100, keepEmpty: true });
         selectField(buildFields, "Class", build, "classId", CLASSES, { numeric: true });
         textField(buildFields, "Role", build, "role", { maxLength: 512 });
         textField(buildFields, "Patch or update", build, "patch", { maxLength: 512 });
@@ -222,10 +223,12 @@
             `${index + 1}. ${setup.name || "Unnamed Setup"}`, String(index), false, index === selectedSetup)));
         setupSelect.value = String(selectedSetup);
         document.getElementById("remove-setup").disabled = build.setups.length <= 1;
+        document.getElementById("move-setup-up").disabled = selectedSetup <= 0;
+        document.getElementById("move-setup-down").disabled = selectedSetup >= build.setups.length - 1;
 
         const setup = currentSetup();
         setupFields.replaceChildren();
-        textField(setupFields, "Setup name", setup, "name", { maxLength: 100, keepEmpty: true,
+        textField(setupFields, "Setup name", setup, "name", { id: "setup-name", maxLength: 100, keepEmpty: true,
             afterChange: () => updateSetupOption() });
         textField(setupFields, "Setup note", setup, "note", { maxLength: 4000, multiline: true });
         selectField(setupFields, "Default quality", setup, "defaultQuality", QUALITIES, { numeric: true });
@@ -294,6 +297,46 @@
             assumptions: renderAssumptions
         };
         renderers[activeSection]();
+        renderDeveloperExample();
+    }
+
+    function currentSectionFragment() {
+        const setup = currentSetup();
+        const fragments = {
+            overview: setup,
+            gear: { equipment: setup.equipment || {}, alternatives: setup.alternatives || {} },
+            skills: { skillBars: setup.skillBars || { front: [], back: [] } },
+            character: { character: setup.character || {} },
+            champion: { champion: setup.champion || blankChampion() },
+            consumables: { consumables: setup.consumables || [] },
+            checklist: { checklist: setup.checklist || [] },
+            assumptions: { buffAssumptions: setup.buffAssumptions || {} }
+        };
+        return fragments[activeSection];
+    }
+
+    function renderDeveloperExample() {
+        const details = create("details", "developer-example");
+        details.appendChild(create("summary", "", "Developer example for this section"));
+        const copy = create("p", "hint",
+            "Empty repeatable sections use []. Optional objects may be omitted; null preserves an intentional fixed-position gap. selectedSetup is one-based.");
+        const fragment = create("pre");
+        fragment.id = "section-json-fragment";
+        fragment.textContent = JSON.stringify(currentSectionFragment(), null, 2);
+        const calls = create("pre");
+        calls.textContent = [
+            "// JavaScript",
+            "const code = GBP1.encodeBuild(buildObject);",
+            "",
+            "# Python",
+            "code = encode_build(build_dict)",
+            "",
+            "// PHP",
+            "$code = gbpEncodeBuild($buildArray);"
+        ].join("\n");
+        append(details, copy, create("h3", "", "Current JSON fragment"), fragment,
+            create("h3", "", "Encode the complete build"), calls);
+        sectionPanel.appendChild(details);
     }
 
     function renderOverview() {
@@ -456,7 +499,7 @@
         };
         ["health", "magicka", "stamina"].forEach(key => textField(grid,
             key[0].toUpperCase() + key.slice(1), attributes, key,
-            { type: "number", min: 0, max: 64, keepZero: true, afterChange: updateTotal }));
+            { id: `attribute-${key}`, type: "number", min: 0, max: 64, keepZero: true, afterChange: updateTotal }));
         sectionPanel.appendChild(grid);
         sectionPanel.appendChild(total);
         updateTotal();
@@ -538,12 +581,15 @@
                 labelElement.append(document.createTextNode(`Slot ${index + 1}`));
                 const select = create("select");
                 select.appendChild(new Option("Empty", ""));
-                discipline.allocations.filter(entry => entry.isSlottable && entry.skillId).forEach(entry =>
+                const usedElsewhere = new Set(discipline.slottables.filter((id, slotIndex) => slotIndex !== index && id));
+                discipline.allocations.filter(entry => entry.isSlottable && entry.skillId &&
+                    !usedElsewhere.has(entry.skillId)).forEach(entry =>
                     select.appendChild(new Option(entry.name || `Star ${entry.skillId}`, String(entry.skillId))));
                 select.value = discipline.slottables[index] == null ? "" : String(discipline.slottables[index]);
                 select.addEventListener("change", () => {
                     discipline.slottables[index] = select.value === "" ? null : Number(select.value);
                     changed();
+                    renderSection();
                 });
                 append(labelElement, select);
                 slotGrid.appendChild(labelElement);
@@ -685,27 +731,42 @@
 
     function websiteValidation(value) {
         const errors = [];
-        if (!String(value.name || "").trim()) errors.push("Build: a name is required.");
+        if (!String(value.name || "").trim()) errors.push({ message: "Build: a name is required.", controlId: "build-name" });
         value.setups.forEach((setup, setupIndex) => {
             const prefix = `Setup ${setupIndex + 1}`;
-            if (!String(setup.name || "").trim()) errors.push(`${prefix}: a name is required.`);
+            if (!String(setup.name || "").trim()) errors.push({ message: `${prefix}: a name is required.`, setupIndex, controlId: "setup-name" });
             const attributes = (setup.character || {}).attributes || {};
             const total = (attributes.health || 0) + (attributes.magicka || 0) + (attributes.stamina || 0);
-            if (total > 64) errors.push(`${prefix}: attribute points total ${total}; the maximum is 64.`);
+            if (total > 64) errors.push({ message: `${prefix}: attribute points total ${total}; the maximum is 64.`, setupIndex, section: "character", controlId: "attribute-health" });
             [["frontMain", "frontOff"], ["backMain", "backOff"]].forEach(([main, off]) => {
                 if (TWO_HANDED.has(Number((setup.equipment[main] || {}).weaponType)) && setup.equipment[off]) {
-                    errors.push(`${prefix}: ${SLOT_DEFINITIONS[main][0]} is two-handed, so ${SLOT_DEFINITIONS[off][0]} must be empty.`);
+                    errors.push({ message: `${prefix}: ${SLOT_DEFINITIONS[main][0]} is two-handed, so ${SLOT_DEFINITIONS[off][0]} must be empty.`, setupIndex, section: "gear" });
                 }
             });
             Object.entries(setup.alternatives || {}).forEach(([slot, alternatives]) => {
-                if (alternatives.length && !setup.equipment[slot]) errors.push(`${prefix}: ${SLOT_DEFINITIONS[slot][0]} alternatives require primary equipment.`);
+                if (alternatives.length && !setup.equipment[slot]) errors.push({ message: `${prefix}: ${SLOT_DEFINITIONS[slot][0]} alternatives require primary equipment.`, setupIndex, section: "gear" });
             });
         });
         return errors;
     }
 
     function showErrors(messages) {
-        errorList.replaceChildren(...messages.map(message => create("li", "", message)));
+        errorList.replaceChildren(...messages.map(raw => {
+            const error = typeof raw === "string" ? { message: raw } : raw;
+            const item = create("li", "", error.message);
+            if (error.setupIndex != null || error.section || error.controlId) {
+                const link = button("Go to field", "error-link", () => {
+                    if (error.setupIndex != null) selectedSetup = error.setupIndex;
+                    if (error.section) activeSection = error.section;
+                    renderBuildAndSetup(); renderTabs(); renderSection();
+                    const target = error.controlId ? document.getElementById(error.controlId) :
+                        sectionPanel.querySelector("input, select, textarea, button");
+                    if (target) target.focus();
+                });
+                item.append(" ", link);
+            }
+            return item;
+        }));
         errorPanel.hidden = messages.length === 0;
     }
 
@@ -715,7 +776,14 @@
         try {
             const value = cleanBuild();
             const errors = websiteValidation(value);
-            if (errors.length) throw new Error(errors.join("\n"));
+            if (errors.length) {
+                jsonOutput.textContent = JSON.stringify(value, null, 2);
+                codeOutput.value = "";
+                outputStatus.textContent = "Current form is not valid";
+                outputStatus.className = "status";
+                showErrors(errors);
+                return;
+            }
             jsonOutput.textContent = JSON.stringify(value, null, 2);
             codeOutput.value = "";
             outputStatus.textContent = `Encoding with ${encoder.name || "the selected implementation"}\u2026`;
@@ -743,6 +811,8 @@
 
     function changed() {
         dirty = true;
+        const fragment = document.getElementById("section-json-fragment");
+        if (fragment) fragment.textContent = JSON.stringify(currentSectionFragment(), null, 2);
         clearTimeout(generationTimer);
         generationTimer = setTimeout(() => {
             updateTabs();
@@ -817,6 +887,18 @@
         build.selectedSetup = selectedSetup + 1;
         markAndRender();
     });
+    function moveSetup(offset) {
+        const destination = selectedSetup + offset;
+        if (destination < 0 || destination >= build.setups.length) return;
+        const moving = build.setups[selectedSetup];
+        build.setups[selectedSetup] = build.setups[destination];
+        build.setups[destination] = moving;
+        selectedSetup = destination;
+        build.selectedSetup = selectedSetup + 1;
+        markAndRender();
+    }
+    document.getElementById("move-setup-up").addEventListener("click", () => moveSetup(-1));
+    document.getElementById("move-setup-down").addEventListener("click", () => moveSetup(1));
     document.getElementById("remove-setup").addEventListener("click", () => {
         if (build.setups.length <= 1 || !window.confirm(`Remove ${currentSetup().name || "this setup"}?`)) return;
         build.setups.splice(selectedSetup, 1);
