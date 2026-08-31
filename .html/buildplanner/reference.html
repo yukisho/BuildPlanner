@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Complete GBP1 version 9 field reference for Gravvy's Build Planner website integrations.">
+    <title>GBP1 Build Schema Reference</title>
+    <style>
+        :root { color-scheme:dark; --page:#0d0f13; --panel:#171a20; --raised:#1d2028;
+            --line:#414550; --gold:#dfbd78; --gold-light:#f2d89d; --text:#f3efe6;
+            --muted:#b9b4a8; --code:#101218; --focus:#8ecbff; }
+        * { box-sizing:border-box; }
+        html { scroll-behavior:smooth; }
+        body { margin:0; background:radial-gradient(circle at 50% -10rem,rgba(223,189,120,.12),transparent 34rem),var(--page);
+            color:var(--text); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+        a { color:var(--gold-light); }
+        a:focus-visible,summary:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+        code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+        code { color:var(--gold-light); }
+        .shell { width:min(1120px,calc(100% - 32px)); margin:auto; }
+        header { border-bottom:1px solid rgba(223,189,120,.2); background:rgba(13,15,19,.88); }
+        header .shell { display:flex; align-items:center; justify-content:space-between; min-height:62px; gap:20px; }
+        .brand { color:var(--gold-light); font-weight:750; text-decoration:none; }
+        nav { display:flex; flex-wrap:wrap; gap:16px; font-size:.9rem; }
+        main { padding:64px 0 80px; }
+        h1,h2,h3 { line-height:1.2; }
+        h1 { margin:0 0 16px; font-size:clamp(2.2rem,5vw,4rem); letter-spacing:-.04em; }
+        h2 { color:var(--gold-light); }
+        .intro { max-width:780px; margin-bottom:30px; color:var(--muted); font-size:1.08rem; }
+        .actions { display:flex; flex-wrap:wrap; gap:10px; margin:24px 0 50px; }
+        .button { display:inline-flex; padding:9px 14px; border:1px solid var(--gold); border-radius:6px;
+            background:var(--gold); color:#17130c; font-weight:750; text-decoration:none; }
+        .button.secondary { border-color:var(--line); background:transparent; color:var(--text); }
+        .map { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:24px 0 50px; }
+        .map a { padding:18px; border:1px solid var(--line); border-radius:8px; background:var(--panel); text-decoration:none; }
+        .map strong { display:block; color:var(--gold-light); }
+        .map span { color:var(--muted); font-size:.9rem; }
+        details { margin:14px 0; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+        summary { cursor:pointer; padding:18px 20px; color:var(--gold-light); font-size:1.15rem; font-weight:750; }
+        details[open] summary { border-bottom:1px solid var(--line); }
+        .content { padding:20px; }
+        .content>p:first-child { margin-top:0; }
+        .content p,.content li { color:var(--muted); }
+        .table-wrap { overflow-x:auto; }
+        table { width:100%; min-width:660px; border-collapse:collapse; text-align:left; }
+        th,td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+        th { color:var(--gold-light); font-size:.82rem; letter-spacing:.04em; text-transform:uppercase; }
+        td { color:var(--muted); }
+        td:first-child { color:var(--text); }
+        tbody tr:last-child td { border-bottom:0; }
+        pre { overflow:auto; margin:18px 0 0; padding:15px; border:1px solid var(--line); border-radius:6px;
+            background:var(--code); color:var(--text); font-size:.86rem; }
+        .callout { margin:40px 0 0; padding:20px; border-left:3px solid var(--gold); background:var(--raised); }
+        footer { padding:24px 0; border-top:1px solid rgba(223,189,120,.2); color:var(--muted); text-align:center; font-size:.88rem; }
+        @media(max-width:760px){ header .shell{align-items:flex-start;flex-direction:column;padding:13px 0}.map{grid-template-columns:1fr}main{padding-top:42px} }
+        @media(prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
+    </style>
+</head>
+<body>
+<header>
+    <div class="shell">
+        <a class="brand" href="index.html">Build Planner Developer Tools</a>
+        <nav aria-label="Reference navigation">
+            <a href="example-build.json">Full JSON example</a>
+            <a href="README.md" download>Download README</a>
+        </nav>
+    </div>
+</header>
+
+<main class="shell">
+    <p class="eyebrow">GBP1 format version 9</p>
+    <h1>Complete build schema</h1>
+    <p class="intro">This is the portable contract accepted by all three generators. A website may leave optional sections empty, but it should preserve fixed positions for skill and Champion bars and use ESO IDs when an identity field is provided.</p>
+    <div class="actions">
+        <a class="button" href="example-build.json">Open the full example</a>
+        <a class="button secondary" href="index.html">Choose a language</a>
+    </div>
+
+    <nav class="map" aria-label="Schema sections">
+        <a href="#root"><strong>Build and setups</strong><span>Metadata, defaults, and setup selection</span></a>
+        <a href="#equipment"><strong>Equipment</strong><span>Primary pieces, alternatives, and acquisition route</span></a>
+        <a href="#skills"><strong>Skill bars</strong><span>Five active positions and one ultimate</span></a>
+        <a href="#character"><strong>Character</strong><span>Attributes, race, Mundus, curse, and subclassing</span></a>
+        <a href="#champion"><strong>Champion Points</strong><span>Allocations and four slots per discipline</span></a>
+        <a href="#supplies"><strong>Supplies and progression</strong><span>Consumables, checklist, and assumptions</span></a>
+    </nav>
+
+    <details id="root" open>
+        <summary>Build and setup objects</summary>
+        <div class="content">
+            <p>The root requires a name and at least one setup. <code>selectedSetup</code> is a one-based array index.</p>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Root field</th><th>Type</th><th>Requirement</th></tr></thead>
+                <tbody>
+                <tr><td><code>name</code></td><td>string</td><td>Required; 1-100 bytes</td></tr>
+                <tr><td><code>role</code>, <code>patch</code>, <code>author</code>, <code>sourceUrl</code></td><td>string</td><td>Optional; up to 512 bytes each</td></tr>
+                <tr><td><code>notes</code></td><td>string</td><td>Optional; up to 4,000 bytes</td></tr>
+                <tr><td><code>classId</code></td><td>integer</td><td>Optional; Build Planner accepts 0-100</td></tr>
+                <tr><td><code>setups</code></td><td>array</td><td>Required; 1-100 setup objects</td></tr>
+                <tr><td><code>selectedSetup</code></td><td>integer</td><td>1 through the number of setups; defaults to 1</td></tr>
+                </tbody>
+            </table></div>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Setup field</th><th>Type</th><th>Default or limit</th></tr></thead>
+                <tbody>
+                <tr><td><code>name</code></td><td>string</td><td>Required; 1-100 bytes</td></tr>
+                <tr><td><code>note</code></td><td>string</td><td>Optional; 4,000 bytes</td></tr>
+                <tr><td><code>defaultQuality</code></td><td>integer</td><td>1-5; default 5</td></tr>
+                <tr><td><code>defaultLevel</code></td><td>integer</td><td>1-50; default 50</td></tr>
+                <tr><td><code>defaultChampionPoints</code></td><td>integer</td><td>0-160; default 160</td></tr>
+                <tr><td><code>equipment</code>, <code>alternatives</code></td><td>object</td><td>Canonical equipment-slot maps</td></tr>
+                <tr><td><code>skillBars</code>, <code>character</code>, <code>champion</code>, <code>buffAssumptions</code></td><td>object</td><td>Optional sections</td></tr>
+                <tr><td><code>consumables</code>, <code>checklist</code></td><td>array</td><td>Optional ordered sections</td></tr>
+                </tbody>
+            </table></div>
+        </div>
+    </details>
+
+    <details id="equipment">
+        <summary>Equipment and alternatives</summary>
+        <div class="content">
+            <p>Canonical keys are <code>head</code>, <code>shoulders</code>, <code>chest</code>, <code>hands</code>, <code>waist</code>, <code>legs</code>, <code>feet</code>, <code>neck</code>, <code>ring1</code>, <code>ring2</code>, <code>frontMain</code>, <code>frontOff</code>, <code>backMain</code>, and <code>backOff</code>.</p>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+                <tbody>
+                <tr><td><code>setId</code>, <code>itemId</code></td><td>integer</td><td>Optional positive ESO IDs</td></tr>
+                <tr><td><code>setName</code>, <code>itemName</code>, <code>enchantmentName</code></td><td>string</td><td>Optional display and matching values; up to 512 bytes</td></tr>
+                <tr><td><code>itemLink</code></td><td>string</td><td>Optional ESO item link; up to 2,048 bytes</td></tr>
+                <tr><td><code>armorType</code>, <code>weaponType</code>, <code>traitType</code></td><td>integer</td><td>ESO constants valid for the slot family</td></tr>
+                <tr><td><code>enchantmentId</code>, <code>enchantmentCategory</code></td><td>integer</td><td>Optional ESO enchantment identity</td></tr>
+                <tr><td><code>quality</code>, <code>level</code>, <code>championPoints</code></td><td>integer</td><td>Optional overrides for setup defaults</td></tr>
+                <tr><td><code>preferredRoute</code></td><td>string</td><td><code>buy</code>, <code>craft</code>, <code>farm</code>, <code>reconstruct</code>, <code>transmute</code>, or <code>unknown</code></td></tr>
+                <tr><td><code>note</code></td><td>string</td><td>Optional; up to 4,000 bytes</td></tr>
+                </tbody>
+            </table></div>
+            <p>Each alternatives array accepts up to eight compatible requirements and is only valid when that slot has primary equipment. Alternatives omit <code>preferredRoute</code>. A two-handed main hand cannot have an off-hand requirement.</p>
+        </div>
+    </details>
+
+    <details id="skills">
+        <summary>Front- and back-bar skills</summary>
+        <div class="content">
+            <p>Each bar is an array of at most six positions. Positions 1-5 are active abilities and position 6 is the ultimate. Use <code>null</code> to preserve an empty position before a populated later position.</p>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Skill field</th><th>Type</th><th>Requirement</th></tr></thead>
+                <tbody>
+                <tr><td><code>abilityId</code></td><td>integer</td><td>Required positive ESO ability ID</td></tr>
+                <tr><td><code>name</code></td><td>string</td><td>Optional display fallback; up to 100 bytes</td></tr>
+                <tr><td><code>icon</code></td><td>string</td><td>Optional icon path; up to 512 bytes</td></tr>
+                </tbody>
+            </table></div>
+            <pre><code>"skillBars": {
+  "front": [{ "abilityId": 1001, "name": "Deep Fissure" }, null, null, null, null,
+            { "abilityId": 1006, "name": "Wild Guardian" }],
+  "back": []
+}</code></pre>
+        </div>
+    </details>
+
+    <details id="character">
+        <summary>Character choices</summary>
+        <div class="content">
+            <div class="table-wrap"><table>
+                <thead><tr><th>Field</th><th>Range</th><th>Notes</th></tr></thead>
+                <tbody>
+                <tr><td><code>attributes.health</code>, <code>magicka</code>, <code>stamina</code></td><td>0-64 each</td><td>Combined total cannot exceed 64</td></tr>
+                <tr><td><code>raceId</code></td><td>0-10</td><td>0 means unspecified</td></tr>
+                <tr><td><code>mundus</code></td><td>0-13</td><td>0 means unspecified</td></tr>
+                <tr><td><code>curse</code></td><td>0-2</td><td>0 none, 1 vampire, 2 werewolf</td></tr>
+                <tr><td><code>subclassLines</code></td><td>0-3 strings</td><td>Each class-line name is at most 100 bytes</td></tr>
+                </tbody>
+            </table></div>
+        </div>
+    </details>
+
+    <details id="champion">
+        <summary>Champion allocations and slottables</summary>
+        <div class="content">
+            <p><code>champion</code> contains <code>craft</code>, <code>warfare</code>, and <code>fitness</code>. Each discipline contains up to 200 allocations and four fixed slottable positions.</p>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Allocation field</th><th>Type</th><th>Requirement</th></tr></thead>
+                <tbody>
+                <tr><td><code>skillId</code></td><td>integer</td><td>Required and unique across every discipline</td></tr>
+                <tr><td><code>name</code></td><td>string</td><td>Required; up to 100 bytes</td></tr>
+                <tr><td><code>icon</code></td><td>string</td><td>Optional; up to 512 bytes</td></tr>
+                <tr><td><code>points</code></td><td>integer</td><td>1-1,000</td></tr>
+                <tr><td><code>isSlottable</code></td><td>boolean</td><td>Must be true before its ID can be placed in <code>slottables</code></td></tr>
+                </tbody>
+            </table></div>
+            <p>A slotted ID must refer to an allocation in the same discipline and cannot appear twice. Preserve empty positions with <code>null</code> or zero.</p>
+        </div>
+    </details>
+
+    <details id="supplies">
+        <summary>Consumables, progression, and assumptions</summary>
+        <div class="content">
+            <h3>Consumables</h3>
+            <p>Up to 20 entries. <code>category</code> is <code>food</code>, <code>drink</code>, <code>potion</code>, <code>poison</code>, or <code>other</code>. <code>name</code> is required; optional fields are <code>itemId</code>, <code>itemLink</code>, <code>icon</code>, and <code>note</code>. <code>quantity</code> is 1-9,999 and defaults to 1.</p>
+            <h3>Checklist</h3>
+            <p>Up to 100 entries. <code>category</code> is <code>passive</code>, <code>skillLine</code>, <code>unlock</code>, or <code>other</code>. Each entry requires <code>name</code> and may contain <code>targetRank</code> (1-50), <code>completed</code>, <code>abilityId</code>, <code>icon</code>, <code>note</code>, and <code>detection</code>.</p>
+            <p>Detection <code>kind</code> is <code>passive</code>, <code>skillLine</code>, <code>ability</code>, <code>champion</code>, <code>championSlotted</code>, or <code>trait</code>. Its optional identifiers are <code>id</code>, <code>skillType</code>, <code>skillLineIndex</code>, <code>craftingType</code>, <code>researchLineIndex</code>, and <code>traitIndex</code>.</p>
+            <h3>Buff assumptions</h3>
+            <p><code>food</code> and <code>potion</code> are optional 512-byte descriptions. <code>selfBuffs</code>, <code>groupBuffs</code>, and <code>targetConditions</code> each accept up to 20 non-empty 512-byte strings. These are descriptive assumptions rather than exact character-stat calculations.</p>
+        </div>
+    </details>
+
+    <aside class="callout">
+        <strong>Keep the trust boundary intact.</strong> Treat submitted build data as untrusted, render names and notes as text, validate collection limits and identifiers, and discard any previously generated code when the current form becomes invalid. Build Planner performs its own validation again during import.
+    </aside>
+</main>
+
+<footer><div class="shell">Reference for Gravvy's Build Planner GBP1 format version 9.</div></footer>
+</body>
+</html>

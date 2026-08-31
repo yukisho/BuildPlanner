@@ -1,3 +1,57 @@
+0.8.0
+- Reorganized the add-on into focused Core, Features, Integrations, Shared UI,
+  Keyboard UI, and Gamepad UI modules with manifest-checked load order and
+  release staging.
+- Added transactional saved-data migration, a separate bounded recovery store,
+  checksummed startup checkpoints, automatic recovery, and safer import and
+  restore checkpoints.
+- Centralized model validation for equipment families, traits, enchantments,
+  qualities, levels, Champion Points, identifiers, text limits, item links,
+  setup counts, and hostile share-code input.
+- Replaced greedy gear ownership checks with best-fit assignment so exact and
+  constrained matches win before flexible alternatives, duplicate jewelry, and
+  overlapping setup requirements.
+- Added account-wide equipment memory as characters log in, holder locations in
+  Readiness, and warnings when several setup slots depend on one physical item.
+- Reduced catalog and inventory refresh work with static caching, incremental
+  saved-name updates, coalesced bag refreshes, and current-setup-first matching.
+- Hardened revision storage with count and byte budgets, normalized historical
+  snapshots, direct restores, and clear eviction messages.
+- Added build validation for set counts on both weapon bars, incomplete gear,
+  invalid Mythic and monster combinations, weapon and skill compatibility,
+  attributes, and Champion Points.
+- Added the Acquisition and Readiness report with ready, adjustable, missing,
+  conflicting, route, holder, upgrade, glyph, and transmute summaries.
+- Added automatic source guidance from LibSets for set zones, crafting
+  wayshrines, crafting trait requirements, and dungeon, trial, arena, monster,
+  overland, PvP, and Mythic sources.
+- Added optional local price estimates from Tamriel Trade Centre, EsoHub,
+  Master Merchant, and Arkadius Trade Tools while keeping remote trader search
+  in the normal Shopping List and guild-store workflow.
+- Added automatic checklist detection for passive ranks, skill lines, abilities,
+  morphs, Champion allocations and slots, and supported crafting research.
+- Added setup buff assumptions for food, potions, self buffs, group buffs, and
+  target conditions without folding descriptive assumptions into exact stats.
+- Added named setup variations and swap summaries covering gear, skills,
+  Champion Points, supplies, and common boss, trash, solo, parse, and no-trial
+  setups.
+- Expanded Stat Impact with guided front- and back-bar capture, setup-to-setup
+  snapshot comparisons, named contexts, capture metadata, stale-plan detection,
+  and descriptions of the plan changes behind stat differences.
+- Added a guided build walkthrough with clear planned, current, and next-action
+  sections, phase progress, Next Needed navigation, exact related-planner
+  links, and final stat captures for both bars.
+- Made Help scrollable, enlarged its text, and completed keyboard and gamepad
+  lifecycle, mouse ownership, focus, scaling, contrast, and truncation
+  hardening for English, Spanish, and French.
+- Added JavaScript, Python, and PHP GBP1 version 9 generators for third-party
+  build websites, a practical example, and automated import compatibility
+  coverage.
+- Expanded /gbpaudit and the repeatable test suite to cover Lua parsing,
+  localization placeholders, manifest contents and load order, SavedVariables,
+  virtual controls, item-link API assumptions, generator imports, and clean
+  diffs.
+
 0.7.21
 - Widened the Stat Impact window and increased the Planned Gear Effects text
   to the normal game font so longer effect descriptions are easier to read.

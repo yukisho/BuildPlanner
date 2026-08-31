@@ -96,10 +96,14 @@ local function gearInstruction(entry, setup)
     elseif entry.status == "conflicting" then
         instructions[1] = GetString(SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_ACTION_CONFLICT)
     elseif entry.status == "missing" then
-        instructions[1] = GetString(
-            routeActionIds[entry.route]
-                or SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_ACTION_FIND
-        )
+        if entry.sourceGuidance and entry.sourceGuidance ~= "" then
+            instructions[1] = entry.sourceGuidance
+        else
+            instructions[1] = GetString(
+                routeActionIds[entry.route]
+                    or SI_GRAVVY_BUILD_PLANNER_WALKTHROUGH_ACTION_FIND
+            )
+        end
     else
         for _, difference in ipairs(entry.differences or {}) do
             if difference == "trait" and requirement.traitType then

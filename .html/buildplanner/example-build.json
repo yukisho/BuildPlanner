@@ -1,0 +1,345 @@
+{
+  "name": "Stamina Warden",
+  "role": "Damage",
+  "patch": "Update 50",
+  "author": "Example Builds",
+  "sourceUrl": "https://example.com/stamina-warden",
+  "notes": "Complete GBP1 example for website developers",
+  "classId": 4,
+  "selectedSetup": 1,
+  "setups": [
+    {
+      "name": "Base Setup",
+      "note": "Dungeon and trial setup",
+      "defaultQuality": 5,
+      "defaultLevel": 50,
+      "defaultChampionPoints": 160,
+      "equipment": {
+        "head": {
+          "setId": 167,
+          "setName": "Nerien'eth",
+          "itemId": 100001,
+          "itemName": "Nerien'eth's Visage",
+          "itemLink": "|H1:item:100001:370:50:26588:5:50:0:0:0:0:0:0:0:0:0:0:0:0:0:0|h|h",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentId": 26588,
+          "enchantmentCategory": 3,
+          "enchantmentName": "Maximum Stamina",
+          "quality": 5,
+          "level": 50,
+          "championPoints": 160,
+          "preferredRoute": "farm",
+          "note": "Medium monster-set head"
+        },
+        "shoulders": {
+          "setId": 167,
+          "setName": "Nerien'eth",
+          "itemName": "Nerien'eth's Epaulets",
+          "armorType": 1,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "farm"
+        },
+        "chest": {
+          "setName": "Spattering Disjunction",
+          "itemName": "Spattering Disjunction Jack",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "farm"
+        },
+        "hands": {
+          "setName": "Spattering Disjunction",
+          "itemName": "Spattering Disjunction Bracers",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "farm"
+        },
+        "waist": {
+          "setId": 602,
+          "setName": "Whorl of the Depths",
+          "itemName": "Whorl of the Depths Sash",
+          "armorType": 1,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "quality": 5,
+          "preferredRoute": "farm",
+          "note": "Light body piece"
+        },
+        "legs": {
+          "setName": "Spattering Disjunction",
+          "itemName": "Spattering Disjunction Guards",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "farm"
+        },
+        "feet": {
+          "setName": "Spattering Disjunction",
+          "itemName": "Spattering Disjunction Boots",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "farm"
+        },
+        "neck": {
+          "setName": "Highland Sentinel",
+          "itemName": "Highland Sentinel Amulet",
+          "traitType": 35,
+          "enchantmentName": "Weapon and Spell Damage",
+          "quality": 5,
+          "preferredRoute": "buy"
+        },
+        "ring1": {
+          "setName": "Highland Sentinel",
+          "itemName": "Highland Sentinel Ring",
+          "traitType": 35,
+          "enchantmentName": "Weapon and Spell Damage",
+          "quality": 5,
+          "preferredRoute": "buy"
+        },
+        "ring2": {
+          "setName": "Highland Sentinel",
+          "itemName": "Highland Sentinel Ring",
+          "traitType": 35,
+          "enchantmentName": "Weapon and Spell Damage",
+          "quality": 5,
+          "preferredRoute": "buy"
+        },
+        "frontMain": {
+          "setName": "Null Arca",
+          "itemName": "Null Arca Greatsword",
+          "weaponType": 6,
+          "traitType": 2,
+          "enchantmentName": "Flame Damage",
+          "quality": 5,
+          "preferredRoute": "farm"
+        },
+        "backMain": {
+          "setName": "Merciless Charge",
+          "itemName": "The Maelstrom's Greatsword",
+          "weaponType": 6,
+          "traitType": 4,
+          "enchantmentName": "Berserker",
+          "quality": 5,
+          "preferredRoute": "farm"
+        }
+      },
+      "alternatives": {
+        "waist": [
+          {
+            "setName": "Order's Wrath",
+            "itemName": "Order's Wrath Sash",
+            "armorType": 1,
+            "traitType": 18,
+            "enchantmentName": "Maximum Stamina",
+            "quality": 5,
+            "note": "Crafted fallback"
+          }
+        ]
+      },
+      "skillBars": {
+        "front": [
+          { "abilityId": 1001, "name": "Deep Fissure", "icon": "/esoui/art/icons/ability_warden_007.dds" },
+          { "abilityId": 1002, "name": "Cutting Dive", "icon": "/esoui/art/icons/ability_warden_001.dds" },
+          null,
+          { "abilityId": 1004, "name": "Growing Swarm", "icon": "/esoui/art/icons/ability_warden_005.dds" },
+          { "abilityId": 1005, "name": "Camouflaged Hunter", "icon": "/esoui/art/icons/ability_fightersguild_002_b.dds" },
+          { "abilityId": 1006, "name": "Wild Guardian", "icon": "/esoui/art/icons/ability_warden_006_b.dds" }
+        ],
+        "back": [
+          { "abilityId": 1011, "name": "Stampede", "icon": "/esoui/art/icons/ability_2handed_006_b.dds" },
+          { "abilityId": 1012, "name": "Carve", "icon": "/esoui/art/icons/ability_2handed_005_b.dds" },
+          { "abilityId": 1013, "name": "Bull Netch", "icon": "/esoui/art/icons/ability_warden_011_b.dds" },
+          null,
+          { "abilityId": 1015, "name": "Barbed Trap", "icon": "/esoui/art/icons/ability_fightersguild_004_b.dds" },
+          { "abilityId": 1016, "name": "Flawless Dawnbreaker", "icon": "/esoui/art/icons/ability_fightersguild_001_b.dds" }
+        ]
+      },
+      "character": {
+        "attributes": { "health": 0, "magicka": 14, "stamina": 50 },
+        "raceId": 9,
+        "mundus": 10,
+        "curse": 0,
+        "subclassLines": ["Animal Companions", "Winter's Embrace", "Grave Lord"]
+      },
+      "champion": {
+        "craft": {
+          "allocations": [
+            { "skillId": 2001, "name": "Steed's Blessing", "icon": "/esoui/art/champion/champion_points_stamina_icon-hud.dds", "points": 50, "isSlottable": true },
+            { "skillId": 2002, "name": "Gilded Fingers", "icon": "/esoui/art/champion/champion_points_stamina_icon-hud.dds", "points": 50, "isSlottable": false }
+          ],
+          "slottables": [2001, null, null, null]
+        },
+        "warfare": {
+          "allocations": [
+            { "skillId": 2101, "name": "Wrathful Strikes", "icon": "/esoui/art/champion/champion_points_magicka_icon-hud.dds", "points": 50, "isSlottable": true },
+            { "skillId": 2102, "name": "Master-at-Arms", "icon": "/esoui/art/champion/champion_points_magicka_icon-hud.dds", "points": 50, "isSlottable": true },
+            { "skillId": 2103, "name": "Precision", "icon": "/esoui/art/champion/champion_points_magicka_icon-hud.dds", "points": 20, "isSlottable": false }
+          ],
+          "slottables": [2101, 2102, null, null]
+        },
+        "fitness": {
+          "allocations": [
+            { "skillId": 2201, "name": "Boundless Vitality", "icon": "/esoui/art/champion/champion_points_health_icon-hud.dds", "points": 50, "isSlottable": true },
+            { "skillId": 2202, "name": "Fortified", "icon": "/esoui/art/champion/champion_points_health_icon-hud.dds", "points": 50, "isSlottable": true }
+          ],
+          "slottables": [2201, 2202, null, null]
+        }
+      },
+      "consumables": [
+        {
+          "category": "food",
+          "name": "Lava Foot Soup-and-Saltrice",
+          "itemId": 87695,
+          "itemLink": "|H1:item:87695:5:1:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0|h|h",
+          "icon": "/esoui/art/icons/crafting_food_008.dds",
+          "quantity": 20,
+          "note": "Use before combat"
+        },
+        {
+          "category": "potion",
+          "name": "Essence of Weapon Power",
+          "itemId": 44715,
+          "icon": "/esoui/art/icons/crafting_potion_001_type_005.dds",
+          "quantity": 100,
+          "note": "Keep active during the fight"
+        },
+        {
+          "category": "poison",
+          "name": "Damage Health Poison IX",
+          "quantity": 20
+        }
+      ],
+      "checklist": [
+        {
+          "category": "passive",
+          "name": "Advanced Species",
+          "targetRank": 2,
+          "completed": false,
+          "abilityId": 5002,
+          "icon": "/esoui/art/icons/ability_warden_018.dds",
+          "note": "Animal Companions passive",
+          "detection": { "kind": "passive", "id": 5002 }
+        },
+        {
+          "category": "skillLine",
+          "name": "Fighters Guild Rank",
+          "targetRank": 10,
+          "completed": false,
+          "note": "Required for passives and Dawnbreaker",
+          "detection": { "kind": "skillLine", "skillType": 3, "skillLineIndex": 1 }
+        },
+        {
+          "category": "unlock",
+          "name": "Wrathful Strikes",
+          "completed": true,
+          "note": "Allocate and slot the Champion star",
+          "detection": { "kind": "championSlotted", "id": 2101 }
+        },
+        {
+          "category": "unlock",
+          "name": "Research Divines on Sashes",
+          "completed": false,
+          "note": "Needed to craft the fallback",
+          "detection": { "kind": "trait", "craftingType": 2, "researchLineIndex": 3, "traitIndex": 8 }
+        }
+      ],
+      "buffAssumptions": {
+        "food": "Lava Foot Soup-and-Saltrice",
+        "potion": "Essence of Weapon Power",
+        "selfBuffs": ["Major Brutality", "Major Savagery"],
+        "groupBuffs": ["Major Courage", "Minor Berserk"],
+        "targetConditions": ["Trial dummy", "Off Balance", "Under 25% Health"]
+      }
+    },
+    {
+      "name": "Solo Setup",
+      "note": "Simplified overland setup",
+      "defaultQuality": 4,
+      "defaultLevel": 50,
+      "defaultChampionPoints": 160,
+      "equipment": {
+        "head": {
+          "setName": "Order's Wrath",
+          "itemName": "Order's Wrath Helm",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Health",
+          "preferredRoute": "craft"
+        },
+        "chest": {
+          "setName": "Order's Wrath",
+          "itemName": "Order's Wrath Jack",
+          "armorType": 2,
+          "traitType": 18,
+          "enchantmentName": "Maximum Stamina",
+          "preferredRoute": "craft"
+        },
+        "frontMain": {
+          "setName": "Order's Wrath",
+          "itemName": "Order's Wrath Greatsword",
+          "weaponType": 6,
+          "traitType": 3,
+          "enchantmentName": "Flame Damage",
+          "preferredRoute": "craft"
+        }
+      },
+      "alternatives": {},
+      "skillBars": {
+        "front": [
+          { "abilityId": 1001, "name": "Deep Fissure" },
+          { "abilityId": 1022, "name": "Resolving Vigor" },
+          null,
+          null,
+          null,
+          { "abilityId": 1006, "name": "Wild Guardian" }
+        ],
+        "back": []
+      },
+      "character": {
+        "attributes": { "health": 14, "magicka": 0, "stamina": 50 },
+        "raceId": 9,
+        "mundus": 10,
+        "curse": 0,
+        "subclassLines": ["Animal Companions", "Winter's Embrace", "Green Balance"]
+      },
+      "champion": {
+        "craft": { "allocations": [], "slottables": [] },
+        "warfare": {
+          "allocations": [
+            { "skillId": 2301, "name": "Reaving Blows", "points": 50, "isSlottable": true }
+          ],
+          "slottables": [2301, null, null, null]
+        },
+        "fitness": {
+          "allocations": [
+            { "skillId": 2401, "name": "Siphoning Spells", "points": 50, "isSlottable": true }
+          ],
+          "slottables": [2401, null, null, null]
+        }
+      },
+      "consumables": [
+        { "category": "food", "name": "Dubious Camoran Throne", "quantity": 10 },
+        { "category": "potion", "name": "Essence of Stamina", "quantity": 20 }
+      ],
+      "checklist": [
+        {
+          "category": "other",
+          "name": "Practice the solo rotation",
+          "completed": false,
+          "note": "Maintain Vigor when incoming damage is high"
+        }
+      ],
+      "buffAssumptions": {
+        "food": "Dubious Camoran Throne",
+        "potion": "Essence of Stamina",
+        "selfBuffs": ["Major Resolve"],
+        "groupBuffs": [],
+        "targetConditions": ["Solo target"]
+      }
+    }
+  ]
+}

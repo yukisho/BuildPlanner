@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.8.0",
   "scripts": {
-    "audit": "node Tests/audit.js"
+    "audit": "node Tests/audit.js",
+    "web-parity": "node Tests/GeneratorParityTest.js"
   },
   "devDependencies": {
     "fengari-node-cli": "0.1.0"

@@ -839,6 +839,7 @@ dofile("Build/Features/BuildValidation.lua")
 dofile("Build/Features/Acquisition.lua")
 dofile("Build/Core/Inventory.lua")
 dofile("Build/Integrations/ShoppingIntegration.lua")
+dofile("Build/Integrations/SourceData.lua")
 dofile("Build/Features/Readiness.lua")
 dofile("Build/Features/Walkthrough.lua")
 dofile("Build/Features/CharacterCapture.lua")
@@ -877,9 +878,42 @@ owner.statImpact = GravvyBuildPlannerStatImpact:New(owner)
 owner.buildValidation = GravvyBuildPlannerBuildValidation:New(owner)
 owner.inventory = GravvyBuildPlannerInventory:New(owner)
 owner.shopping = GravvyBuildPlannerShoppingIntegration:New(owner)
+owner.sourceData = GravvyBuildPlannerSourceData:New()
 owner.readiness = GravvyBuildPlannerReadiness:New(owner)
 owner.walkthrough = GravvyBuildPlannerWalkthrough:New(owner)
 owner.capture = GravvyBuildPlannerCharacterCapture:New(owner)
+
+local previousLibSets = LibSets
+local previousGetZoneNameById = GetZoneNameById
+local previousGetFastTravelNodeInfo = GetFastTravelNodeInfo
+local previousTTC = TamrielTradeCentrePrice
+LibSets = {
+    GetSetZoneIds = function() return { 101, 102 } end,
+    GetSetWayshrineIds = function() return { 201 } end,
+    GetSetTraitsNeeded = function() return 6 end,
+    IsDungeonSet = function() return true end,
+}
+GetZoneNameById = function(zoneId) return "Zone " .. tostring(zoneId) end
+GetFastTravelNodeInfo = function() return true, "Crafting Wayshrine" end
+TamrielTradeCentrePrice = {
+    GetPriceInfo = function() return { SuggestedPrice = 12345 } end,
+}
+local craftSource = owner.sourceData:GetGuidance("craft", { setId = 10 },
+    { crafted = true }, nil)
+expect(craftSource:find("Crafting Wayshrine", 1, true),
+    "crafted source guidance should include the closest known crafting wayshrine")
+expect(craftSource:find("6", 1, true),
+    "crafted source guidance should include the trait requirement")
+local farmSource = owner.sourceData:GetGuidance("farm", { setId = 10 }, {}, nil)
+expect(farmSource:find("Zone 101", 1, true),
+    "farm source guidance should include LibSets zone data")
+local buySource = owner.sourceData:GetGuidance("buy", {}, {}, { itemLink = "price:item" })
+expect(buySource:find("12345", 1, true),
+    "buy source guidance should include installed local price data")
+LibSets = previousLibSets
+GetZoneNameById = previousGetZoneNameById
+GetFastTravelNodeInfo = previousGetFastTravelNodeInfo
+TamrielTradeCentrePrice = previousTTC
 owner.skillCatalog = GravvyBuildPlannerSkillCatalog:New()
 owner.skillCatalog:AddAbility(1001, false)
 owner.skillCatalog:AddAbility(1002, false)

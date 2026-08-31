@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Complete browser example for generating a Gravvy Build Planner GBP1 code with JavaScript.">
+    <title>Complete Build Planner JavaScript Example</title>
+    <link rel="stylesheet" href="../example.css">
+</head>
+<body>
+<header><div class="shell">
+    <a class="brand" href="../index.html">Build Planner Developer Tools</a>
+    <a href="../reference.html">Complete schema reference</a>
+</div></header>
+
+<main class="shell">
+    <h1>Complete JavaScript build example</h1>
+    <p class="intro">This form covers every portable GBP1 section. It keeps a normal JavaScript object in memory and passes that object directly to <code>GBP1.encodeBuild(buildObject)</code>.</p>
+
+    <section class="panel" aria-labelledby="build-heading">
+        <div class="section-head">
+            <div><h2 id="build-heading">Build and setup</h2><p>Build metadata belongs at the root. Every other planner section belongs to the selected setup.</p></div>
+            <div class="actions"><button type="button" id="load-example">Load Full Example</button>
+                <button type="button" class="secondary" id="new-build">New Blank Build</button></div>
+        </div>
+        <div id="build-fields" class="grid"></div>
+        <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
+        <div class="toolbar">
+            <label class="grow">Selected setup<select id="setup-select"></select></label>
+            <button type="button" id="add-setup">Add Setup</button>
+            <button type="button" class="secondary" id="duplicate-setup">Duplicate</button>
+            <button type="button" class="danger" id="remove-setup">Remove</button>
+        </div>
+        <div id="setup-fields" class="grid" style="margin-top:16px"></div>
+    </section>
+
+    <nav id="section-tabs" class="tabs" aria-label="Build sections"></nav>
+    <section id="section-panel" class="panel" aria-live="polite"></section>
+    <section id="errors" class="panel errors" aria-live="assertive" hidden>
+        <h2>Review the build</h2><ul id="error-list"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="output-heading">
+        <div class="section-head"><div><h2 id="output-heading">JSON and GBP1 output</h2>
+            <p>Both outputs are generated from the same in-memory build object.</p></div>
+            <p id="output-status" class="status"></p></div>
+        <div class="output-grid">
+            <div><h3>buildObject</h3><pre id="json-output"></pre>
+                <div class="actions"><button type="button" class="secondary" data-copy="json-output">Copy JSON</button>
+                    <button type="button" class="secondary" id="download-json">Download JSON</button></div></div>
+            <div><h3>Encoded build</h3><textarea id="code-output" readonly></textarea>
+                <div class="actions"><button type="button" class="secondary" data-copy="code-output">Copy GBP1 Code</button></div>
+                <p class="hint">Paste the result into Build Planner's Share or Import window.</p></div>
+        </div>
+    </section>
+</main>
+
+<script src="gbp1.js"></script>
+<script>
+window.BuildPlannerExampleEncoder = {
+    name: "JavaScript",
+    encode(buildObject) { return GBP1.encodeBuild(buildObject); }
+};
+</script>
+<script src="app.js"></script>
+</body>
+</html>

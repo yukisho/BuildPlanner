@@ -10,3 +10,14 @@ TODO.txt
 node_modules/
 /Tests/*
 !/Tests/audit.js
+!/.readme/
+/.readme/*
+!/.readme/DESCRIPTION.md
+!/.generators/
+!/.generators/**
+!/.html/
+!/.html/**
+.html/**/__pycache__/
+*.pyc
+!/Tests/GeneratorImportTest.lua
+!/Tests/GeneratorParityTest.js

@@ -1,5 +1,5 @@
 local UI = GravvyBuildPlannerUI
-local ROWS = 8
+local ROWS = 6
 
 local function label(parent, text, x, y, width, height, font)
     local control = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
@@ -74,19 +74,19 @@ function UI:CreateReadinessDialog()
     self.readinessRows = {}
     for index = 1, ROWS do
         local row = WINDOW_MANAGER:CreateControl(nil, dialog, CT_CONTROL)
-        row:SetAnchor(TOPLEFT, dialog, TOPLEFT, 20, 222 + ((index - 1) * 52))
-        row:SetDimensions(1000, 48)
+        row:SetAnchor(TOPLEFT, dialog, TOPLEFT, 20, 222 + ((index - 1) * 68))
+        row:SetDimensions(1000, 64)
         local rowBackdrop = GravvyBuildPlannerUIHelpers:CreateFromVirtual(
             row, "ZO_DefaultBackdrop", "ReadinessRowBackdrop"
         )
         rowBackdrop:SetAnchorFill(row)
         local shade = index % 2 == 0 and 0.035 or 0.018
         rowBackdrop:SetCenterColor(shade, shade, shade + 0.008, 0.9)
-        row.slot = label(row, "", 8, 0, 132, 48, "ZoFontGameSmall")
-        row.status = label(row, "", 142, 0, 112, 48, "ZoFontGameSmall")
-        row.route = label(row, "", 258, 0, 118, 48, "ZoFontGameSmall")
-        row.location = label(row, "", 380, 0, 140, 48, "ZoFontGameSmall")
-        row.work = label(row, "", 524, 0, 468, 48, "ZoFontGameSmall")
+        row.slot = label(row, "", 8, 0, 132, 64, "ZoFontGameSmall")
+        row.status = label(row, "", 142, 0, 112, 64, "ZoFontGameSmall")
+        row.route = label(row, "", 258, 0, 118, 64, "ZoFontGameSmall")
+        row.location = label(row, "", 380, 0, 140, 64, "ZoFontGameSmall")
+        row.work = label(row, "", 524, 0, 468, 64, "ZoFontGameSmall")
         self.readinessRows[index] = row
     end
     local previous = button(dialog, GetString(SI_GRAVVY_BUILD_PLANNER_PREVIOUS), 100)

@@ -211,6 +211,13 @@ function Readiness:BuildReport(setup)
                     #sharedUses
                 )
             end
+            local sourceGuidance = not match and self.owner.sourceData
+                and self.owner.sourceData:GetGuidance(
+                    route, matchedRequirement, state, resolved
+                ) or nil
+            if sourceGuidance and sourceGuidance ~= "" then
+                work[#work + 1] = sourceGuidance
+            end
             report.entries[#report.entries + 1] = {
                 slotKey = slotKey,
                 slot = slotName(slotKey),
@@ -219,7 +226,8 @@ function Readiness:BuildReport(setup)
                 location = match and locationName(match.location, match.characterName)
                     or contested and locationName(contested.location, contested.characterName)
                     or GetString(SI_GRAVVY_BUILD_PLANNER_READINESS_NO_LOCATION),
-                work = table.concat(work, ", "),
+                work = table.concat(work, "\n"),
+                sourceGuidance = sourceGuidance,
                 differences = match and match.differences or {},
                 sharedUses = sharedUses,
                 requirement = matchedRequirement,

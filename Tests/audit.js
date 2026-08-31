@@ -46,6 +46,20 @@ if (!uiOutput.includes("Build Planner UI tests passed") || uiOutput.includes("st
 }
 process.stdout.write("PASS UI tests\n");
 
+const generatorOutput = run(process.execPath, [
+  ".html/buildplanner/javascript/gbp1.js",
+  ".html/buildplanner/example-build.json",
+]).trim();
+const generatorImportOutput = run(process.execPath, [
+  fengariScript,
+  "Tests/GeneratorImportTest.lua",
+  generatorOutput,
+]);
+if (!generatorImportOutput.includes("Build Planner generator import test passed")) {
+  fail("GBP1 generator import", generatorImportOutput);
+}
+process.stdout.write("PASS GBP1 generator import\n");
+
 function collectLua(directory, prefix = "") {
   const files = [];
   const skipped = new Set(["node_modules", ".lua-lint", ".history", ".git"]);

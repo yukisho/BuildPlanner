@@ -5,7 +5,7 @@
 ## APIVersion: 101050 101051
 ## AddOnVersion: 29
 ## DependsOn: LibSets>=0009000
-## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0
+## OptionalDependsOn: GravvyShoppingList LibAddonMenu-2.0 LibMainMenu-2.0 LibPrice MasterMerchant TamrielTradeCentre LibEsoHubPrices ArkadiusTradeToolsSales
 ## SavedVariables: GravvyBuildPlanner_Data GravvyBuildPlanner_RecoveryData
 
 # DISCLAIMER:
@@ -39,6 +39,7 @@ Features/BuildValidation.lua
 Features/Acquisition.lua
 Core/Inventory.lua
 Integrations/ShoppingIntegration.lua
+Integrations/SourceData.lua
 Features/Readiness.lua
 Features/Walkthrough.lua
 Features/CharacterCapture.lua
