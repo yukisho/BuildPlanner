@@ -32,13 +32,24 @@ The generator has no third-party dependencies.
 """
 
 import json
+import re
 import sys
+from urllib.parse import urlparse
 
 VERSION = 9
 PREFIX = "GBP1:"
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 SLOTS = ["head", "shoulders", "chest", "hands", "waist", "legs", "feet", "neck", "ring1", "ring2", "frontMain", "frontOff", "backMain", "backOff"]
 TWO_HANDED = {4, 5, 6, 8, 9, 12, 13, 15}
+ARMOR_SLOTS = set(SLOTS[:7])
+JEWELRY_SLOTS = set(SLOTS[7:10])
+ARMOR_TYPES = {1, 2, 3}
+WEAPON_TYPES = {1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 14, 15}
+TRAITS = {
+    "armor": {11, 12, 13, 14, 15, 16, 17, 18, 19},
+    "jewelry": {21, 22, 23, 30, 31, 32, 33, 34, 35},
+    "weapon": {1, 2, 3, 4, 5, 6, 7, 8, 26},
+}
 REQ_STRINGS = ["setName", "itemName", "itemLink", "enchantmentName", "note"]
 REQ_NUMBERS = ["setId", "itemId", "armorType", "weaponType", "traitType", "enchantmentId", "enchantmentCategory", "quality", "level", "championPoints"]
 ROUTES = {"buy": 1, "craft": 2, "farm": 3, "reconstruct": 4, "transmute": 5, "unknown": 6}
@@ -67,11 +78,74 @@ def integer(value, minimum, maximum, name):
 
 
 def encoded_text(value, name, maximum, required=False):
-    value = "" if value is None else str(value)
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    value = "" if value is None else value
     result = value.encode("utf-8")
     if len(result) > maximum or (required and not value.strip()):
         raise ValueError(f"{name} is invalid")
     return result
+
+
+def validate_http_url(value, name):
+    if value in (None, ""):
+        return
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"{name} must be an absolute HTTP or HTTPS URL")
+
+
+def validate_icon(value, name):
+    if value in (None, ""):
+        return
+    if not isinstance(value, str) or re.search(r"[\x00-\x1f]", value) or value.startswith("//"):
+        raise ValueError(f"{name} is invalid")
+    scheme = re.match(r"^([a-z][a-z0-9+.-]*):", value, re.IGNORECASE)
+    if scheme and scheme.group(1).lower() not in ("http", "https"):
+        raise ValueError(f"{name} must be an ESO path or HTTP/HTTPS URL")
+
+
+def validate_item_link(value, name):
+    if value in (None, ""):
+        return
+    pattern = r"^(?:\|c[0-9a-f]{6})?\|H\d+:item:[^|\r\n]+\|h[^|\r\n]*\|h(?:\|r)?$"
+    if not isinstance(value, str) or not re.match(pattern, value, re.IGNORECASE):
+        raise ValueError(f"{name} must be an ESO item link")
+
+
+def optional_integer(value, minimum, maximum, name):
+    if value is not None:
+        integer(value, minimum, maximum, name)
+
+
+def validate_requirement(value, slot, name):
+    family = "armor" if slot in ARMOR_SLOTS else "jewelry" if slot in JEWELRY_SLOTS else "weapon"
+    if family == "armor":
+        if value.get("weaponType") is not None:
+            raise ValueError(f"{name}.weaponType is not valid for an armor slot")
+        if value.get("armorType") is not None and value["armorType"] not in ARMOR_TYPES:
+            raise ValueError(f"{name}.armorType is invalid")
+    elif family == "jewelry":
+        if value.get("armorType") is not None or value.get("weaponType") is not None:
+            raise ValueError(f"{name} cannot have armorType or weaponType")
+    else:
+        if value.get("armorType") is not None:
+            raise ValueError(f"{name}.armorType is not valid for a weapon slot")
+        if value.get("weaponType") is not None and value["weaponType"] not in WEAPON_TYPES:
+            raise ValueError(f"{name}.weaponType is invalid")
+    if value.get("traitType") is not None and value["traitType"] not in TRAITS[family]:
+        raise ValueError(f"{name}.traitType is invalid for this slot")
+    for key in ("setId", "itemId", "enchantmentId"):
+        optional_integer(value.get(key), 0, 4294967294, f"{name}.{key}")
+    optional_integer(value.get("enchantmentCategory"), 0, 255, f"{name}.enchantmentCategory")
+    optional_integer(value.get("quality"), 1, 5, f"{name}.quality")
+    optional_integer(value.get("level"), 1, 50, f"{name}.level")
+    optional_integer(value.get("championPoints"), 0, 160, f"{name}.championPoints")
+    if value.get("championPoints") is not None and value["championPoints"] % 10:
+        raise ValueError(f"{name}.championPoints must use increments of 10")
+    validate_item_link(value.get("itemLink"), f"{name}.itemLink")
 
 
 class Writer:
@@ -96,8 +170,9 @@ class Writer:
         self.data.extend(value)
 
 
-def write_requirement(writer, value, name, include_route):
+def write_requirement(writer, value, name, include_route, slot):
     value = obj(value, name)
+    validate_requirement(value, slot, name)
     for key in REQ_STRINGS:
         maximum = 2048 if key == "itemLink" else 4000 if key == "note" else 512
         writer.string(value.get(key), f"{name}.{key}", maximum)
@@ -122,6 +197,7 @@ def write_skill_bars(writer, setup):
                 skill = obj(skill, f"{bar_name} skill")
                 writer.u32(integer(skill.get("abilityId"), 1, 4294967295, "abilityId"))
                 writer.string(skill.get("name"), "skill name", 100)
+                validate_icon(skill.get("icon"), "skill icon")
                 writer.string(skill.get("icon"), "skill icon", 512)
 
 
@@ -146,6 +222,7 @@ def write_champion(writer, setup):
             if is_slottable:
                 slottable.add(skill_id)
             writer.string(entry.get("name"), "Champion name", 100, True)
+            validate_icon(entry.get("icon"), "Champion icon")
             writer.string(entry.get("icon"), "Champion icon", 512)
         slots = arr(discipline.get("slottables"), f"{key} slottables", 4)
         used = set()
@@ -176,7 +253,7 @@ def write_setup(writer, value):
     writer.byte(len(equipped))
     for slot in equipped:
         writer.byte(SLOTS.index(slot) + 1)
-        write_requirement(writer, equipment[slot], f"equipment.{slot}", True)
+        write_requirement(writer, equipment[slot], f"equipment.{slot}", True, slot)
 
     alternatives = obj(value.get("alternatives") or {}, "alternatives")
     alternative_slots = [slot for slot in SLOTS if isinstance(alternatives.get(slot), list)
@@ -189,7 +266,7 @@ def write_setup(writer, value):
         writer.byte(SLOTS.index(slot) + 1)
         writer.byte(len(entries))
         for index, entry in enumerate(entries):
-            write_requirement(writer, entry, f"alternatives.{slot}[{index}]", False)
+            write_requirement(writer, entry, f"alternatives.{slot}[{index}]", False, slot)
 
     write_skill_bars(writer, value)
     character = value.get("character") or {}
@@ -216,7 +293,9 @@ def write_setup(writer, value):
             raise ValueError("invalid consumable category")
         writer.byte(CONSUMABLES[entry["category"]])
         writer.string(entry.get("name"), "consumable name", 100, True)
+        validate_item_link(entry.get("itemLink"), "consumable itemLink")
         writer.string(entry.get("itemLink"), "consumable itemLink", 2048)
+        validate_icon(entry.get("icon"), "consumable icon")
         writer.string(entry.get("icon"), "consumable icon", 512)
         writer.u16(integer(entry.get("quantity", 1), 1, 9999, "quantity"))
         writer.string(entry.get("note"), "consumable note", 4000)
@@ -234,6 +313,7 @@ def write_setup(writer, value):
                     integer(entry["targetRank"], 1, 50, "targetRank"))
         writer.byte(1 if entry.get("completed") is True else 0)
         writer.optional(entry.get("abilityId"), "abilityId")
+        validate_icon(entry.get("icon"), "checklist icon")
         writer.string(entry.get("icon"), "checklist icon", 512)
         writer.string(entry.get("note"), "checklist note", 4000)
         detection = entry.get("detection")
@@ -284,6 +364,8 @@ def encode_build(raw):
     writer.byte(VERSION)
     writer.string(build.get("name"), "build name", 100, True)
     for key in ("role", "patch", "author", "sourceUrl"):
+        if key == "sourceUrl":
+            validate_http_url(build.get(key), key)
         writer.string(build.get(key), key, 512)
     writer.string(build.get("notes"), "notes", 4000)
     writer.optional(build.get("classId"), "classId")

@@ -56,6 +56,17 @@ const cases = [
     ["invalid checklist detection", build => { build.setups[0].checklist = [
         { category: "other", name: "Step", detection: { kind: "guess" } }
     ]; }],
+    ["weapon type on armor", build => { build.setups[0].equipment.head = { weaponType: 3 }; }],
+    ["armor type on jewelry", build => { build.setups[0].equipment.neck = { armorType: 1 }; }],
+    ["armor trait on weapon", build => { build.setups[0].equipment.frontMain = { weaponType: 3, traitType: 18 }; }],
+    ["unknown weapon type", build => { build.setups[0].equipment.frontMain = { weaponType: 10 }; }],
+    ["invalid quality override", build => { build.setups[0].equipment.head = { quality: 6 }; }],
+    ["invalid level override", build => { build.setups[0].equipment.head = { level: 51 }; }],
+    ["invalid Champion Point increment", build => { build.setups[0].equipment.head = { championPoints: 15 }; }],
+    ["unsafe source URL", build => { build.sourceUrl = "javascript:alert(1)"; }],
+    ["unsafe icon scheme", build => { build.setups[0].skillBars.front = [{ abilityId: 1, icon: "data:text/html,bad" }]; }],
+    ["malformed ESO item link", build => { build.setups[0].equipment.head = { itemLink: "not-an-item-link" }; }],
+    ["non-string metadata", build => { build.role = { label: "Damage" }; }],
     ["negative ID", build => { build.setups[0].equipment.head = { itemId: -1 }; }],
     ["fractional points", build => { build.setups[0].champion.craft.allocations = [
         { skillId: 1, name: "One", points: 1.5 }

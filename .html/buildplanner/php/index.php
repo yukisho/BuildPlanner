@@ -104,34 +104,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Complete server example for generating a Gravvy Build Planner GBP1 code with PHP.">
-    <title>Complete Build Planner PHP Example</title>
+    <meta name="description" content="Working PHP form and GBP1 encoder for Gravvy's Build Planner.">
+    <title>PHP GBP1 Example</title>
     <link rel="stylesheet" href="../example.css">
 </head>
 <body>
 <header><div class="shell">
-    <a class="brand" href="../index.html">Build Planner Developer Tools</a>
-    <a href="../reference.html">Complete schema reference</a>
+    <a class="brand" href="../index.html">Build Planner GBP1 Toolkit</a>
+    <a href="../reference.html">Field reference</a>
 </div></header>
 
 <main class="shell">
-    <h1>Complete PHP build example</h1>
-    <p class="intro">This form covers every portable GBP1 section. It submits the complete object as JSON, PHP converts it to <code>$buildArray</code>, and the server calls <code>gbpEncodeBuild($buildArray)</code>.</p>
+    <h1>PHP build form</h1>
+    <p class="intro">This page submits the build as JSON. PHP turns it into <code>$buildArray</code>, passes it to <code>gbpEncodeBuild($buildArray)</code>, and sends the import code back to the form.</p>
 
     <section class="panel" aria-labelledby="build-heading">
         <div class="section-head">
-            <div><h2 id="build-heading">Build and setup</h2><p>Build metadata belongs at the root. Every other planner section belongs to the selected setup.</p></div>
-            <div class="actions"><button type="button" id="load-example">Load Full Example</button>
-                <button type="button" class="secondary" id="new-build">New Blank Build</button></div>
+            <div><h2 id="build-heading">Build and setup</h2><p>The build holds the shared details; gear, skills, and the other planner sections belong to each setup.</p></div>
+            <div class="actions"><button type="button" id="load-example">Load example</button>
+                <button type="button" class="secondary" id="new-build">Start blank</button></div>
         </div>
         <div id="build-fields" class="grid"></div>
         <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
         <div class="toolbar">
             <label class="grow">Selected setup<select id="setup-select"></select></label>
-            <button type="button" id="add-setup">Add Setup</button>
+            <button type="button" id="add-setup">Add setup</button>
             <button type="button" class="secondary" id="duplicate-setup">Duplicate</button>
-            <button type="button" class="secondary" id="move-setup-up">Move Up</button>
-            <button type="button" class="secondary" id="move-setup-down">Move Down</button>
+            <button type="button" class="secondary" id="move-setup-up">Move up</button>
+            <button type="button" class="secondary" id="move-setup-down">Move down</button>
             <button type="button" class="danger" id="remove-setup">Remove</button>
         </div>
         <div id="setup-fields" class="grid" style="margin-top:16px"></div>
@@ -140,24 +140,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <nav id="section-tabs" class="tabs" aria-label="Build sections"></nav>
     <section id="section-panel" class="panel" aria-live="polite"></section>
     <section id="errors" class="panel errors" aria-live="assertive" hidden>
-        <h2>Review the build</h2><ul id="error-list"></ul>
+        <h2>Things to fix</h2><ul id="error-list"></ul>
     </section>
 
     <section class="panel" aria-labelledby="output-heading">
-        <div class="section-head"><div><h2 id="output-heading">JSON and GBP1 output</h2>
-            <p>The displayed object is the exact request body PHP receives.</p></div>
+        <div class="section-head"><div><h2 id="output-heading">Result</h2>
+            <p>The JSON on the left is the exact request body PHP receives.</p></div>
             <p id="output-status" class="status"></p></div>
         <div class="output-grid">
             <div><h3>$buildArray as JSON</h3><pre id="json-output"></pre>
                 <div class="actions"><button type="button" class="secondary" data-copy="json-output">Copy JSON</button>
                     <button type="button" class="secondary" id="download-json">Download JSON</button></div></div>
-            <div><h3>Encoded build</h3><textarea id="code-output" readonly></textarea>
-                <div class="actions"><button type="button" class="secondary" data-copy="code-output">Copy GBP1 Code</button></div>
+            <div><h3>GBP1 code</h3><textarea id="code-output" readonly></textarea>
+                <div class="actions"><button type="button" class="secondary" data-copy="code-output">Copy code</button></div>
                 <p class="hint">Paste the result into Build Planner's Share or Import window.</p></div>
         </div>
     </section>
 </main>
 
+<script src="../javascript/example-catalog.js"></script>
 <script>
 window.BuildPlannerExampleEncoder = {
     name: "PHP",

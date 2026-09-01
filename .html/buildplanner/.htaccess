@@ -1,0 +1,21 @@
+# Keep other sites from embedding or serving Build Planner assets as their own.
+# Empty referrers remain allowed so bookmarks, privacy tools, and direct downloads
+# continue to work. HTML and PHP pages are deliberately excluded so developers
+# can follow normal links to the documentation and examples.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{HTTP_REFERER} !^$
+    RewriteCond %{HTTP_REFERER} !^https://(www\.)?gravvy\.net(/|$) [NC]
+    RewriteRule \.(css|js|json|py|zip|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|mp4|webm)$ - [F,L,NC]
+</IfModule>
+
+# CORP stops modern browsers from embedding these files cross-origin even when
+# a client strips the Referer header. It does not prevent direct navigation.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|json|py|zip|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|otf|mp4|webm)$">
+        Header always set Cross-Origin-Resource-Policy "same-origin"
+        Header always set X-Content-Type-Options "nosniff"
+    </FilesMatch>
+</IfModule>

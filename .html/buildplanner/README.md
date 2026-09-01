@@ -1,14 +1,13 @@
-# Build Planner GBP1 developer examples
+# Build Planner GBP1 toolkit
 
-These examples show how a build website can create a `GBP1:` code for Gravvy's
-Build Planner. JavaScript, Python, and PHP use the same input object and write
-the same version 9 payload.
+Use these examples to add a `GBP1:` export to a build website. JavaScript,
+Python, and PHP accept the same build shape and produce the same format 9 code.
 
-The generators encode portable build plans. They do not encode account-owned
-items, inventory locations, readiness results, revisions, stat snapshots,
-walkthrough progress, or other player-specific add-on state.
+Only the plan travels in the code. Owned items, inventory locations, readiness
+results, revisions, stat snapshots, walkthrough progress, and other account
+data stay inside the add-on.
 
-## Choose an implementation
+## Pick a version
 
 - `javascript/gbp1.js` works in a browser or Node without packages.
 - `python/gbp1.py` works as a Python module or command-line tool without packages.
@@ -18,9 +17,34 @@ walkthrough progress, or other player-specific add-on state.
 
 The PHP implementation requires PHP 7.3 or newer.
 
+See the [website integration guide](https://gravvy.net/buildplanner/integration.html)
+for React, Angular, Vue, and WordPress patterns, plus volunteer permissions,
+draft storage, catalog data, validation, and publishing.
+
+To check a local copy of the repository, run these commands from the Build
+Planner root:
+
+```text
+npm run web-parity
+npm run web-validation
+npm run web-python-runtime
+npm run web-browser
+```
+
+The browser interaction command uses locally installed Edge, Chrome, and
+Firefox. It checks keyboard tabs, visible focus, clipboard output, JSON
+downloads, and the narrow layout without adding a browser-automation package to
+the examples.
+
 See `example-build.json` for a complete two-setup example. The labels, IDs, and
 icons in that fixture are sample data, not a complete or authoritative ESO
 catalog. A real build site should supply identities from its own maintained data.
+
+`javascript/example-catalog.js` is the single demonstration-data block used by
+all of the live forms. It supplies a few armor, jewelry, weapon, skill, Champion,
+consumable, and checklist choices so developers can exercise the controls. Copy
+its shape if useful, but replace its example records with your own maintained
+catalog before publishing a production editor.
 
 Use IDs observed from the ESO API or a maintained game-data catalog. Do not infer
 an ability, Champion star, item, set, enchantment, or checklist detector ID from
@@ -268,11 +292,29 @@ limits, integer bounds, equipment families, weapon occupancy, attribute totals,
 Champion uniqueness, and required values before encoding. Render submitted names,
 notes, links, and icons as text rather than HTML.
 
-The language helpers perform format-level validation. Build Planner performs its
-own model validation during import, so a generated code cannot bypass add-on
-rules. Keep the generator version aligned with the add-on version you support.
+The language helpers enforce the same portable bounds and relationships used by
+the examples. `sourceUrl` must be an absolute HTTP or HTTPS URL. Icon fields may
+use an ESO texture path or an HTTP/HTTPS URL; active-content schemes and
+protocol-relative URLs are rejected. `itemLink` values must use ESO's item-link
+shape. The form never loads user-entered icons or links while editing.
+
+Build Planner performs its own model validation again during import. Keep the
+generator version aligned with the add-on version you support.
 
 ## Hosting notes
+
+After uploading the examples, open `deploy-check.html` from the deployed
+`buildplanner` directory. It verifies the example pages, generator assets,
+download archives, PHP execution, JavaScript encoding, Pyodide CDN access, and
+the browser-Python encoder from the same origin as the live portal. Add
+`?auto=1` to run it immediately, then use **Copy Report** when sharing a failed
+deployment check.
+
+The included `.htaccess` prevents other sites from embedding the toolkit's
+scripts, styles, JSON, downloads, and media. It is written for Apache-compatible
+hosting such as Namecheap's shared hosting. Direct visits and requests from
+`gravvy.net` remain allowed; developers should download and host their own copy
+of an encoder rather than link to the live file.
 
 The JavaScript example is static. The Python browser example is also static, but
 downloads its pinned Pyodide runtime from jsDelivr on first load and fetches the

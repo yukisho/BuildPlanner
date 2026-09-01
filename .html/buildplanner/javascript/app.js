@@ -54,6 +54,7 @@
     const codeOutput = document.getElementById("code-output");
     const outputStatus = document.getElementById("output-status");
     const encoder = window.BuildPlannerExampleEncoder;
+    const catalog = window.BuildPlannerExampleCatalog || { gear: {}, skills: {}, champion: {}, consumables: [], checklist: [] };
 
     if (!encoder || typeof encoder.encode !== "function") {
         throw new Error("BuildPlannerExampleEncoder.encode(buildObject) is required before app.js loads.");
@@ -61,7 +62,8 @@
 
     let build = blankBuild();
     let selectedSetup = 0;
-    let activeSection = "overview";
+    const requestedSection = new URLSearchParams(window.location.search).get("section");
+    let activeSection = SECTIONS.some(([key]) => key === requestedSection) ? requestedSection : "overview";
     let cachedExample = null;
     let dirty = false;
     let generationTimer = null;
@@ -130,6 +132,23 @@
         control.type = "button";
         control.addEventListener("click", handler);
         return control;
+    }
+
+    function catalogPicker(labelText, entries, onPick) {
+        const label = create("label", "catalog-picker");
+        label.append(document.createTextNode(labelText));
+        const select = create("select");
+        select.appendChild(new Option("Custom / blank", ""));
+        (entries || []).forEach((entry, index) => select.appendChild(new Option(entry.label, String(index))));
+        select.addEventListener("change", () => {
+            if (select.value !== "") onPick(clone(entries[Number(select.value)].value));
+        });
+        label.appendChild(select);
+        return label;
+    }
+
+    function catalogNotice() {
+        return catalog.notice ? create("p", "catalog-notice", catalog.notice) : null;
     }
 
     function options(control, values, selected, includeDefault) {
@@ -266,14 +285,31 @@
 
     function renderTabs() {
         tabs.replaceChildren();
-        SECTIONS.forEach(([key, label]) => {
+        tabs.setAttribute("role", "tablist");
+        SECTIONS.forEach(([key, label], sectionIndex) => {
             const control = button(label, "tab", () => {
                 activeSection = key;
                 renderTabs();
                 renderSection();
             });
+            control.id = `section-tab-${key}`;
             control.setAttribute("role", "tab");
+            control.setAttribute("aria-controls", "section-panel");
             control.setAttribute("aria-selected", key === activeSection ? "true" : "false");
+            control.tabIndex = key === activeSection ? 0 : -1;
+            control.addEventListener("keydown", event => {
+                let nextIndex = null;
+                if (event.key === "ArrowRight") nextIndex = (sectionIndex + 1) % SECTIONS.length;
+                if (event.key === "ArrowLeft") nextIndex = (sectionIndex + SECTIONS.length - 1) % SECTIONS.length;
+                if (event.key === "Home") nextIndex = 0;
+                if (event.key === "End") nextIndex = SECTIONS.length - 1;
+                if (nextIndex == null) return;
+                event.preventDefault();
+                activeSection = SECTIONS[nextIndex][0];
+                renderTabs();
+                renderSection();
+                tabs.querySelectorAll('[role="tab"]')[nextIndex].focus();
+            });
             const count = create("span", "count", String(sectionCount(key)));
             control.appendChild(count);
             tabs.appendChild(control);
@@ -290,6 +326,8 @@
 
     function renderSection() {
         sectionPanel.replaceChildren();
+        sectionPanel.setAttribute("role", "tabpanel");
+        sectionPanel.setAttribute("aria-labelledby", `section-tab-${activeSection}`);
         const renderers = {
             overview: renderOverview, gear: renderGear, skills: renderSkills,
             character: renderCharacter, champion: renderChampion,
@@ -317,9 +355,9 @@
 
     function renderDeveloperExample() {
         const details = create("details", "developer-example");
-        details.appendChild(create("summary", "", "Developer example for this section"));
+        details.appendChild(create("summary", "", "Show this section as JSON"));
         const copy = create("p", "hint",
-            "Empty repeatable sections use []. Optional objects may be omitted; null preserves an intentional fixed-position gap. selectedSetup is one-based.");
+            "Use [] for an empty list. You can leave out optional objects; use null when an empty position needs to stay in place. selectedSetup starts at 1.");
         const fragment = create("pre");
         fragment.id = "section-json-fragment";
         fragment.textContent = JSON.stringify(currentSectionFragment(), null, 2);
@@ -334,14 +372,14 @@
             "// PHP",
             "$code = gbpEncodeBuild($buildArray);"
         ].join("\n");
-        append(details, copy, create("h3", "", "Current JSON fragment"), fragment,
-            create("h3", "", "Encode the complete build"), calls);
+        append(details, copy, create("h3", "", "This section's JSON"), fragment,
+            create("h3", "", "Encode the whole build"), calls);
         sectionPanel.appendChild(details);
     }
 
     function renderOverview() {
         const setup = currentSetup();
-        sectionHeading("Portable build overview", "This is the data a website can send to Build Planner. Account inventory, readiness, revisions, and captured stats stay in the add-on.");
+        sectionHeading("What this setup contains", "These are the parts that can travel in a GBP1 code. Owned items, readiness checks, revisions, and captured stats stay in the add-on.");
         const grid = create("div", "grid four");
         const items = [
             ["Planned gear", sectionCount("gear")], ["Planned skills", sectionCount("skills")],
@@ -370,6 +408,13 @@
     }
 
     function renderRequirementFields(parent, requirement, family, includeRoute) {
+        parent.appendChild(catalogPicker("Fill from sample data", (catalog.gear || {})[family], value => {
+            const route = requirement.preferredRoute;
+            Object.keys(requirement).forEach(key => delete requirement[key]);
+            Object.assign(requirement, value);
+            if (includeRoute && route) requirement.preferredRoute = route;
+            markAndRender();
+        }));
         const grid = create("div", "grid four");
         textField(grid, "Set name", requirement, "setName", { maxLength: 512 });
         textField(grid, "ESO set ID", requirement, "setId", { type: "number", min: 1, max: 4294967294 });
@@ -396,7 +441,8 @@
     }
 
     function renderGear() {
-        sectionHeading("Gear and alternatives", "Every requirement is stored under a canonical slot key. Alternatives use the same shape without preferredRoute.");
+        sectionHeading("Gear and alternatives", "Each piece is saved under its equipment slot. An alternative uses the same fields, but does not have a preferred route.");
+        sectionPanel.appendChild(catalogNotice());
         const setup = currentSetup();
         setup.equipment = setup.equipment || {};
         setup.alternatives = setup.alternatives || {};
@@ -407,7 +453,7 @@
             fieldset.appendChild(create("legend", "", label));
             const requirement = setup.equipment[slot];
             if (!requirement) {
-                append(fieldset, create("p", "empty", "Not planned"), button("Plan This Slot", "secondary", () => {
+                append(fieldset, create("p", "empty", "Nothing planned for this slot"), button("Add gear", "secondary", () => {
                     setup.equipment[slot] = {};
                     markAndRender();
                 }));
@@ -417,7 +463,7 @@
 
             const head = create("div", "row-head");
             append(head, create("h3", "", requirement.itemName || requirement.setName || "New requirement"),
-                button("Clear Slot", "danger", () => {
+                button("Clear slot", "danger", () => {
                     delete setup.equipment[slot];
                     delete setup.alternatives[slot];
                     markAndRender();
@@ -430,14 +476,14 @@
                 const nested = create("fieldset");
                 nested.appendChild(create("legend", "", `Alternative ${index + 1}`));
                 renderRequirementFields(nested, alternative, family, false);
-                nested.appendChild(button("Remove Alternative", "danger", () => {
+                nested.appendChild(button("Remove alternative", "danger", () => {
                     alternatives.splice(index, 1);
                     if (!alternatives.length) delete setup.alternatives[slot];
                     markAndRender();
                 }));
                 fieldset.appendChild(nested);
             });
-            const addAlternative = button("Add Alternative", "secondary", () => {
+            const addAlternative = button("Add alternative", "secondary", () => {
                 if (!setup.alternatives[slot]) setup.alternatives[slot] = [];
                 if (setup.alternatives[slot].length < 8) setup.alternatives[slot].push({});
                 markAndRender();
@@ -454,7 +500,8 @@
     }
 
     function renderSkills() {
-        sectionHeading("Skill bars", "Positions 1-5 are active abilities. Position 6 is the ultimate. Empty positions are preserved with null.");
+        sectionHeading("Skill bars", "Slots 1–5 hold active abilities and U holds the ultimate. A blank slot before a filled one is saved as null.");
+        sectionPanel.appendChild(catalogNotice());
         const skillBars = currentSetup().skillBars || (currentSetup().skillBars = { front: [], back: [] });
         const barGrid = create("div", "skill-bars");
         [["front", "Front Bar"], ["back", "Back Bar"]].forEach(([barKey, label]) => {
@@ -466,6 +513,8 @@
                 slot.appendChild(create("div", `slot-number${index === 5 ? " ultimate" : ""}`, index === 5 ? "U" : String(index + 1)));
                 const fields = create("div", "grid");
                 const skill = bar[index] || {};
+                fields.appendChild(catalogPicker("Fill from sample data", index === 5 ? catalog.skills.ultimate : catalog.skills.active,
+                    value => { bar[index] = value; markAndRender(); }));
                 const ability = textField(fields, "Ability ID", skill, "abilityId", { type: "number", min: 1, max: 4294967294 });
                 const name = textField(fields, "Ability name", skill, "name", { maxLength: 100 });
                 const icon = textField(fields, "Icon path", skill, "icon", { maxLength: 512 });
@@ -486,7 +535,7 @@
     }
 
     function renderCharacter() {
-        sectionHeading("Character choices", "Attributes may total no more than 64. Race, Mundus, curse, and subclass lines are setup-specific.");
+        sectionHeading("Character", "Spend up to 64 attribute points. Race, Mundus, curse, and class lines are saved with this setup.");
         const character = currentSetup().character || (currentSetup().character = {});
         const attributes = character.attributes || (character.attributes = { health: 0, magicka: 0, stamina: 0 });
         const grid = create("div", "grid");
@@ -535,16 +584,25 @@
     }
 
     function renderChampion() {
-        sectionHeading("Champion Points", "Allocation IDs must be unique across all disciplines. Only allocations marked slottable may occupy one of the four positions.");
+        sectionHeading("Champion Points", "A star ID can only appear once. Mark a star as slottable before placing it in one of the four slots.");
+        sectionPanel.appendChild(catalogNotice());
         const setup = currentSetup();
         DISCIPLINES.forEach(([key, label]) => {
             const discipline = ensureDiscipline(setup, key);
             const fieldset = create("fieldset", "discipline");
             const head = create("div", "row-head");
-            append(head, create("h3", "", label), button("Add Allocation", "secondary", () => {
+            const actions = create("div", "toolbar compact");
+            const usedIds = new Set(DISCIPLINES.flatMap(([disciplineKey]) =>
+                ensureDiscipline(setup, disciplineKey).allocations.map(entry => entry.skillId).filter(Boolean)));
+            const examples = (catalog.champion[key] || []).filter(entry => !usedIds.has(entry.value.skillId));
+            append(actions, catalogPicker("Add sample star", examples, value => {
+                if (discipline.allocations.length < 200) discipline.allocations.push(value);
+                markAndRender();
+            }), button("Add your own", "secondary", () => {
                 if (discipline.allocations.length < 200) discipline.allocations.push({ name: "", points: 1, isSlottable: false });
                 markAndRender();
             }));
+            append(head, create("h3", "", label), actions);
             fieldset.appendChild(head);
 
             if (!discipline.allocations.length) fieldset.appendChild(create("p", "empty", "No Champion allocations planned"));
@@ -603,12 +661,19 @@
     function renderConsumables() {
         const setup = currentSetup();
         setup.consumables = setup.consumables || [];
-        const add = button("Add Consumable", "", () => {
+        const add = button("Add consumable", "", () => {
             if (setup.consumables.length < 20) setup.consumables.push({ category: "food", name: "", quantity: 1 });
             markAndRender();
         });
         add.disabled = setup.consumables.length >= 20;
-        sectionHeading("Consumables", "These are item requirements, not the descriptive food and potion assumptions used for stat context.", add);
+        const actions = create("div", "toolbar compact");
+        const picker = catalogPicker("Add sample item", catalog.consumables, value => {
+            if (setup.consumables.length < 20) setup.consumables.push(value);
+            markAndRender();
+        });
+        append(actions, picker, add);
+        sectionHeading("Consumables", "Put items the player needs to obtain here. Notes about food or potion uptime belong under Assumptions.", actions);
+        sectionPanel.appendChild(catalogNotice());
         if (!setup.consumables.length) sectionPanel.appendChild(create("p", "empty", "No consumables planned"));
         setup.consumables.forEach((entry, index) => {
             const fieldset = create("fieldset");
@@ -640,12 +705,19 @@
     function renderChecklist() {
         const setup = currentSetup();
         setup.checklist = setup.checklist || [];
-        const add = button("Add Checklist Step", "", () => {
+        const add = button("Add checklist step", "", () => {
             if (setup.checklist.length < 100) setup.checklist.push({ category: "passive", name: "", completed: false });
             markAndRender();
         });
         add.disabled = setup.checklist.length >= 100;
-        sectionHeading("Progression checklist", "Detection metadata is optional. Use it only when the website has reliable ESO API identifiers.", add);
+        const actions = create("div", "toolbar compact");
+        const picker = catalogPicker("Add sample step", catalog.checklist, value => {
+            if (setup.checklist.length < 100) setup.checklist.push(value);
+            markAndRender();
+        });
+        append(actions, picker, add);
+        sectionHeading("Progression checklist", "Only add automatic detection when your site has a reliable ESO ID. A name by itself is not enough.", actions);
+        sectionPanel.appendChild(catalogNotice());
         if (!setup.checklist.length) sectionPanel.appendChild(create("p", "empty", "No progression steps planned"));
         setup.checklist.forEach((entry, index) => {
             const fieldset = create("fieldset");
@@ -685,7 +757,7 @@
     }
 
     function renderAssumptions() {
-        sectionHeading("Buff assumptions", "These are descriptive conditions for the guide. They are separate from consumable acquisition and exact stat snapshots.");
+        sectionHeading("Buff assumptions", "Write down the conditions used by the guide. These notes do not change the player's captured stats or shopping list.");
         const setup = currentSetup();
         const assumptions = setup.buffAssumptions || (setup.buffAssumptions = {});
         const grid = create("div", "grid two");
@@ -779,7 +851,7 @@
             if (errors.length) {
                 jsonOutput.textContent = JSON.stringify(value, null, 2);
                 codeOutput.value = "";
-                outputStatus.textContent = "Current form is not valid";
+                outputStatus.textContent = "Fix the items above to make a code";
                 outputStatus.className = "status";
                 showErrors(errors);
                 return;
@@ -799,7 +871,7 @@
             const value = cleanBuild();
             jsonOutput.textContent = JSON.stringify(value, null, 2);
             codeOutput.value = "";
-            outputStatus.textContent = "Current form is not valid";
+            outputStatus.textContent = "Fix the items above to make a code";
             outputStatus.className = "status";
             showErrors(String(error.message || error).split("\n"));
         }
@@ -857,12 +929,12 @@
     }
 
     async function loadExample(force) {
-        if (!force && dirty && !window.confirm("Replace the current form with the full example?")) return;
+        if (!force && dirty && !window.confirm("Replace what you have entered with the sample build?")) return;
         try {
             replaceBuild(await getExample());
         } catch (error) {
             showErrors([`${error.message} Serve the buildplanner directory over HTTP or HTTPS so the browser can fetch the shared fixture.`]);
-            outputStatus.textContent = "Full example could not be loaded";
+            outputStatus.textContent = "Could not load the example";
         }
     }
 

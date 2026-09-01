@@ -38,6 +38,15 @@ const GBP_PREFIX = 'GBP1:';
 const GBP_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const GBP_SLOTS = ['head', 'shoulders', 'chest', 'hands', 'waist', 'legs', 'feet', 'neck', 'ring1', 'ring2', 'frontMain', 'frontOff', 'backMain', 'backOff'];
 const GBP_TWO_HANDED = [4, 5, 6, 8, 9, 12, 13, 15];
+const GBP_ARMOR_SLOTS = ['head', 'shoulders', 'chest', 'hands', 'waist', 'legs', 'feet'];
+const GBP_JEWELRY_SLOTS = ['neck', 'ring1', 'ring2'];
+const GBP_ARMOR_TYPES = [1, 2, 3];
+const GBP_WEAPON_TYPES = [1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 14, 15];
+const GBP_TRAITS = [
+    'armor' => [11, 12, 13, 14, 15, 16, 17, 18, 19],
+    'jewelry' => [21, 22, 23, 30, 31, 32, 33, 34, 35],
+    'weapon' => [1, 2, 3, 4, 5, 6, 7, 8, 26],
+];
 const GBP_REQ_STRINGS = ['setName', 'itemName', 'itemLink', 'enchantmentName', 'note'];
 const GBP_REQ_NUMBERS = ['setId', 'itemId', 'armorType', 'weaponType', 'traitType', 'enchantmentId', 'enchantmentCategory', 'quality', 'level', 'championPoints'];
 const GBP_ROUTES = ['buy' => 1, 'craft' => 2, 'farm' => 3, 'reconstruct' => 4, 'transmute' => 5, 'unknown' => 6];
@@ -76,9 +85,83 @@ function gbpInteger($value, int $minimum, int $maximum, string $name): int
     return $value;
 }
 
+function gbpValidateHttpUrl($value, string $name): void
+{
+    if ($value === null || $value === '') return;
+    if (!is_string($value) || filter_var($value, FILTER_VALIDATE_URL) === false) {
+        throw new InvalidArgumentException("$name must be an absolute HTTP or HTTPS URL");
+    }
+    $scheme = strtolower((string)parse_url($value, PHP_URL_SCHEME));
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        throw new InvalidArgumentException("$name must use HTTP or HTTPS");
+    }
+}
+
+function gbpValidateIcon($value, string $name): void
+{
+    if ($value === null || $value === '') return;
+    if (!is_string($value) || preg_match('/[\x00-\x1f]/', $value) || strncmp($value, '//', 2) === 0) {
+        throw new InvalidArgumentException("$name is invalid");
+    }
+    if (preg_match('/^([a-z][a-z0-9+.-]*):/i', $value, $match)
+        && !in_array(strtolower($match[1]), ['http', 'https'], true)) {
+        throw new InvalidArgumentException("$name must be an ESO path or HTTP/HTTPS URL");
+    }
+}
+
+function gbpValidateItemLink($value, string $name): void
+{
+    if ($value === null || $value === '') return;
+    $pattern = '/^(?:\|c[0-9a-f]{6})?\|H\d+:item:[^|\r\n]+\|h[^|\r\n]*\|h(?:\|r)?$/i';
+    if (!is_string($value) || !preg_match($pattern, $value)) {
+        throw new InvalidArgumentException("$name must be an ESO item link");
+    }
+}
+
+function gbpOptionalInteger($value, int $minimum, int $maximum, string $name): void
+{
+    if ($value !== null) gbpInteger($value, $minimum, $maximum, $name);
+}
+
+function gbpValidateRequirement(array $value, string $slot, string $name): void
+{
+    $family = in_array($slot, GBP_ARMOR_SLOTS, true) ? 'armor'
+        : (in_array($slot, GBP_JEWELRY_SLOTS, true) ? 'jewelry' : 'weapon');
+    if ($family === 'armor') {
+        if (isset($value['weaponType'])) throw new InvalidArgumentException("$name.weaponType is not valid for an armor slot");
+        if (isset($value['armorType']) && !in_array($value['armorType'], GBP_ARMOR_TYPES, true)) {
+            throw new InvalidArgumentException("$name.armorType is invalid");
+        }
+    } elseif ($family === 'jewelry') {
+        if (isset($value['armorType']) || isset($value['weaponType'])) {
+            throw new InvalidArgumentException("$name cannot have armorType or weaponType");
+        }
+    } else {
+        if (isset($value['armorType'])) throw new InvalidArgumentException("$name.armorType is not valid for a weapon slot");
+        if (isset($value['weaponType']) && !in_array($value['weaponType'], GBP_WEAPON_TYPES, true)) {
+            throw new InvalidArgumentException("$name.weaponType is invalid");
+        }
+    }
+    if (isset($value['traitType']) && !in_array($value['traitType'], GBP_TRAITS[$family], true)) {
+        throw new InvalidArgumentException("$name.traitType is invalid for this slot");
+    }
+    foreach (['setId', 'itemId', 'enchantmentId'] as $key) {
+        gbpOptionalInteger($value[$key] ?? null, 0, 4294967294, "$name.$key");
+    }
+    gbpOptionalInteger($value['enchantmentCategory'] ?? null, 0, 255, "$name.enchantmentCategory");
+    gbpOptionalInteger($value['quality'] ?? null, 1, 5, "$name.quality");
+    gbpOptionalInteger($value['level'] ?? null, 1, 50, "$name.level");
+    gbpOptionalInteger($value['championPoints'] ?? null, 0, 160, "$name.championPoints");
+    if (isset($value['championPoints']) && $value['championPoints'] % 10 !== 0) {
+        throw new InvalidArgumentException("$name.championPoints must use increments of 10");
+    }
+    gbpValidateItemLink($value['itemLink'] ?? null, "$name.itemLink");
+}
+
 final class GBPWriter
 {
-    public string $data = '';
+    /** @var string */
+    public $data = '';
 
     public function byte(int $value): void
     {
@@ -106,7 +189,8 @@ final class GBPWriter
 
     public function string($value, string $name, int $maximum, bool $required = false): void
     {
-        $value = $value === null ? '' : (string)$value;
+        if ($value !== null && !is_string($value)) throw new InvalidArgumentException("$name must be a string");
+        $value = $value === null ? '' : $value;
         if (strlen($value) > $maximum || ($required && trim($value) === '')) {
             throw new InvalidArgumentException("$name is invalid");
         }
@@ -115,8 +199,9 @@ final class GBPWriter
     }
 }
 
-function gbpRequirement(GBPWriter $writer, array $value, string $name, bool $includeRoute): void
+function gbpRequirement(GBPWriter $writer, array $value, string $name, bool $includeRoute, string $slot): void
 {
+    gbpValidateRequirement($value, $slot, $name);
     foreach (GBP_REQ_STRINGS as $key) {
         $maximum = $key === 'itemLink' ? 2048 : ($key === 'note' ? 4000 : 512);
         $writer->string($value[$key] ?? null, "$name.$key", $maximum);
@@ -148,6 +233,7 @@ function gbpSkillBars(GBPWriter $writer, array $setup): void
             $skill = gbpObject($bar[$index], "$barName skill");
             $writer->u32(gbpInteger($skill['abilityId'] ?? null, 1, 4294967295, 'abilityId'));
             $writer->string($skill['name'] ?? null, 'skill name', 100);
+            gbpValidateIcon($skill['icon'] ?? null, 'skill icon');
             $writer->string($skill['icon'] ?? null, 'skill icon', 512);
         }
     }
@@ -173,6 +259,7 @@ function gbpChampion(GBPWriter $writer, array $setup): void
             $writer->byte($isSlottable ? 1 : 0);
             if ($isSlottable) $slottable[$skillId] = true;
             $writer->string($entry['name'] ?? null, 'Champion name', 100, true);
+            gbpValidateIcon($entry['icon'] ?? null, 'Champion icon');
             $writer->string($entry['icon'] ?? null, 'Champion icon', 512);
         }
         $slots = gbpList($discipline['slottables'] ?? null, "$key slottables", 4);
@@ -206,17 +293,21 @@ function gbpSetup(GBPWriter $writer, array $value): void
         }
     }
     $equipped = array_values(array_filter(GBP_SLOTS,
-        static fn($slot) => array_key_exists($slot, $equipment) && $equipment[$slot] !== null));
+        static function ($slot) use ($equipment) {
+            return array_key_exists($slot, $equipment) && $equipment[$slot] !== null;
+        }));
     $writer->byte(count($equipped));
     foreach ($equipped as $slot) {
         $writer->byte(array_search($slot, GBP_SLOTS, true) + 1);
-        gbpRequirement($writer, gbpObject($equipment[$slot], "equipment.$slot"), "equipment.$slot", true);
+        gbpRequirement($writer, gbpObject($equipment[$slot], "equipment.$slot"), "equipment.$slot", true, $slot);
     }
 
     $alternatives = $value['alternatives'] ?? [];
     if (!is_array($alternatives)) throw new InvalidArgumentException('alternatives must be an object');
     $alternativeSlots = array_values(array_filter(GBP_SLOTS,
-        static fn($slot) => isset($alternatives[$slot]) && is_array($alternatives[$slot]) && count($alternatives[$slot])));
+        static function ($slot) use ($alternatives) {
+            return isset($alternatives[$slot]) && is_array($alternatives[$slot]) && count($alternatives[$slot]);
+        }));
     $writer->byte(count($alternativeSlots));
     foreach ($alternativeSlots as $slot) {
         if (!isset($equipment[$slot])) throw new InvalidArgumentException('alternatives require primary equipment');
@@ -224,7 +315,7 @@ function gbpSetup(GBPWriter $writer, array $value): void
         $writer->byte(array_search($slot, GBP_SLOTS, true) + 1);
         $writer->byte(count($entries));
         foreach ($entries as $index => $entry) {
-            gbpRequirement($writer, gbpObject($entry, 'alternative'), "alternatives.$slot[$index]", false);
+            gbpRequirement($writer, gbpObject($entry, 'alternative'), "alternatives.$slot[$index]", false, $slot);
         }
     }
 
@@ -252,7 +343,9 @@ function gbpSetup(GBPWriter $writer, array $value): void
         if (!isset(GBP_CONSUMABLES[$category])) throw new InvalidArgumentException('invalid consumable category');
         $writer->byte(GBP_CONSUMABLES[$category]);
         $writer->string($entry['name'] ?? null, 'consumable name', 100, true);
+        gbpValidateItemLink($entry['itemLink'] ?? null, 'consumable itemLink');
         $writer->string($entry['itemLink'] ?? null, 'consumable itemLink', 2048);
+        gbpValidateIcon($entry['icon'] ?? null, 'consumable icon');
         $writer->string($entry['icon'] ?? null, 'consumable icon', 512);
         $writer->u16(gbpInteger($entry['quantity'] ?? 1, 1, 9999, 'quantity'));
         $writer->string($entry['note'] ?? null, 'consumable note', 4000);
@@ -270,6 +363,7 @@ function gbpSetup(GBPWriter $writer, array $value): void
         $writer->byte(isset($entry['targetRank']) ? gbpInteger($entry['targetRank'], 1, 50, 'targetRank') : 0);
         $writer->byte(($entry['completed'] ?? false) === true ? 1 : 0);
         $writer->optional($entry['abilityId'] ?? null, 'abilityId');
+        gbpValidateIcon($entry['icon'] ?? null, 'checklist icon');
         $writer->string($entry['icon'] ?? null, 'checklist icon', 512);
         $writer->string($entry['note'] ?? null, 'checklist note', 4000);
         $detection = $entry['detection'] ?? null;
@@ -315,7 +409,10 @@ function gbpEncodeBuild(array $build): string
     $writer = new GBPWriter();
     $writer->byte(GBP_VERSION);
     $writer->string($build['name'] ?? null, 'build name', 100, true);
-    foreach (['role', 'patch', 'author', 'sourceUrl'] as $key) $writer->string($build[$key] ?? null, $key, 512);
+    foreach (['role', 'patch', 'author', 'sourceUrl'] as $key) {
+        if ($key === 'sourceUrl') gbpValidateHttpUrl($build[$key] ?? null, $key);
+        $writer->string($build[$key] ?? null, $key, 512);
+    }
     $writer->string($build['notes'] ?? null, 'notes', 4000);
     $writer->optional($build['classId'] ?? null, 'classId');
     $writer->u16(count($setups));

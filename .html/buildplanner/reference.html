@@ -3,39 +3,40 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Complete GBP1 version 9 field reference for Gravvy's Build Planner website integrations.">
-    <title>GBP1 Build Schema Reference</title>
+    <meta name="description" content="GBP1 format 9 field reference for Gravvy's Build Planner integrations.">
+    <title>GBP1 Format 9 Field Reference</title>
     <style>
-        :root { color-scheme:dark; --page:#0d0f13; --panel:#171a20; --raised:#1d2028;
-            --line:#414550; --gold:#dfbd78; --gold-light:#f2d89d; --text:#f3efe6;
-            --muted:#b9b4a8; --code:#101218; --focus:#8ecbff; }
+        :root { color-scheme:dark; --page:#0a0a09; --panel:#11110f; --raised:#181713;
+            --line:#575143; --gold:#c6a55c; --gold-light:#ead49c; --text:#e8e3d7;
+            --muted:#aaa394; --code:#080807; --focus:#8ecbff; }
         * { box-sizing:border-box; }
         html { scroll-behavior:smooth; }
-        body { margin:0; background:radial-gradient(circle at 50% -10rem,rgba(223,189,120,.12),transparent 34rem),var(--page);
-            color:var(--text); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+        body { margin:0; min-width:300px; background:linear-gradient(90deg,transparent,rgba(198,165,92,.025) 50%,transparent),
+            repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0,rgba(255,255,255,.012) 1px,transparent 1px,transparent 4px),var(--page);
+            color:var(--text); font:16px/1.55 "Segoe UI",Tahoma,sans-serif; }
         a { color:var(--gold-light); }
         a:focus-visible,summary:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
         code,pre { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
         code { color:var(--gold-light); }
         .shell { width:min(1120px,calc(100% - 32px)); margin:auto; }
-        header { border-bottom:1px solid rgba(223,189,120,.2); background:rgba(13,15,19,.88); }
+        header { border-top:2px solid #806a38; border-bottom:1px solid #4a4437; background:#0d0d0b; }
         header .shell { display:flex; align-items:center; justify-content:space-between; min-height:62px; gap:20px; }
-        .brand { color:var(--gold-light); font-weight:750; text-decoration:none; }
+        .brand { color:var(--gold-light); font:700 1.08rem/1.2 Georgia,"Times New Roman",serif; text-decoration:none; }
         nav { display:flex; flex-wrap:wrap; gap:16px; font-size:.9rem; }
         main { padding:64px 0 80px; }
-        h1,h2,h3 { line-height:1.2; }
-        h1 { margin:0 0 16px; font-size:clamp(2.2rem,5vw,4rem); letter-spacing:-.04em; }
+        h1,h2,h3 { line-height:1.2; font-family:Georgia,"Times New Roman",serif; font-weight:normal; }
+        h1 { margin:0 0 16px; color:var(--gold-light); font-size:clamp(2.2rem,5vw,3.5rem); letter-spacing:-.025em; }
         h2 { color:var(--gold-light); }
         .intro { max-width:780px; margin-bottom:30px; color:var(--muted); font-size:1.08rem; }
         .actions { display:flex; flex-wrap:wrap; gap:10px; margin:24px 0 50px; }
-        .button { display:inline-flex; padding:9px 14px; border:1px solid var(--gold); border-radius:6px;
-            background:var(--gold); color:#17130c; font-weight:750; text-decoration:none; }
-        .button.secondary { border-color:var(--line); background:transparent; color:var(--text); }
+        .button { display:inline-flex; padding:9px 14px; border:1px solid var(--gold); border-radius:1px;
+            background:#6e592c; color:#fff3d1; font-weight:700; text-decoration:none; }
+        .button.secondary { border-color:var(--line); background:#151512; color:var(--text); }
         .map { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:24px 0 50px; }
-        .map a { padding:18px; border:1px solid var(--line); border-radius:8px; background:var(--panel); text-decoration:none; }
+        .map a { padding:18px; border:1px solid var(--line); border-top-color:var(--gold); background:var(--panel); text-decoration:none; }
         .map strong { display:block; color:var(--gold-light); }
         .map span { color:var(--muted); font-size:.9rem; }
-        details { margin:14px 0; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+        details { margin:14px 0; border:1px solid var(--line); background:var(--panel); }
         summary { cursor:pointer; padding:18px 20px; color:var(--gold-light); font-size:1.15rem; font-weight:750; }
         details[open] summary { border-bottom:1px solid var(--line); }
         .content { padding:20px; }
@@ -48,7 +49,7 @@
         td { color:var(--muted); }
         td:first-child { color:var(--text); }
         tbody tr:last-child td { border-bottom:0; }
-        pre { overflow:auto; margin:18px 0 0; padding:15px; border:1px solid var(--line); border-radius:6px;
+        pre { overflow:auto; margin:18px 0 0; padding:15px; border:1px solid var(--line); border-radius:0;
             background:var(--code); color:var(--text); font-size:.86rem; }
         .callout { margin:40px 0 0; padding:20px; border-left:3px solid var(--gold); background:var(--raised); }
         footer { padding:24px 0; border-top:1px solid rgba(223,189,120,.2); color:var(--muted); text-align:center; font-size:.88rem; }
@@ -59,21 +60,22 @@
 <body>
 <header>
     <div class="shell">
-        <a class="brand" href="index.html">Build Planner Developer Tools</a>
+        <a class="brand" href="index.html">Build Planner GBP1 Toolkit</a>
         <nav aria-label="Reference navigation">
-            <a href="example-build.json">Full JSON example</a>
-            <a href="README.md" download>Download README</a>
+            <a href="integration.html">Integration guide</a>
+            <a href="example-build.json">Example build</a>
+            <a href="README.md" download>README</a>
         </nav>
     </div>
 </header>
 
 <main class="shell">
-    <p class="eyebrow">GBP1 format version 9</p>
-    <h1>Complete build schema</h1>
-    <p class="intro">This is the portable contract accepted by all three generators. A website may leave optional sections empty, but it should preserve fixed positions for skill and Champion bars and use ESO IDs when an identity field is provided.</p>
+    <p class="eyebrow">GBP1 format 9</p>
+    <h1>Field reference</h1>
+    <p class="intro">These are the fields accepted by all three encoders. Optional sections can be left out. Keep the fixed positions in skill and Champion bars, and only send an ESO ID when you know it is the right one.</p>
     <div class="actions">
-        <a class="button" href="example-build.json">Open the full example</a>
-        <a class="button secondary" href="index.html">Choose a language</a>
+        <a class="button" href="example-build.json">Open example build</a>
+        <a class="button secondary" href="index.html">Back to the toolkit</a>
     </div>
 
     <nav class="map" aria-label="Schema sections">
@@ -205,10 +207,10 @@
     </details>
 
     <aside class="callout">
-        <strong>Keep the trust boundary intact.</strong> Treat submitted build data as untrusted, render names and notes as text, validate collection limits and identifiers, and discard any previously generated code when the current form becomes invalid. Build Planner performs its own validation again during import.
+        <strong>Do not trust form input.</strong> Render names and notes as text, check collection limits and IDs, and clear any old code as soon as the current form becomes invalid. Build Planner validates the data again when the player imports it.
     </aside>
 </main>
 
-<footer><div class="shell">Reference for Gravvy's Build Planner GBP1 format version 9.</div></footer>
+<footer><div class="shell">Gravvy's Build Planner · GBP1 format 9</div></footer>
 </body>
 </html>

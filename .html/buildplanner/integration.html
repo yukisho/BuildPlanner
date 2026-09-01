@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="How to add GBP1 exports to an existing build editor or guide-writing system.">
+    <title>Build Planner Website Integration Guide</title>
+    <link rel="stylesheet" href="example.css">
+    <style>
+        .guide-shell { display:grid; grid-template-columns:230px minmax(0,1fr); gap:34px; align-items:start; }
+        .guide-nav { position:sticky; top:20px; padding:16px 0; border-top:1px solid var(--gold); border-bottom:1px solid var(--line); }
+        .guide-nav strong { display:block; margin:0 0 8px; color:var(--gold-light); font-family:Georgia,"Times New Roman",serif; font-size:1.08rem; }
+        .guide-nav a { display:block; padding:5px 8px; border-left:2px solid transparent; color:var(--muted); text-decoration:none; }
+        .guide-nav a:hover { border-left-color:var(--gold); color:var(--gold-light); }
+        .guide { min-width:0; }
+        .guide>section { scroll-margin-top:18px; margin:0 0 52px; }
+        .guide>section>h2 { margin:0 0 18px; padding-bottom:9px; border-bottom:1px solid var(--line); }
+        .guide h3 { margin-top:28px; color:var(--text); }
+        .guide p,.guide li { max-width:84ch; }
+        .guide pre { min-height:0; max-height:none; margin:14px 0 20px; font-size:.88rem; }
+        .guide table { width:100%; border-collapse:collapse; background:var(--panel); }
+        .guide th,.guide td { padding:11px 12px; border:1px solid var(--line); vertical-align:top; text-align:left; }
+        .guide th { color:var(--gold-light); font-weight:700; }
+        .guide td { color:var(--muted); }
+        .note { margin:20px 0; padding:14px 16px; border-left:3px solid var(--gold); background:#17150f; }
+        .note strong { color:var(--gold-light); }
+        .file-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; padding:1px; background:var(--line); }
+        .file-list>div { padding:16px; background:var(--panel); }
+        .file-list strong { display:block; margin-bottom:5px; color:var(--gold-light); }
+        .file-list span { color:var(--muted); font-size:.92rem; }
+        .flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; margin:20px 0; padding:1px; background:var(--line); }
+        .flow div { position:relative; min-height:108px; padding:15px; background:var(--panel); }
+        .flow b { display:block; margin-bottom:7px; color:var(--gold-light); }
+        .flow span { color:var(--muted); font-size:.9rem; }
+        .checklist { padding-left:0; list-style:none; }
+        .checklist li { position:relative; margin:8px 0; padding-left:27px; }
+        .checklist li::before { content:"□"; position:absolute; left:2px; color:var(--gold); }
+        .path { color:var(--gold-light); font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+        @media(max-width:900px) {
+            .guide-shell { grid-template-columns:1fr; }
+            .guide-nav { position:static; columns:2; }
+            .guide-nav strong { column-span:all; }
+            .file-list,.flow { grid-template-columns:1fr 1fr; }
+        }
+        @media(max-width:600px) {
+            .guide-nav { columns:1; }
+            .file-list,.flow { grid-template-columns:1fr; }
+        }
+    </style>
+</head>
+<body>
+<header><div class="shell">
+    <a class="brand" href="index.html">Build Planner GBP1 Toolkit</a>
+    <a href="reference.html">Field reference</a>
+</div></header>
+
+<main class="shell">
+    <h1>Build GBP1 into your own guide editor</h1>
+    <p class="intro">Your writers do not need another account or a separate tool. Keep the build form, drafts, approvals, and publishing inside your existing React, Angular, Vue, or WordPress site; copy one encoder into your codebase and generate the Build Planner code there.</p>
+
+    <div class="note">
+        <strong>The short version:</strong> store the build as ordinary JSON, treat that JSON as the source of truth, and generate the <code>GBP1:</code> string when the page needs to show a copy button.
+    </div>
+
+    <div class="guide-shell">
+        <nav class="guide-nav" aria-label="On this page">
+            <strong>On this page</strong>
+            <a href="#parts">What to copy</a>
+            <a href="#shape">Recommended setup</a>
+            <a href="#javascript">JavaScript</a>
+            <a href="#frameworks">Framework recipes</a>
+            <a href="#server">Python or PHP</a>
+            <a href="#editor">Using the example editor</a>
+            <a href="#writers">Volunteer writers</a>
+            <a href="#mapping">Map your guide data</a>
+            <a href="#catalog">ESO catalog data</a>
+            <a href="#validation">Validation and safety</a>
+            <a href="#updates">Updates</a>
+            <a href="#checklist">Launch checklist</a>
+        </nav>
+
+        <article class="guide">
+            <section id="parts">
+                <h2>What to copy</h2>
+                <p>The encoder is the only required file. It has no packages, database calls, network requests, or Build Planner service dependency. Put the matching file in your own repository and deploy it with the rest of your site.</p>
+                <div class="file-list">
+                    <div><strong>JavaScript</strong><span><span class="path">javascript/gbp1.js</span><br>Browser and Node</span></div>
+                    <div><strong>Python</strong><span><span class="path">python/gbp1.py</span><br>Python 3</span></div>
+                    <div><strong>PHP</strong><span><span class="path">php/gbp1.php</span><br>PHP 7.3+</span></div>
+                </div>
+                <p>The form pages, <code>app.js</code>, <code>example.css</code>, and <code>example-catalog.js</code> are reference material. Use them if they save you time, but they are not required by the encoder.</p>
+                <p><a class="button" href="source/index.html">Download the source</a> <a class="button secondary" href="example-build.json">View the sample build</a></p>
+            </section>
+
+            <section id="shape">
+                <h2>Recommended setup</h2>
+                <div class="flow" aria-label="Recommended integration flow">
+                    <div><b>1. Existing editor</b><span>Your writers use the same guide form and login they already know.</span></div>
+                    <div><b>2. Build JSON</b><span>Your application stores the guide's build data alongside the rest of the guide.</span></div>
+                    <div><b>3. Local encoder</b><span>Your frontend or backend passes that object to the copied GBP1 encoder.</span></div>
+                    <div><b>4. Copy button</b><span>The published guide shows the resulting code to the player.</span></div>
+                </div>
+                <p>Save the JSON, not just the generated code. That lets a writer reopen the editor, lets your revision system show changes, and lets you regenerate codes after updating the encoder.</p>
+                <div class="note"><strong>Do not hotlink the encoder from gravvy.net.</strong> Keeping a reviewed copy in your own repository prevents an outside deployment from changing your production guide editor.</div>
+            </section>
+
+            <section id="javascript">
+                <h2>Browser or Node integration</h2>
+                <p>Load <code>gbp1.js</code> after your normal form code. Build a plain object from your form state and call the encoder. A failed validation throws an <code>Error</code>, so keep the copy button disabled until encoding succeeds.</p>
+                <pre><code>&lt;script src="/assets/build-planner/gbp1.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+function refreshBuildPlannerExport() {
+    const buildObject = readBuildFromYourEditor();
+    const output = document.querySelector("#build-planner-code");
+    const copyButton = document.querySelector("#copy-build-planner-code");
+
+    try {
+        output.value = GBP1.encodeBuild(buildObject);
+        copyButton.disabled = false;
+    } catch (error) {
+        output.value = "";
+        copyButton.disabled = true;
+        showBuildError(error.message);
+    }
+}
+&lt;/script&gt;</code></pre>
+                <p>For Node or a bundler using CommonJS:</p>
+                <pre><code>const { encodeBuild } = require("./gbp1.js");
+
+const code = encodeBuild(buildObject);</code></pre>
+
+                <h3>A small valid object</h3>
+                <p>Most sections may be empty while a writer is getting started. The root build and each setup still need a name.</p>
+                <pre><code>const buildObject = {
+    name: "Stamina Warden",
+    role: "Damage",
+    author: "Guide Author",
+    sourceUrl: "https://example.com/guides/stamina-warden",
+    selectedSetup: 1,
+    setups: [{
+        name: "General setup",
+        defaultQuality: 5,
+        defaultLevel: 50,
+        defaultChampionPoints: 160,
+        equipment: {},
+        alternatives: {},
+        skillBars: { front: [], back: [] },
+        character: {
+            attributes: { health: 0, magicka: 0, stamina: 64 },
+            subclassLines: []
+        },
+        champion: {},
+        consumables: [],
+        checklist: [],
+        buffAssumptions: {}
+    }]
+};</code></pre>
+            </section>
+
+            <section id="frameworks">
+                <h2>React, Angular, Vue, and WordPress</h2>
+                <p>These examples keep the encoder inside the same application as the guide editor. They use the existing site's accounts and permissions; none of them sends build data to gravvy.net.</p>
+
+                <h3>React</h3>
+                <p>Put <code>gbp1.js</code> in <code>public/vendor/build-planner/</code>, then load it once from your application's HTML template:</p>
+                <pre><code>&lt;script src="/vendor/build-planner/gbp1.js"&gt;&lt;/script&gt;</code></pre>
+                <p>Make the export a derived value from the build already held by your editor. Do not put the generated code in a second editable state.</p>
+                <pre><code>function encodeForBuildPlanner(build) {
+    try {
+        return { code: window.GBP1.encodeBuild(build), error: "" };
+    } catch (error) {
+        return { code: "", error: error.message };
+    }
+}
+
+export function BuildPlannerExport({ build }) {
+    const result = encodeForBuildPlanner(build);
+
+    return (
+        &lt;section&gt;
+            &lt;label htmlFor="gbp1-code"&gt;Build Planner code&lt;/label&gt;
+            &lt;textarea id="gbp1-code" readOnly value={result.code} /&gt;
+            {result.error &amp;&amp; &lt;p role="alert"&gt;{result.error}&lt;/p&gt;}
+            &lt;button
+                type="button"
+                disabled={!result.code}
+                onClick={() =&gt; navigator.clipboard.writeText(result.code)}
+            &gt;
+                Copy code
+            &lt;/button&gt;
+        &lt;/section&gt;
+    );
+}</code></pre>
+                <p>For TypeScript, declare the small global API in a project declaration file:</p>
+                <pre><code>declare global {
+    interface Window {
+        GBP1: {
+            encodeBuild(build: unknown): string;
+            VERSION: number;
+            PREFIX: string;
+        };
+    }
+}
+
+export {};</code></pre>
+
+                <h3>Angular</h3>
+                <p>Copy the file to <code>src/assets/vendor/build-planner/gbp1.js</code> and add it to the application's <code>scripts</code> list in <code>angular.json</code>. Angular loads entries there like scripts added to <code>index.html</code>. Wrap the global in a service so components do not depend on it directly.</p>
+                <pre><code>import { Injectable } from '@angular/core';
+
+declare const GBP1: {
+    encodeBuild(build: unknown): string;
+};
+
+@Injectable({ providedIn: 'root' })
+export class BuildPlannerExportService {
+    encode(build: unknown): string {
+        return GBP1.encodeBuild(build);
+    }
+}</code></pre>
+                <p>Call the service after the reactive form has produced the build object. Put encoder errors into the form's existing validation summary and disable the copy action until the error is gone. See Angular's <a href="https://angular.dev/reference/configs/workspace-config">workspace configuration reference</a> for the current <code>scripts</code> option.</p>
+
+                <h3>Vue</h3>
+                <p>Put <code>gbp1.js</code> in <code>public/vendor/build-planner/</code> and load it from <code>index.html</code>. A computed value keeps the output in step with the editor.</p>
+                <pre><code>&lt;script setup&gt;
+import { computed } from 'vue';
+
+const props = defineProps({
+    build: { type: Object, required: true }
+});
+
+const exportResult = computed(() =&gt; {
+    try {
+        return { code: window.GBP1.encodeBuild(props.build), error: '' };
+    } catch (error) {
+        return { code: '', error: error.message };
+    }
+});
+
+function copyCode() {
+    navigator.clipboard.writeText(exportResult.value.code);
+}
+&lt;/script&gt;
+
+&lt;template&gt;
+    &lt;section&gt;
+        &lt;label for="gbp1-code"&gt;Build Planner code&lt;/label&gt;
+        &lt;textarea id="gbp1-code" :value="exportResult.code" readonly /&gt;
+        &lt;p v-if="exportResult.error" role="alert"&gt;
+            {{ exportResult.error }}
+        &lt;/p&gt;
+        &lt;button
+            type="button"
+            :disabled="!exportResult.code"
+            @click="copyCode"
+        &gt;
+            Copy code
+        &lt;/button&gt;
+    &lt;/section&gt;
+&lt;/template&gt;</code></pre>
+                <p>Vite copies files from <code>public</code> without transforming them. If the app is mounted below the domain root, use the base path configured by the project. See Vite's <a href="https://vite.dev/guide/assets">static asset guide</a>.</p>
+
+                <h3>WordPress</h3>
+                <p>For WordPress, use the PHP encoder in a small site plugin. Store the build object as post metadata on the guide post. Authors and contributors continue to use WordPress accounts, revisions, and whatever editorial plugin the site already uses.</p>
+                <p>Register the metadata once from the plugin. Replace <code>guide</code> with the site's post type; that post type must support revisions if the build data should follow its revision history.</p>
+                <pre><code>add_action('init', function (): void {
+    register_post_meta('guide', '_build_planner', [
+        'type'              =&gt; 'object',
+        'single'            =&gt; true,
+        'show_in_rest'      =&gt; false,
+        'revisions_enabled' =&gt; true,
+        'auth_callback'     =&gt; static function (
+            bool $allowed,
+            string $metaKey,
+            int $postId
+        ): bool {
+            return current_user_can('edit_post', $postId);
+        },
+    ]);
+});</code></pre>
+                <p>A public guide can generate its code while rendering:</p>
+                <pre><code>&lt;?php
+require_once __DIR__ . '/build-planner/gbp1.php';
+
+$build = get_post_meta(get_the_ID(), '_build_planner', true);
+$code = '';
+$error = '';
+
+if (is_array($build)) {
+    try {
+        $code = gbpEncodeBuild($build);
+    } catch (Throwable $exception) {
+        $error = $exception-&gt;getMessage();
+    }
+}
+?&gt;
+
+&lt;?php if ($code !== ''): ?&gt;
+    &lt;label for="gbp1-code"&gt;Build Planner code&lt;/label&gt;
+    &lt;textarea id="gbp1-code" readonly&gt;&lt;?php
+        echo esc_textarea($code);
+    ?&gt;&lt;/textarea&gt;
+&lt;?php endif; ?&gt;</code></pre>
+                <p>If a block-editor sidebar or custom guide editor needs a preview endpoint, register it from the same plugin and rely on WordPress capabilities:</p>
+                <pre><code>add_action('rest_api_init', function (): void {
+    register_rest_route('build-planner/v1', '/encode', [
+        'methods'  =&gt; 'POST',
+        'permission_callback' =&gt; static function (): bool {
+            return current_user_can('edit_posts');
+        },
+        'callback' =&gt; static function (WP_REST_Request $request) {
+            try {
+                $build = $request-&gt;get_json_params();
+                return ['code' =&gt; gbpEncodeBuild($build)];
+            } catch (Throwable $exception) {
+                return new WP_Error(
+                    'invalid_build',
+                    $exception-&gt;getMessage(),
+                    ['status' =&gt; 422]
+                );
+            }
+        },
+    ]);
+});</code></pre>
+                <div class="note"><strong>WordPress permissions still apply.</strong> Check the specific guide with <code>current_user_can('edit_post', $postId)</code> when saving metadata. A general <code>edit_posts</code> check is enough for the stateless preview shown above, but it is not enough to authorize changes to a particular post. WordPress documents both <a href="https://developer.wordpress.org/rest-api/extending-the-rest-api/adding-custom-endpoints/">endpoint permission callbacks</a> and <a href="https://developer.wordpress.org/reference/functions/register_meta/">revision-enabled metadata</a>.</div>
+            </section>
+
+            <section id="server">
+                <h2>Generate on a Python or PHP backend</h2>
+                <p>Server-side generation is a good fit when the guide already lives in a database. Load the stored build object, check that the current user may view or edit that guide, and return the code from your normal controller or API route.</p>
+
+                <h3>Python</h3>
+                <pre><code>from gbp1 import encode_build
+
+def build_planner_export(saved_guide):
+    # Map your saved guide record to the documented GBP1 shape.
+    build_dict = saved_guide["build_planner"]
+    return encode_build(build_dict)</code></pre>
+
+                <h3>PHP</h3>
+                <pre><code>require_once __DIR__ . '/gbp1.php';
+
+// Load this through your usual repository and permission checks.
+$buildArray = $guide['build_planner'];
+$code = gbpEncodeBuild($buildArray);</code></pre>
+
+                <p>Both functions throw when the input is invalid. Handle that the same way you handle other guide validation errors; do not publish the old code after the saved build becomes invalid.</p>
+            </section>
+
+            <section id="editor">
+                <h2>Reuse as much of the example editor as you need</h2>
+                <p>The live form demonstrates every GBP1 section, but <code>app.js</code> is a reference editor rather than a packaged widget. It expects the IDs and containers found in the example pages and loads <code>example-build.json</code> for its sample data.</p>
+                <p>If your site already has a component system, use the example to copy field behavior and object shapes into your own components. If it has a simple server-rendered editor, copying the form markup can be quicker.</p>
+
+                <h3>When adapting the full form</h3>
+                <ol>
+                    <li>Copy the form containers from one of the language examples.</li>
+                    <li>Copy <code>app.js</code>, <code>example.css</code>, and your language encoder.</li>
+                    <li>Replace <code>example-catalog.js</code> with choices from your own ESO catalog.</li>
+                    <li>Replace the sample-build loader with the guide JSON returned by your site.</li>
+                    <li>Save changes through your existing draft or revision endpoint.</li>
+                    <li>Keep the generated code read-only. It is output, not an editable source field.</li>
+                </ol>
+                <div class="note"><strong>Avoid an iframe for the authoring form.</strong> Building the fields into your normal editor keeps authentication, autosave, validation messages, styling, and accessibility under your site's control.</div>
+            </section>
+
+            <section id="writers">
+                <h2>Fit it into a volunteer writing workflow</h2>
+                <p>Build Planner does not need its own contributor accounts. The person editing a build should be authorized by your site, just as they are for the written guide.</p>
+                <table>
+                    <thead><tr><th>Your site handles</th><th>The GBP1 encoder handles</th></tr></thead>
+                    <tbody>
+                    <tr><td>Login, writer roles, guide ownership, and team access</td><td>Turning an accepted build object into an import code</td></tr>
+                    <tr><td>Drafts, autosave, revisions, review, and publishing</td><td>Checking GBP1 field types, ranges, limits, and relationships</td></tr>
+                    <tr><td>Your ESO catalog, search, labels, and localized names</td><td>Writing those chosen IDs and values into format 9</td></tr>
+                    <tr><td>The public guide page and its copy button</td><td>Returning a deterministic <code>GBP1:</code> string</td></tr>
+                    </tbody>
+                </table>
+                <p>A writer can be allowed to edit a draft without being allowed to publish it. Generate a preview code for drafts, but only expose the public code from the currently published revision.</p>
+            </section>
+
+            <section id="mapping">
+                <h2>Map your guide model to GBP1</h2>
+                <p>You do not have to rename your database tables or form fields. Write one mapping function at the boundary between your guide model and the encoder.</p>
+                <table>
+                    <thead><tr><th>Common guide concept</th><th>GBP1 location</th></tr></thead>
+                    <tbody>
+                    <tr><td>Guide title, class, role, patch, author, URL</td><td>Root build fields</td></tr>
+                    <tr><td>Trial, non-trial, beginner, or alternate loadout</td><td>One entry in <code>setups</code></td></tr>
+                    <tr><td>Gear table</td><td><code>setup.equipment</code> using canonical slot keys</td></tr>
+                    <tr><td>Alternate piece or fallback set</td><td><code>setup.alternatives[slot]</code></td></tr>
+                    <tr><td>Front and back action bars</td><td><code>setup.skillBars.front</code> and <code>.back</code></td></tr>
+                    <tr><td>Attributes, race, Mundus, curse, class lines</td><td><code>setup.character</code></td></tr>
+                    <tr><td>Champion allocations and slots</td><td><code>setup.champion</code></td></tr>
+                    <tr><td>Food, potions, poisons, or other supplies to obtain</td><td><code>setup.consumables</code></td></tr>
+                    <tr><td>Passives and unlocks the player still needs</td><td><code>setup.checklist</code></td></tr>
+                    <tr><td>Conditions assumed while discussing stats</td><td><code>setup.buffAssumptions</code></td></tr>
+                    </tbody>
+                </table>
+                <p>The <a href="reference.html">field reference</a> lists every key, limit, and enum. The <a href="example-build.json">sample build</a> shows all sections together.</p>
+            </section>
+
+            <section id="catalog">
+                <h2>Use your own ESO catalog</h2>
+                <p>The small catalog shipped with the example only makes the form usable. It is not a game database. Connect the editor to the same set, item, skill, and Champion data your site already maintains.</p>
+                <ul>
+                    <li>Store stable ESO IDs when your source provides them.</li>
+                    <li>Keep the display name as a fallback for readers and localization.</li>
+                    <li>Do not guess an ID from a name; different records and languages can share text.</li>
+                    <li>Keep item links and icon paths as data. Render writer-entered names and notes as text, not HTML.</li>
+                    <li>Filter choices by slot family so armor, jewelry, and weapon-only fields cannot be mixed.</li>
+                </ul>
+            </section>
+
+            <section id="validation">
+                <h2>Validation and safety</h2>
+                <p>The encoders validate the GBP1 shape, but they do not replace your site's normal request security or editorial rules.</p>
+                <ul>
+                    <li>Check authentication, guide ownership, and edit permission before reading or saving draft data.</li>
+                    <li>Use your framework's CSRF protection on form posts.</li>
+                    <li>Apply request-size limits before decoding large JSON bodies.</li>
+                    <li>Run the encoder on the server before saving or publishing when the server is authoritative.</li>
+                    <li>Escape guide titles, notes, names, and URLs when displaying them.</li>
+                    <li>Clear stale output whenever the current object fails validation.</li>
+                </ul>
+                <p>Client-side encoding is fine for instant previews. For moderated or published guides, server-side validation gives the publication workflow one authoritative result.</p>
+            </section>
+
+            <section id="updates">
+                <h2>Keep the integration maintainable</h2>
+                <p>Vendor the encoder as a small third-party component in your repository. Record that it writes GBP1 format 9 and keep a copy of the included README near it.</p>
+                <ul>
+                    <li>Do not edit the byte-writing logic to match your database. Map your data before calling it.</li>
+                    <li>Keep optional, site-specific fields outside the GBP1 object.</li>
+                    <li>When updating the encoder, run the supplied parity and invalid-input tests before deploying.</li>
+                    <li>Test at least one real code by importing it into the current Build Planner add-on.</li>
+                </ul>
+                <p>Old codes remain tied to the format version written into them. Your saved JSON should stay independent of that encoded output.</p>
+            </section>
+
+            <section id="checklist">
+                <h2>Before you ship</h2>
+                <ul class="checklist">
+                    <li>The encoder file is served from your own application or asset host.</li>
+                    <li>Writers use your existing login, draft, and review workflow.</li>
+                    <li>The stored JSON can reopen the editor without reading the GBP1 code.</li>
+                    <li>Every setup maps to the correct gear, skills, Champion Points, supplies, and notes.</li>
+                    <li>Your own ESO catalog has replaced the sample records.</li>
+                    <li>Invalid builds cannot leave an old copyable code on screen.</li>
+                    <li>The public page only exposes data from the published guide revision.</li>
+                    <li>A generated code has been imported successfully in game.</li>
+                </ul>
+            </section>
+        </article>
+    </div>
+</main>
+</body>
+</html>

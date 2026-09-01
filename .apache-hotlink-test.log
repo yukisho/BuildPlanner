@@ -1,0 +1,9 @@
+[Mon Aug 31 18:20:44.367836 2026] [mpm_winnt:notice] [pid 3556:tid 348] AH00455: Apache/2.4.62 (Win64) configured -- resuming normal operations
+[Mon Aug 31 18:20:44.368843 2026] [mpm_winnt:notice] [pid 3556:tid 348] AH00456: Apache Lounge VS17 Server built: Sep  4 2024 10:31:52
+[Mon Aug 31 18:20:44.368843 2026] [core:notice] [pid 3556:tid 348] AH00094: Command line: 'F:\\laragon\\bin\\apache\\httpd-2.4.62-240904-win64-VS17\\bin\\httpd.exe -d F:/laragon/bin/apache/httpd-2.4.62-240904-win64-VS17 -f F:\\laragon\\www\\BuildPlanner\\.apache-hotlink-test.conf -D FOREGROUND'
+[Mon Aug 31 18:20:44.374479 2026] [mpm_winnt:notice] [pid 3556:tid 348] AH00418: Parent: Created child process 33808
+Apache server interrupted...
+026] [mpm_winnt:notice] [pid 33808:tid 344] AH00354: Child: Starting 64 worker threads.
+[Mon Aug 31 18:21:13.419684 2026] [mpm_winnt:notice] [pid 3556:tid 348] AH00422: Parent: Received shutdown signal -- Shutting down the server.
+[Mon Aug 31 18:21:15.430382 2026] [mpm_winnt:notice] [pid 33808:tid 344] AH00364: Child: All worker threads have exited.
+[Mon Aug 31 18:21:15.447671 2026] [mpm_winnt:notice] [pid 3556:tid 348] AH00430: Parent: Child process 33808 exited successfully.

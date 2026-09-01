@@ -5,7 +5,9 @@
   "scripts": {
     "audit": "node Tests/audit.js",
     "web-parity": "node Tests/GeneratorParityTest.js",
-    "web-validation": "node Tests/WebGeneratorValidationTest.js"
+    "web-validation": "node Tests/WebGeneratorValidationTest.js",
+    "web-python-runtime": "node Tests/BrowserPythonRuntimeTest.js",
+    "web-browser": "node Tests/WebBrowserInteractionTest.js edge && node Tests/WebBrowserInteractionTest.js chrome && node Tests/FirefoxBrowserInteractionTest.js"
   },
   "devDependencies": {
     "fengari-node-cli": "0.1.0"
